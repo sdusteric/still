@@ -1,0 +1,57 @@
+included:
+  - Sources
+  - Tests
+  - Package.swift
+excluded:
+  - .build
+  - build
+
+only_rules:
+  - custom_rules
+
+custom_rules:
+  no_force_try:
+    name: "No try!"
+    included: 'Sources/.*\.swift$'
+    regex: '\btry!'
+    excluded_match_kinds: [comment, comment.mark, comment.url, doccomment, doccomment.field, string]
+    message: "Handle the error instead of try! in Sources."
+    severity: error
+
+  no_optional_try_in_stores:
+    name: "No try? in stores"
+    included: 'Sources/SnapCore/.*Store[^/]*\.swift$'
+    regex: '\btry\?'
+    excluded_match_kinds: [comment, comment.mark, comment.url, doccomment, doccomment.field, string]
+    message: "Stores must surface or log errors; try? would hide a lost capture or setting."
+    severity: error
+
+  no_direct_key_notifications:
+    name: "No direct key or main notifications"
+    included: 'Sources/.*\.swift$'
+    regex: '(?<!func )(?<!super\.)\b(resignKey|becomeKey|resignMain|becomeMain)\(\)'
+    excluded_match_kinds: [comment, comment.mark, comment.url, doccomment, doccomment.field, string]
+    message: "AppKit documents these as override points not to invoke directly; use makeKey(), orderOut or close instead."
+    severity: error
+
+  no_network:
+    name: "No network code"
+    included: 'Sources/.*\.swift$'
+    regex: '\bURLSession\b|\bNWConnection\b|\bimport\s+Network\b'
+    excluded_match_kinds: [comment, comment.mark, comment.url, doccomment, doccomment.field, string]
+    message: "Snap has no network features (design section 4)."
+    severity: error
+
+  no_long_dashes:
+    name: "No em or en dashes"
+    regex: '[\x{2013}\x{2014}]'
+    message: "Use commas, colons, parentheses or separate sentences instead of em or en dashes."
+    severity: error
+
+  screen_capture_only_in_system:
+    name: "Screen capture only in SnapSystem"
+    included: 'Sources/(SnapCore|SnapUI|Snap|snapctl)/.*\.swift$'
+    regex: '\bScreenCaptureKit\b|\bSCShareableContent\b|\bSCScreenshotManager\b|\bCGRequestScreenCaptureAccess\b'
+    excluded_match_kinds: [comment, comment.mark, comment.url, doccomment, doccomment.field]
+    message: "ScreenCaptureKit and CGRequestScreenCaptureAccess belong in Sources/SnapSystem only (design section 5)."
+    severity: error
