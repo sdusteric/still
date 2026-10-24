@@ -19,7 +19,7 @@ or the real pasteboard. Processes the script starts are stopped by PID when it e
 **Criterion.** `SNAP_SCRATCH=$TMPDIR/snap-check scripts/check.sh` exits 0. It runs the release
 build, `swift test` with a fresh `SNAP_HOME`, `swiftlint --strict` (including the rule that
 ScreenCaptureKit and `CGRequestScreenCaptureAccess` appear only in `Sources/SnapSystem`),
-`otool -L` showing that `snapctl` does not link ScreenCaptureKit, `scripts/bundle.sh --release`,
+`otool -L` showing that `snapctl` and `snapbench` do not link ScreenCaptureKit, `scripts/bundle.sh --release`,
 `codesign --verify --strict`, `plutil -lint` with `CFBundleIdentifier` `dev.sdusteric.snap` and
 `LSUIElement` true, `codesign -d -r-` containing `identifier "dev.sdusteric.snap"` and
 `Apple Development`, and no em or en dashes.
@@ -104,10 +104,15 @@ the criterion fails rather than passing silently.
 
 ## AC05: capture-to-overlay latency with the fake capture source
 
-**Criterion.** `snapctl latency --fake --runs 50 --display 5120x2880@2 --capture-delay-ms 0
+**Criterion.** `snapbench latency --fake --runs 50 --display 5120x2880@2 --capture-delay-ms 0
 --json` reports p95 under 20 ms from trigger to overlay present, under 30 ms to frozen image
 ready, and under 30 ms from confirm to Quick Access card. In every run the event order is
 present, then frozen, then confirm, then card, and only after that encode, history and clipboard.
+
+`snapbench` drives the real `OverlayController` (no panels, a cursor stand-in that does nothing,
+a simulated drag the moment the frozen image is shown) and the real `QuickAccessController` (no
+panel), with `FakeCaptureSource` and a monotonic clock. It links SnapCore and SnapUI, never
+SnapSystem, so like `snapctl` it does not link ScreenCaptureKit; `check.sh` verifies both.
 
 **How it is checked.** The JSON report's `stages.present.p95Ms`, `stages.frozen.p95Ms` and
 `stages.card.p95Ms` are compared with 20, 30 and 30 ms. `runDetails` must hold 50 runs, and each

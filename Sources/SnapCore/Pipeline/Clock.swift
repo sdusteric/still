@@ -1,7 +1,7 @@
 import Foundation
 
-/// Time for the pipeline, latency log and Quick Access timers. Injected so tests and
-/// `snapctl latency` drive it with `FakeClock`.
+/// Time for the pipeline, latency log and Quick Access timers. Injected so tests drive it with
+/// `FakeClock`; the app and `snapbench latency` use `SystemClock`.
 ///
 /// This shadows `Swift.Clock` inside modules that import SnapCore; spell the standard one
 /// `Swift.Clock` where both are needed.

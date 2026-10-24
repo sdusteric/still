@@ -11,7 +11,7 @@
 #
 #   AC01  All gates green: SNAP_SCRATCH=$TMPDIR/snap-check scripts/check.sh exits 0 (release build,
 #         swift test with a fresh SNAP_HOME, swiftlint --strict including the ScreenCaptureKit
-#         rule, otool -L shows snapctl does not link ScreenCaptureKit, bundle.sh --release,
+#         rule, otool -L shows snapctl and snapbench do not link ScreenCaptureKit, bundle.sh --release,
 #         codesign --verify --strict, plutil -lint with CFBundleIdentifier dev.sdusteric.snap and
 #         LSUIElement true, codesign -d -r- names identifier "dev.sdusteric.snap" and
 #         "Apple Development", no em or en dashes).
@@ -31,10 +31,11 @@
 #         each with luminance stddev at least 4, each light/dark pair at least 40/255 apart in
 #         mean luminance of its chrome region; shots.sh exits 0, so lsappinfo front never changed
 #         and winlist never saw an on-screen window of the shot PID.
-#   AC05  snapctl latency --fake --runs 50 --display 5120x2880@2 --capture-delay-ms 0 --json:
-#         p95 under 20 ms to overlay present, under 30 ms to frozen ready, under 30 ms from
-#         confirm to card, and every run in the order present, frozen, confirm, card, then
-#         encode, history, clipboard.
+#   AC05  snapbench latency --fake --runs 50 --display 5120x2880@2 --capture-delay-ms 0 --json
+#         (the real OverlayController and QuickAccessController without panels): p95 under
+#         20 ms to overlay present, under 30 ms to frozen ready, under 30 ms from confirm to
+#         card, and every run in the order present, frozen, confirm, card, then encode,
+#         history, clipboard.
 #
 # Env: SNAP_SCRATCH  SwiftPM scratch path (default <repo>/.build), e.g. $TMPDIR/snap-check
 #
@@ -45,7 +46,7 @@
 . "$(dirname "${BASH_SOURCE[0]}")/accept-lib.sh"
 
 usage() {
-  sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+  sed -n '2,43p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
 }
 
 GROUP=${1:-}
@@ -109,6 +110,16 @@ snapctl_path() {
       --package-path "$REPO" --scratch-path "$SCRATCH" >/dev/null 2>&1 || true
   fi
   echo "$BIN_DIR/snapctl"
+}
+
+bench_path() {
+  local dir
+  dir="$(swift build -c release --package-path "$REPO" --scratch-path "$SCRATCH" --show-bin-path 2>/dev/null || true)"
+  if [ ! -x "$dir/snapbench" ]; then
+    run_logged build-snapbench caffeinate -i swift build -c release --product snapbench \
+      --package-path "$REPO" --scratch-path "$SCRATCH" >/dev/null 2>&1 || true
+  fi
+  echo "$dir/snapbench"
 }
 
 # run_ctl <name> <args...>: snapctl with a fresh SNAP_HOME. Standard output goes to
@@ -401,9 +412,19 @@ ac04() {
 # ---------------------------------------------------------------------------------------------
 
 ac05() {
-  local out
-  if ! run_ctl ac05-latency latency --fake --runs 50 --display 5120x2880@2 --capture-delay-ms 0 --json; then
-    fail AC05 "snapctl latency failed, see $RUN/ac05-latency.err"
+  local out bench home rc
+  bench="$(bench_path)"
+  if [ ! -x "$bench" ]; then
+    fail AC05 "no snapbench at $bench"
+    return
+  fi
+  home="$(fresh_home)"
+  SNAP_HOME="$home" "$bench" latency --fake --runs 50 --display 5120x2880@2 --capture-delay-ms 0 --json \
+    >"$RUN/ac05-latency.out" 2>"$RUN/ac05-latency.err"
+  rc=$?
+  remove_run_path "$home"
+  if [ $rc -ne 0 ]; then
+    fail AC05 "snapbench latency failed, see $RUN/ac05-latency.err"
     return
   fi
   cp "$RUN/ac05-latency.out" "$RUN/latency.json"
@@ -462,10 +483,7 @@ group_offline() {
     if wanted AC03; then ac03; fi
     if wanted AC04; then ac04; fi
   fi
-  if wanted AC05; then
-    CTL="${CTL:-$(snapctl_path)}"
-    if [ -x "$CTL" ]; then ac05; else fail AC05 "no snapctl at $CTL"; fi
-  fi
+  if wanted AC05; then ac05; fi
 }
 
 CTL=""

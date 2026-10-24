@@ -124,10 +124,10 @@ Captures the display under the mouse pointer with the same filter, with no selec
 
 | Stage | Target | How it is measured |
 |---|---|---|
-| Hotkey event to overlay panels ordered front | p95 under 50 ms | App: Carbon event time to the `CATransaction` completion after `orderFrontRegardless`, logged per capture. Headless: `snapctl latency --fake`. |
+| Hotkey event to overlay panels ordered front | p95 under 50 ms | App: Carbon event time to the `CATransaction` completion after `orderFrontRegardless`, logged per capture. Headless: `snapbench latency --fake`. |
 | Hotkey event to frozen image drawn | p95 under 250 ms (unverified on real hardware) | App log only. |
 | Confirm (mouse-up or click) to Quick Access card shown | p95 under 60 ms | App log; headless with the fake path. |
-| Headless fake path, 5120x2880@2 display, capture delay 0 | p95 under 20 ms to `present`, under 30 ms to frozen ready, under 30 ms confirm to card | `snapctl latency --fake --runs 50 --json` (acceptance AC05). |
+| Headless fake path, 5120x2880@2 display, capture delay 0 | p95 under 20 ms to `present`, under 30 ms to frozen ready, under 30 ms confirm to card | `snapbench latency --fake --runs 50 --json` (acceptance AC05): the real overlay and Quick Access controllers without panels. |
 
 Rules that keep these numbers: overlay panels and their layers are built at launch; the frozen `CGImage` is handed to a layer as `contents` without a redraw; PNG encoding, history write and pasteboard work run on a background queue after the card is shown; nothing on the hotkey path touches the disk. The coordinator records an ordered event log (`present`, `frozen`, `confirm`, `card`, `encode`, `history`, `clipboard`) that tests assert on, so a change that moves encoding ahead of the card fails a test.
 
@@ -150,10 +150,10 @@ The app writes one line per capture to `SNAP_HOME/logs/snap.log`: `latency mode=
 ## 8. Quick Access Overlay
 
 - Panel: one non-activating `NSPanel`, borderless, `level = .floating`, `collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]`, transparent, `hidesOnDeactivate = false`. It hosts a SwiftUI stack of cards and is anchored to the bottom-left corner of the screen under the pointer at the time of capture, 16 pt inside `visibleFrame` **(my call: CleanShot's prefs have no position key, so its left-side default stands)**. Corner is a setting.
-- Size: `popupSize = 2` maps to Medium: thumbnail box 240x220 pt, aspect-fit, minimum height 96. Small and Large are 180 and 300 pt wide. Card padding 8, so a Medium card is 256 pt wide. Card radius 16, `.regularMaterial`, 0.5 pt edge stroke, one soft shadow (17.5). Thumbnail radius 8 (concentric with the card) on a `quaternaryLabelColor` backing for transparent window captures.
+- Size: `popupSize = 2` maps to Medium: thumbnail box 240x220 pt, aspect-fit, minimum height 96. Small and Large are 180 and 300 pt wide. Card padding 8, so a Medium card is 256 pt wide. Card radius 16, `.regularMaterial`, 0.5 pt edge stroke, one soft shadow (17.5). Thumbnail radius 8 (concentric with the card) on a solid `thumbnailBacking` (#F0F0F2 light, #2E2E31 dark, the mockup's `fill2`) for transparent window captures and the letterbox of a tall capture.
 - Resting state: thumbnail, a dimension pill (`842 × 516`, 11 pt on black 0.58) at its bottom-left, and a "Copied" chip top-right for 2 s.
 - Hover: a 0.20 black scrim over the thumbnail (no scale). Top-left: Close. Bottom-center control bar: split button **Background** (main part applies the default preset, chevron opens the editor), then icon buttons **Annotate**, **Save**, **Copy** with tooltips. Copy turns into a check mark for 900 ms, then the card closes (close after Copy or Save is on by default). Reveal in Finder appears in the bar after a save. Copy is not the primary action because the clipboard already holds the image.
-- Keyboard: the panel becomes key only while the pointer is over it, so Snap never takes Esc away from other apps. On a hovered card: C copy, S save, A annotate, B background, Delete or Esc close.
+- Keyboard: the panel becomes key only while the pointer is over it, so Snap never takes Esc away from other apps. On a hovered card: C copy, S save, A annotate, B background, Delete or Esc close. Option-C, or Option-click on Copy, is Copy File (section 9); while Option is held the Copy button shows a document icon and the tooltip "Copy File (⌥C)".
 - Drag-out: the thumbnail is an AppKit drag source (`NSViewRepresentable` wrapper). It drags a file URL to the item's current PNG in `SNAP_HOME/history/<id>/`, named with the file pattern, as an `NSDraggingItem(pasteboardWriter: url as NSURL)`. `draggingSession(_:sourceOperationMaskFor:)` returns `.copy` outside the app so Finder never moves Snap's copy. A drop that is not `.none` closes the card (`deletePopupAfterDragging = 1`); a cancelled drag keeps it.
 - Auto close: 15 s per card (`popupAutoCloseInterval = 15`, `popupAutoCloseMode = 1`), paused while hovered or dragging, restarted from the full interval on mouse exit. A 2 pt `tertiaryLabelColor` line at the bottom of the card shows the time left, only during the last 5 s and only when not hovered.
 - Stack: newest card at the corner edge, older ones pushed away, 8 pt apart, at most 5 and at most 70% of `visibleFrame` height (the oldest is closed when a sixth arrives or the stack gets too tall; its file is in history). `QuickAccessStack` (pure, injected clock) owns order, timers, pause and resume.
@@ -161,7 +161,7 @@ The app writes one line per capture to `SNAP_HOME/logs/snap.log`: `latency mode=
 
 ## 9. Clipboard and file output
 
-- Clipboard (on after every capture, `afterScreenshotActions` item 1): one `NSPasteboardItem` with `public.png` data written eagerly and `public.tiff` supplied lazily through `NSPasteboardItemDataProvider`, because a 5K TIFF is about 59 MB **(my call)**. The PNG carries the DPI, so it pastes at point size (verified: a 144 DPI PNG on a pasteboard reads back as 200x100 points from 400x200 pixels). "Copy file" (a modifier on Copy) writes the file URL instead.
+- Clipboard (on after every capture, `afterScreenshotActions` item 1): one `NSPasteboardItem` with `public.png` data written eagerly and `public.tiff` supplied lazily through `NSPasteboardItemDataProvider`, because a 5K TIFF is about 59 MB **(my call)**. The PNG carries the DPI, so it pastes at point size (verified: a 144 DPI PNG on a pasteboard reads back as 200x100 points from 400x200 pixels). "Copy file" (Option on the card's Copy button, or Option-C on a hovered card) writes the URL of the item's current PNG in history instead.
 - PNG: ImageIO with `kCGImagePropertyDPIWidth/Height = 72 * scale` (verified: 144 DPI writes a 5669 px/m `pHYs` chunk and `NSImage` reads it at half the pixel size) and the ICC profile of the image's color space.
 - File name: default pattern `Snap {yyyy}-{MM}-{dd} at {HH}.{mm}.{ss}`, giving `Snap 2026-10-24 at 14.03.22.png`, with ` 2`, ` 3` on collisions **(my call)**. Tokens: `{yyyy} {MM} {dd} {HH} {mm} {ss} {counter} {app}`. Dots, not colons, in the time. `FileNamer` is pure and tested.
 - History (the "never lose a capture" guard): every capture is written to `SNAP_HOME/history/<id>/<file name>.png` by temp file and rename, plus `item.json` (time, mode, display scale, source app when known). Edited versions (Background, annotate) are written next to it as `<file name> (edited).png`. Retention is 3 days, swept at launch and hourly **(my call: `historyCapacity = 3` read as 3 days)**. Menu bar "Recent Captures" lists the last 3.
@@ -342,7 +342,9 @@ Sources/SnapUI/                 AppKit and SwiftUI, MainActor by default, depend
 Sources/Snap/                   app executable, MainActor by default
                 main.swift, AppDelegate, AppWiring, ShotMode, ShotScenarios
 Sources/snapctl/                headless CLI, depends on SnapCore only
-                main.swift, BeautifyCommand, FixtureCommand, PresetCommand, LatencyCommand
+                main.swift, BeautifyCommand, FixtureCommand, PresetCommand
+Sources/snapbench/              headless latency bench (AC05), SnapCore and SnapUI, no SnapSystem
+                main.swift, LatencyBench
 Tests/SnapCoreTests/, Tests/SnapSystemTests/, Tests/SnapUITests/
 ```
 
@@ -440,6 +442,7 @@ All values are the mockup's. Use the system semantic color when one exists and t
 | `accent` | #007AFF | #0A84FF | System accent: window highlight, handles, selected swatch ring, default button, switch |
 | `accentText` | #0068DA | #409CFF | Accent-colored text and selected tab |
 | `button` | #FFFFFF with edge | white 13% | Secondary buttons, popups |
+| `thumbnailBacking` | #F0F0F2 | #2E2E31 | Solid backing behind a card thumbnail that does not fill its box |
 | `card` (`.regularMaterial` target) | rgba(246,246,248,.78) | rgba(44,44,47,.74) | Quick Access card, zoom pill, hint panel |
 | `menu` | rgba(246,246,248,.86) | rgba(44,44,47,.84) | Menu preview only (the real menu is the system's) |
 | `warning` | #B25000 text, #F08A00 dot | #FF9F0A | "Waiting for CleanShot X to quit", CleanShot notice |
@@ -475,15 +478,15 @@ SF Pro through the system font. No custom fonts. Use `font-variant-numeric: tabu
 | Quick Access card | 256 wide at Medium (240 thumbnail + 8 padding), radius 16, thumbnail radius 8, gap between cards 8, inset from `visibleFrame` 16 |
 | Card chips | Copied chip 22 high; dimension pill 18 high, radius 9; close button 22 circle; control bar 32 high, capsule |
 | Overlay chip | 22 high, radius 11, padding 0 9; hint bar 30 high, radius 15 |
-| Magnifier | 120 pt circle, 15 x 15 physical pixels at 8 pt each, 2 pt white ring plus 1 pt black 30% ring, caption chip 12 pt below |
+| Magnifier | 120 pt circle, 15 x 15 physical pixels at 8 pt each with a 0.5 pt black 14% pixel grid, 2 pt white ring plus 1 pt black 30% ring, centre square 1.5 pt accent with a 1 pt white inner line, caption chip 12 pt below; during a drag it shows the dim and the selection edge as the overlay does; it flips 8 pt before a screen edge |
 | Selection border | 1 pt white, 1 pt black 30% outside |
 | Window highlight | 2 pt accent border, accent 14% fill, radius 14 (macOS window corners are about 16), label chip 34 pt above the window, or inside the top edge when there is no room |
 | Controls | Buttons 24 high, capsule (AppKit regular push button); popups 24 (28 full width in the editor); segmented 22 high; switches 36 x 20 |
 | Swatches | 36 x 36, radius 8, 6 columns, 8 gap, selected ring 2 pt accent at 4 pt offset |
-| Background editor | Window 920 x 640, sidebar 300 (padding 16 20), preview fills the rest with 28 padding, footer separated by a hairline |
+| Background editor | Window 920 x 640, sidebar 300 (padding 16 20), preview fills the rest with 28 padding (radius 4, 0.5 pt edge, shadow 0 14 36 -10 black 40%, caption 11 pt), headings 14 above and 8 below (18 under the preset popup), slider rows 28 apart, value fields 40 x 22 on `fill`, 12 pt, footer separated by a hairline with padding 12 20 16 |
 | Annotate | Window 1100 x 720 default, toolbar 52, tool buttons 34 x 26 in a segmented group |
-| Settings | 480 wide, toolbar tabs 76 x 52, form padding 20, group radius 10, row min height 40 (padding 8 12), 16 between groups, heading 6 above and 8 below |
-| Onboarding | 520 wide, padding 32, app icon 64 (radius 14.4), step padding 16, step icon 36 |
+| Settings | 480 wide, toolbar tabs 76 x 52 with 4 between them, selected tab radius 10, form padding 20, group radius 10, row min height 40 (padding 8 12), 16 between groups, heading 6 above and 8 below |
+| Onboarding | 520 wide, padding 32, app icon 64 (radius 14.4), step padding 16, step icon 36, footer 12 by 20 |
 | Hint panel | 500 x about 64, radius 16, 12 padding |
 | Menu | 280 wide, padding 6, row 24 (recent capture rows 42 with a 32 x 32 thumbnail, radius 6), radius 12 (the system draws it) |
 
@@ -511,11 +514,11 @@ SF Pro through the system font. No custom fonts. Use `font-variant-numeric: tabu
 - Dragging the thumbnail: the system drag image is the thumbnail at 0.45 scale with radius 6, rotated -2 degrees, with a lifted shadow. The card thumbnail scales to 1.03 until the drag ends. A drop target shows its own highlight.
 - Countdown: not visible for the first 10 s. In the last 5 s a 2 pt `text3` line grows in at 3 pt from the card's bottom edge (inside the 8 pt padding) and shrinks linearly to nothing at close. Hover pauses it and hides it.
 - Stack: newest card nearest the corner, 8 pt between cards, at most 5, and the oldest also closes when the stack would be taller than 70% of `visibleFrame` height.
-- Keys on a hovered card: `C` Copy, `S` Save, `A` Annotate, `B` Background, `Delete` or `Esc` close.
+- Keys on a hovered card: `C` Copy, `⌥C` Copy File, `S` Save, `A` Annotate, `B` Background, `Delete` or `Esc` close.
 
 **Background editor** (mockup section 3). Titled utility window, 920 x 640, title "Background", no toolbar. Left: preview on `canvas`, composition centered and aspect-fit, no checkerboard except for the None background, a caption under it `914 × 588 pt · 1828 × 1176 px`. Right sidebar, top to bottom: preset popup (star, name, "Default"); "Background" heading, segmented Gradient | Color | Image | None, 12 swatches in 2 rows; "Spacing" heading with Padding, Inset, Corners, Shadow (label 54, slider, 40 pt value field); "Canvas" heading with Ratio popup, 3 x 3 Align grid of 18 pt squares (dimmed at 55% while Ratio is Auto), Auto-balance switch; footer: Reset (quiet) left, Save and Copy right, Copy is the default button (Return) because the next step is a paste. Esc closes. Cmd+C copies and closes too. Save writes to the save folder.
 
-**Annotate editor** (mockup section 4). Titled window, 1100 x 720, unified 52 pt toolbar: traffic lights, then a segmented tool group (Select, Crop, Rectangle, Arrow, Text, Pixelate, 34 x 26 each, active tool in `accentText` on a raised segment), divider, color well (16 pt circle, chevron), stroke popup (2, 4, 7 shown as lines), divider, Undo and Redo; trailing: Background (secondary), Copy (secondary), Save (default). The image sits on `canvas` at 100% when it fits, with the window shadow rule from 17.5. Selected items show a 1.5 pt accent border with 8 pt handles. A floating zoom pill (`Fit`) sits bottom-right, 16 pt in. Pixelate cells are 8 px and drawn blocky as in the mockup.
+**Annotate editor** (mockup section 4). Titled window, 1100 x 720, unified 52 pt toolbar: traffic lights, then a segmented tool group (Select, Crop, Rectangle, Arrow, Text, Pixelate, 34 x 26 each, active tool in `accentText` on a raised segment), divider, color well (16 pt circle, chevron), stroke popup (2, 4, 7 shown as lines), divider, Undo and Redo; trailing: Background (secondary), Copy (secondary), Save (default). The image sits on `canvas` at 100% when it fits, with the window shadow rule from 17.5. Selected items show a 1.5 pt accent border with 8 pt handles, 2 pt clear of a rectangle's stroke so the accent never covers the annotation color; the handles sit on that border. A floating zoom pill (`Fit`) sits bottom-right, 16 pt in. Pixelate cells are 8 px and drawn blocky as in the mockup.
 
 **Menu bar menu** (mockup section 5). Template symbol `viewfinder` in the status item (the mockup shows it highlighted while the menu is open). Standard `NSMenu` rows, 24 pt, shortcut glyphs in `text2`. Recent captures: 42 pt rows with a 32 x 32 thumbnail (radius 6), title `Screenshot HH.mm.ss` and a relative time at 11 pt. A status line row (warning color, 12 pt, a 7 pt dot) appears only when something needs attention. Menu content follows section 12.1.
 
@@ -567,7 +570,7 @@ Unchanged: generated by `scripts/make-icon.swift`, a rounded square with a blue-
 - Package scaffold, shared types, `scripts/check.sh`, `scripts/bundle.sh` (bundle id `dev.sdusteric.snap`, SHA-1 signing), lint rules, `CLAUDE.md`.
 - Core logic: selection geometry, coordinates, window hit-testing, file naming, stores, history, Quick Access stack, hotkey conflicts, permission state, menu model.
 - Beautify renderer, presets and `snapctl beautify`, `gen-fixture`, `preset`.
-- Capture pipeline: coordinator, live ScreenCaptureKit and window sources, PNG writer, pasteboard, Carbon hotkeys, CleanShot hand-over, permission probe, `snapctl latency`.
+- Capture pipeline: coordinator, live ScreenCaptureKit and window sources, PNG writer, pasteboard, Carbon hotkeys, CleanShot hand-over, permission probe, `snapbench latency`.
 - UI: selection overlay (area and window), Quick Access Overlay with drag-out, Background editor, minimal annotate editor, menu, settings, onboarding and permission hint.
 - App wiring, shot mode, `scripts/shots.sh`, `scripts/accept.sh offline`.
 

@@ -83,7 +83,9 @@ private func luminance(_ image: CGImage, in rect: CGRect? = nil) throws -> Lumin
 
     @Test func onboardingDemoRendersBothStepsInLightAndDark() throws {
         for granted in [false, true] {
-            try checkDemo("onboarding-\(granted)", size: OnboardingDemo.size) { OnboardingDemo.makeView(granted: granted, dark: $0) }
+            try checkDemo("onboarding-\(granted)", size: OnboardingDemo.size(granted: granted)) {
+                OnboardingDemo.makeView(granted: granted, dark: $0)
+            }
         }
     }
 

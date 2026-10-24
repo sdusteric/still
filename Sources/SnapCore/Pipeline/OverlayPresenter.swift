@@ -12,7 +12,7 @@ public enum OverlaySelection: Sendable, Hashable {
 }
 
 /// The selection overlay as the coordinator sees it (design 6.2 and 7). Live: the pre-built
-/// panels in SnapUI. Fake: a recording presenter in tests and `snapctl latency`.
+/// panels in SnapUI. Fake: a recording presenter in tests; `snapbench latency` drives the real controller without panels.
 ///
 /// Hotkey path rules: `present` must not wait on capture, disk or encoding, and nothing animates.
 @MainActor

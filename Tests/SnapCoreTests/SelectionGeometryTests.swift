@@ -267,6 +267,30 @@ import Testing
         #expect(drag.rect.width == 50.5)
     }
 
+    @Test func slowSpaceMoveAddsUpSubPixelSteps() {
+        for geometry in [Self.oneX, Self.twoX] {
+            var drag = SelectionDrag(start: CGPoint(x: 100, y: 100), geometry: geometry)
+            drag.update(pointer: CGPoint(x: 200, y: 200))
+            let start = drag.rect
+            var pointer = CGPoint(x: 200, y: 200)
+            for _ in 0..<20 {
+                pointer.x += 0.3
+                drag.update(pointer: pointer, moving: true)
+            }
+            // 20 x 0.3 pt is 6 pt; the rect stays on the pixel grid, so within one pixel of it.
+            #expect(abs(drag.rect.minX - start.minX - 6) <= geometry.pixel)
+            #expect(drag.rect.size == start.size)
+        }
+    }
+
+    @Test func movedCarriesTheRemainderPastAnEdge() {
+        let rect = CGRect(x: 3300, y: 100, width: 100, height: 100)
+        let move = Self.oneX.moved(rect, from: CGPoint(x: 3350, y: 150), to: CGPoint(x: 3450, y: 150))
+        #expect(move.rect.minX == 3340)
+        // The 60 pt the edge swallowed stay with the pointer, so coming back starts from there.
+        #expect(move.last == CGPoint(x: 3390, y: 150))
+    }
+
     @Test func dragStateAppliesModifiersEachUpdate() {
         var drag = SelectionDrag(start: CGPoint(x: 100, y: 100), geometry: Self.oneX)
         drag.update(pointer: CGPoint(x: 180, y: 140), modifiers: .square)

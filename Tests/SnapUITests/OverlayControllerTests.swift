@@ -218,6 +218,35 @@ enum ImageStats {
         #expect(controller.selection == CGRect(x: 150, y: 120, width: 150, height: 140))
     }
 
+    @Test func slowMovesAddUpForSpaceAndInsideDrags() {
+        let controller = makeController(options: .init(instantCapture: false))
+        controller.present(mode: .area, displays: displays)
+        controller.handle(.mouseDown(CGPoint(x: 100, y: 100), clickCount: 1, modifiers: []))
+        controller.handle(.mouseDragged(CGPoint(x: 200, y: 200), modifiers: []))
+        controller.handle(.keyDown(.space, modifiers: [], isRepeat: false))
+        var pointer = CGPoint(x: 200, y: 200)
+        for _ in 0..<20 {
+            pointer.y += 0.3
+            controller.handle(.mouseDragged(pointer, modifiers: []))
+        }
+        controller.handle(.keyUp(.space))
+        controller.handle(.mouseUp(pointer, modifiers: []))
+        let afterSpace = controller.selection ?? .zero
+        #expect(abs(afterSpace.minY - 106) <= 0.5)
+
+        // A drag inside the adjustable selection, at 0.3 pt per event.
+        pointer = CGPoint(x: 150, y: 150)
+        controller.handle(.mouseDown(pointer, clickCount: 1, modifiers: []))
+        for _ in 0..<20 {
+            pointer.x += 0.3
+            controller.handle(.mouseDragged(pointer, modifiers: []))
+        }
+        controller.handle(.mouseUp(pointer, modifiers: []))
+        let afterInside = controller.selection ?? .zero
+        #expect(abs(afterInside.minX - afterSpace.minX - 6) <= 0.5)
+        #expect(afterInside.size == afterSpace.size)
+    }
+
     @Test func aClickCapturesTheWindowUnderThePointer() async {
         let controller = makeController()
         controller.present(mode: .area, displays: displays)
@@ -395,6 +424,10 @@ enum ImageStats {
         let corner = MagnifierLayer.glassFrame(pointer: CGPoint(x: 1250, y: 780), selection: nil, bounds: bounds)
         #expect(corner.maxX <= 1250 - 24)
         #expect(corner.minY + MagnifierLayer.unitHeight <= 780 - 24 + 0.001)
+        // A unit that would end 4 pt from the bottom flips above: it keeps an 8 pt margin.
+        let pointerY = 800 - 24 - MagnifierLayer.unitHeight - 4
+        let nearEdge = MagnifierLayer.glassFrame(pointer: CGPoint(x: 400, y: pointerY), selection: nil, bounds: bounds)
+        #expect(nearEdge.minY + MagnifierLayer.unitHeight <= pointerY - 24 + 0.001)
     }
 
     @Test func magnifierStaysOnTheSideAwayFromTheSelection() {

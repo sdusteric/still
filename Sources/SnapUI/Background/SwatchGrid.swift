@@ -98,7 +98,8 @@ private struct SwatchCell: View {
                 .frame(width: Theme.Controls.swatchSize, height: Theme.Controls.swatchSize)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Controls.swatchRadius, style: .continuous)
-                        .strokeBorder(Theme.Colors.separator.color, lineWidth: 0.5)
+                        // The card edge token, so the navy and teal swatches keep an edge in dark mode.
+                        .strokeBorder(Theme.Colors.cardEdge.color, lineWidth: 0.5)
                 )
                 .overlay(SelectionRing(isSelected: isSelected))
                 .contentShape(Rectangle())

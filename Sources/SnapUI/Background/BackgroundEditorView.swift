@@ -373,7 +373,7 @@ public struct BackgroundEditorView: View {
                         newName = ""
                         naming = true
                     }
-                    heading("Background")
+                    heading("Background", top: 18)
                     backgroundSection
                     heading("Spacing")
                     spacingSection
@@ -390,16 +390,18 @@ public struct BackgroundEditorView: View {
             Rectangle().fill(Theme.Colors.separator.color).frame(height: 1)
             footer
                 .padding(.horizontal, padding.left)
-                .padding(.vertical, Theme.Spacing.s)
+                .padding(.top, Theme.Spacing.s)
+                .padding(.bottom, Theme.Spacing.m)
         }
     }
 
-    private func heading(_ title: String) -> some View {
+    /// Section heading: 14 pt above and 8 below (mockup 3), 18 under the preset popup.
+    private func heading(_ title: String, top: Double = 14) -> some View {
         Text(title)
             .font(Theme.Typography.groupHeading.font)
             .foregroundStyle(Theme.Colors.text.color)
-            .padding(.top, 20)
-            .padding(.bottom, 10)
+            .padding(.top, top)
+            .padding(.bottom, Theme.Spacing.xs)
             .accessibilityAddTraits(.isHeader)
     }
 
@@ -463,7 +465,7 @@ public struct BackgroundEditorView: View {
     // MARK: Spacing
 
     private var spacingSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {
             SliderRow(title: "Padding", value: $model.preset.padding, range: BackgroundPreset.paddingRange)
             SliderRow(title: "Inset", value: $model.preset.inset, range: BackgroundPreset.insetRange)
             SliderRow(
@@ -495,7 +497,7 @@ public struct BackgroundEditorView: View {
             HStack(alignment: .center) {
                 Text("Align")
                     .font(Theme.Typography.body.font)
-                    .foregroundStyle(model.preset.ratio == nil ? Theme.Colors.text2.color : Theme.Colors.text.color)
+                    .foregroundStyle(model.preset.ratio == nil ? Theme.Colors.text3.color : Theme.Colors.text.color)
                 Spacer()
                 AlignmentGrid(selection: $model.preset.alignment, isEnabled: model.preset.ratio != nil)
             }
@@ -537,16 +539,16 @@ public struct BackgroundEditorView: View {
             Button("Copy") { model.copy() }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
-            // Cmd+C copies and closes too; Esc closes.
+        }
+        // Cmd+C copies and closes too; Esc closes. Kept out of the HStack so they add no spacing.
+        .background {
             Button("") { model.copy() }
                 .keyboardShortcut("c", modifiers: .command)
                 .hidden()
-                .frame(width: 0, height: 0)
                 .accessibilityHidden(true)
             Button("") { model.close() }
                 .keyboardShortcut(.cancelAction)
                 .hidden()
-                .frame(width: 0, height: 0)
                 .accessibilityHidden(true)
         }
         .font(Theme.Typography.button.font)
@@ -577,12 +579,15 @@ private struct SliderRow: View {
                 }
             }
             .labelsHidden()
-            .textFieldStyle(.roundedBorder)
-            .multilineTextAlignment(.trailing)
-            .font(Theme.Typography.body.font.monospacedDigit())
-            .frame(width: Theme.BackgroundEditor.sliderValueWidth)
+            .textFieldStyle(.plain)
+            .multilineTextAlignment(.center)
+            .font(Theme.Typography.caption.font.monospacedDigit())
+            .frame(width: Theme.BackgroundEditor.sliderValueWidth, height: Theme.BackgroundEditor.valueFieldHeight)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Theme.Colors.fill.color)
+            )
         }
-        .frame(height: 28)
+        .frame(height: Theme.BackgroundEditor.sliderRowHeight)
     }
 
     /// The value as a fraction for the percent field: 12 shows as "12%".
@@ -601,47 +606,28 @@ private struct SliderRow: View {
     }
 }
 
-/// The preset popup at the top of the sidebar: star, name, "Default" (design 17.6).
+/// The preset popup at the top of the sidebar: star, name, "Default" (design 17.6). A native
+/// pull-down `NSPopUpButton`, full width at 28 pt (17.4); a SwiftUI `Menu` sizes to its label.
 private struct PresetPopup: View {
     let model: BackgroundEditorModel
     let onSaveAs: () -> Void
 
     var body: some View {
-        Menu {
-            ForEach(model.presets) { preset in
-                Button {
-                    model.selectPreset(id: preset.id)
-                } label: {
-                    if preset.id == model.preset.id {
-                        Label(preset.name, systemImage: "checkmark")
-                    } else {
-                        Text(preset.name)
-                    }
-                }
+        var entries = model.presets.map { preset in
+            PresetPullDown.Entry(title: preset.name, checked: preset.id == model.preset.id) {
+                model.selectPreset(id: preset.id)
             }
-            Divider()
-            Button("Save Preset\u{2026}", action: onSaveAs)
-            Button("Set as Default") { model.setAsDefault() }
-                .disabled(model.isDefault && !model.isModified)
-            Button("Delete") { model.deletePreset() }
-                .disabled(!model.canDeletePreset)
-        } label: {
-            HStack(spacing: 6) {
-                if model.isDefault {
-                    Image(systemName: "star.fill").foregroundStyle(Theme.Colors.star.color)
-                }
-                Text(presetTitle).foregroundStyle(Theme.Colors.text.color)
-                Spacer(minLength: 4)
-                if model.isDefault {
-                    Text("Default").foregroundStyle(Theme.Colors.text2.color)
-                }
-            }
-            .font(Theme.Typography.body.font)
         }
-        .menuStyle(.button)
-        .frame(maxWidth: .infinity)
-        .frame(height: Theme.Controls.popupFullWidthHeight)
-        .accessibilityLabel("Preset")
+        entries.append(.separator)
+        entries.append(PresetPullDown.Entry(title: "Save Preset\u{2026}", action: onSaveAs))
+        entries.append(PresetPullDown.Entry(title: "Set as Default", enabled: !(model.isDefault && !model.isModified)) {
+            model.setAsDefault()
+        })
+        entries.append(PresetPullDown.Entry(title: "Delete", enabled: model.canDeletePreset) { model.deletePreset() })
+        return PresetPullDown(title: presetTitle, isDefault: model.isDefault, entries: entries)
+            .frame(maxWidth: .infinity)
+            .frame(height: Theme.Controls.popupFullWidthHeight)
+            .accessibilityLabel("Preset")
     }
 
     /// The gradient's name stands in for a preset still called "Default", as in the mockup.
@@ -650,6 +636,95 @@ private struct PresetPopup: View {
         if name == "Default", case .gradient(let id) = model.preset.background { return id.displayName }
         return model.isModified ? "\(name) (edited)" : name
     }
+}
+
+private struct PresetPullDown: NSViewRepresentable {
+    struct Entry {
+        var title: String
+        var checked = false
+        var enabled = true
+        var isSeparator = false
+        var action: () -> Void = {}
+
+        static var separator: Entry { Entry(title: "", isSeparator: true) }
+    }
+
+    let title: String
+    let isDefault: Bool
+    let entries: [Entry]
+
+    final class Coordinator: NSObject {
+        var entries: [Entry] = []
+
+        @objc func pick(_ sender: NSMenuItem) {
+            guard entries.indices.contains(sender.tag) else { return }
+            entries[sender.tag].action()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSPopUpButton {
+        let button = NSPopUpButton(frame: .zero, pullsDown: true)
+        // Large is the 28 pt popup of 17.4.
+        button.controlSize = .large
+        button.font = Theme.Typography.body.nsFont
+        button.menu?.autoenablesItems = false
+        button.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return button
+    }
+
+    func updateNSView(_ button: NSPopUpButton, context: Context) {
+        context.coordinator.entries = entries
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        // A pull-down shows its first item as the button title and never lists it.
+        let head = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        head.attributedTitle = headTitle(width: button.bounds.width)
+        if isDefault {
+            head.image = NSImage(systemSymbolName: "star.fill", accessibilityDescription: "Default")?
+                .withSymbolConfiguration(.init(paletteColors: [Theme.Colors.star.nsColor]))
+        }
+        menu.addItem(head)
+        for (index, entry) in entries.enumerated() {
+            if entry.isSeparator {
+                menu.addItem(.separator())
+                continue
+            }
+            let item = NSMenuItem(title: entry.title, action: #selector(Coordinator.pick(_:)), keyEquivalent: "")
+            item.target = context.coordinator
+            item.tag = index
+            item.state = entry.checked ? .on : .off
+            item.isEnabled = entry.enabled
+            menu.addItem(item)
+        }
+        button.menu = menu
+    }
+
+    /// The name, then "Default" in the secondary color against the right edge.
+    private func headTitle(width: Double) -> NSAttributedString {
+        let font = Theme.Typography.body.nsFont
+        let text = NSMutableAttributedString(string: title, attributes: [
+            .font: font, .foregroundColor: Theme.Colors.text.nsColor,
+        ])
+        guard isDefault else { return text }
+        // The popup cell ignores tab stops, so a kerned space pushes "Default" to the right edge.
+        // 58 pt is the star image and the pull-down arrows on either side of the text.
+        let available = (width > 0 ? width : PresetPullDown.defaultWidth) - 58
+        let label = NSAttributedString(string: "Default", attributes: [
+            .font: font, .foregroundColor: Theme.Colors.text2.nsColor,
+        ])
+        let space = NSAttributedString(string: " ", attributes: [.font: font]).size().width
+        let gap = max(available - text.size().width - label.size().width - space, 8)
+        text.append(NSAttributedString(string: " ", attributes: [.font: font, .kern: gap]))
+        text.append(label)
+        return text
+    }
+
+    /// The sidebar's content width, used before the button has been laid out.
+    static let defaultWidth = Theme.BackgroundEditor.sidebarWidth - 1 - Theme.BackgroundEditor.sidebarPadding.left
+        - Theme.BackgroundEditor.sidebarPadding.right
 }
 
 /// The live preview on `canvas`, aspect-fit, with the size caption (design 17.6).
@@ -668,6 +743,14 @@ private struct PreviewPane: View {
                         .background {
                             if model.preset.background == .none { Checkerboard() }
                         }
+                        // The result sits on the canvas as an object: radius 4, a 0.5 pt edge and a
+                        // soft shadow (mockup 3).
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.BackgroundEditor.previewRadius, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.BackgroundEditor.previewRadius, style: .continuous)
+                                .strokeBorder(Color.black.opacity(0.2), lineWidth: 0.5)
+                        )
+                        .shadow(color: .black.opacity(0.28), radius: 13, y: 14)
                         .accessibilityLabel("Preview")
                 } else if let message = model.errorMessage {
                     Text(message).font(Theme.Typography.body.font).foregroundStyle(Theme.Colors.text2.color)
@@ -676,7 +759,7 @@ private struct PreviewPane: View {
             .frame(maxWidth: BackgroundEditorModel.previewArea.width, maxHeight: BackgroundEditorModel.previewArea.height)
             Spacer(minLength: 0)
             Text(model.caption)
-                .font(Theme.Typography.caption.font.monospacedDigit())
+                .font(Theme.Typography.captionSmall.font.monospacedDigit())
                 .foregroundStyle(Theme.Colors.text2.color)
         }
         .padding(Theme.BackgroundEditor.previewPadding)

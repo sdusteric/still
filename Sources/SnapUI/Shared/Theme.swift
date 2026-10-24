@@ -154,6 +154,8 @@ nonisolated public enum Theme {
         public static let dimensionPill = ThemeColor(both: .black(0.58))
         public static let crosshair = ThemeColor(both: .white(0.62))
         public static let crosshairHairline = ThemeColor(both: .black(0.30))
+        /// Pixel grid lines inside the magnifier.
+        public static let magnifierGrid = ThemeColor(both: .black(0.14))
         public static let selectionBorder = ThemeColor(both: .white(1))
         public static let selectionHairline = ThemeColor(both: .black(0.30))
         /// Window highlight fill: accent at 14%.
@@ -164,6 +166,9 @@ nonisolated public enum Theme {
         public static let copiedCheck = ThemeColor(both: .init(hex: 0x5BE37D))
         /// Hover scrim over the card thumbnail.
         public static let scrim = ThemeColor(both: .black(0.20))
+        /// Behind a thumbnail that does not fill its box (transparent window corners, a tall capture's
+        /// letterbox): the mockup's `fill2`, solid so it reads as part of the card, not a gap.
+        public static let thumbnailBacking = ThemeColor(light: .init(hex: 0xF0F0F2), dark: .init(hex: 0x2E2E31))
         /// Inner stroke on thumbnails so a white screenshot keeps its edge.
         public static let thumbnailStroke = ThemeColor(both: .black(0.18))
         /// Star on the default preset.
@@ -279,6 +284,8 @@ nonisolated public enum Theme {
         public static let magnifierRingWidth: Double = 2
         public static let magnifierHairlineWidth: Double = 1
         public static let magnifierCenterStroke: Double = 1.5
+        public static let magnifierGridWidth: Double = 0.5
+        public static let magnifierEdgeMargin: Double = 8
         public static let magnifierOffset: Double = 24
         public static let magnifierCaptionGap: Double = 12
         public static let crosshairGap: Double = 8
@@ -315,6 +322,9 @@ nonisolated public enum Theme {
         public static let previewPadding: Double = 28
         public static let sliderLabelWidth: Double = 54
         public static let sliderValueWidth: Double = 40
+        public static let valueFieldHeight: Double = 22
+        public static let sliderRowHeight: Double = 28
+        public static let previewRadius: Double = 4
         public static let alignmentSquare: Double = 18
         /// Opacity of the align grid while Ratio is Auto.
         public static let alignmentDimmedOpacity: Double = 0.55
@@ -339,6 +349,8 @@ nonisolated public enum Theme {
     public enum Settings {
         public static let width: Double = 480
         public static let tabSize = CGSize(width: 76, height: 52)
+        public static let tabGap: Double = 4
+        public static let tabRadius: Double = 10
         public static let formPadding: Double = 20
         public static let groupRadius: Double = 10
         public static let rowMinHeight: Double = 40
@@ -355,6 +367,7 @@ nonisolated public enum Theme {
         public static let iconRadius: Double = 14.4
         public static let stepPadding: Double = 16
         public static let stepIconSize: Double = 36
+        public static let footerHorizontalPadding: Double = 20
     }
 
     public enum HintPanel {

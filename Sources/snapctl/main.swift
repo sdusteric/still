@@ -9,7 +9,6 @@ let usage = """
            snapctl beautify <in.png> --out <out.png> [--preset default|<json>]
                     [--background solid:#RRGGBB|gradient:<name>|none] [--ratio W:H] [--no-autobalance] [--report]
            snapctl preset --default --json
-           snapctl latency --fake --runs N --display WxH@S [--capture-delay-ms D] --json
     """
 
 /// A usage mistake: printed with the usage text, exit status 64.
@@ -21,7 +20,7 @@ struct UsageError: Error, CustomStringConvertible {
 /// Parsed command line: positional arguments, boolean flags and `--name value` options.
 struct CommandArguments {
     static let valueOptions: Set<String> = [
-        "--out", "--preset", "--background", "--ratio", "--runs", "--display", "--capture-delay-ms",
+        "--out", "--preset", "--background", "--ratio",
     ]
 
     var positional: [String] = []
@@ -44,18 +43,6 @@ struct CommandArguments {
     }
 
     var json: Bool { flags.contains("--json") }
-
-    func int(_ name: String, default value: Int) throws -> Int {
-        guard let text = options[name] else { return value }
-        guard let parsed = Int(text), parsed >= 0 else { throw UsageError("\(name) must be a whole number") }
-        return parsed
-    }
-
-    func double(_ name: String, default value: Double) throws -> Double {
-        guard let text = options[name] else { return value }
-        guard let parsed = Double(text), parsed >= 0 else { throw UsageError("\(name) must be a number") }
-        return parsed
-    }
 
     /// An output path from `--out`, required.
     func outputURL() throws -> URL {
@@ -96,7 +83,8 @@ case "beautify":
 case "preset":
     status = await PresetCommand.run(rest)
 case "latency":
-    status = await LatencyCommand.run(rest)
+    FileHandle.standardError.write(Data("snapctl: latency moved to snapbench latency (it drives the SnapUI controllers)\n".utf8))
+    status = 64
 case "-h", "--help", "help":
     print(usage)
     status = 0

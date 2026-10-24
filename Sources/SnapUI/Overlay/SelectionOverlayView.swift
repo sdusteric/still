@@ -339,7 +339,8 @@ public final class SelectionOverlayView: NSView {
             let selection = state.phase == .dragging ? state.localSelection : nil
             let glass = MagnifierLayer.glassFrame(pointer: pointer, selection: selection, bounds: bounds)
             MagnifierLayer.draw(
-                in: context, image: state.frozenImage, pointer: pointer, glass: glass, bounds: bounds, accent: accent
+                in: context, image: state.frozenImage, pointer: pointer, selection: selection, glass: glass,
+                bounds: bounds, accent: accent
             )
             let caption = magnifierCaption(pointer: pointer, selection: selection)
             let size = OverlayDrawing.chipSize(caption)

@@ -358,8 +358,9 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
             refreshAll()
         case .moving(let last):
             guard let rect = selection, let display = selectionDisplay else { return }
-            selection = SelectionGeometry(display: display).translated(rect, dx: point.x - last.x, dy: point.y - last.y)
-            interaction = .moving(last: point)
+            let move = SelectionGeometry(display: display).moved(rect, from: last, to: point)
+            selection = move.rect
+            interaction = .moving(last: move.last)
             refreshAll()
         case .resizing(let handle):
             guard let rect = selection, let display = selectionDisplay else { return }

@@ -248,13 +248,23 @@ public final class AnnotateCanvasView: NSView {
         context.saveGState()
         context.setStrokeColor(accent)
         context.setLineWidth(Theme.Annotate.selectionBorderWidth)
+        let outset = selectionOutset(item)
+        let outline = viewRect(item.kind == .text ? item.bounds : item.box).insetBy(dx: -outset, dy: -outset)
         if item.kind != .arrow {
-            context.stroke(viewRect(item.kind == .text ? item.bounds : item.box).insetBy(dx: -2, dy: -2))
+            context.stroke(outline)
         }
         for handle in item.handles {
-            drawHandle(at: viewPoint(item.handlePoint(handle)), in: context, accent: accent)
+            let point = item.kind == .arrow ? viewPoint(item.handlePoint(handle)) : handle.point(on: outline)
+            drawHandle(at: point, in: context, accent: accent)
         }
         context.restoreGState()
+    }
+
+    /// How far the selection outline sits outside an item, in view points: clear of a rectangle's
+    /// stroke (mockup 4), so the accent line never covers the annotation color.
+    private func selectionOutset(_ item: AnnotationItem) -> Double {
+        let gap = 2.0
+        return item.kind == .rectangle ? item.width * displayScale / 2 + gap : gap
     }
 
     private func drawHandle(at point: CGPoint, in context: CGContext, accent: CGColor) {
@@ -299,12 +309,26 @@ public final class AnnotateCanvasView: NSView {
         context.strokePath()
         context.restoreGState()
 
-        let text = NSAttributedString(string: "\(zoomLabel) \u{2304}", attributes: [
-            .font: Theme.Typography.captionMedium.nsFont,
-            .foregroundColor: NSColor(cgColor: Theme.Colors.text.cgColor(dark: dark)) ?? .labelColor,
+        let color = NSColor(cgColor: Theme.Colors.text.cgColor(dark: dark)) ?? .labelColor
+        let text = NSAttributedString(string: zoomLabel, attributes: [
+            .font: Theme.Typography.captionMedium.nsFont, .foregroundColor: color,
         ])
-        let size = text.size()
-        text.draw(at: CGPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2 - 1))
+        let textSize = text.size()
+        let chevron = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 8, weight: .bold).applying(.init(paletteColors: [color])))
+        let chevronSize = chevron?.size ?? .zero
+        let gap = 4.0
+        let width = textSize.width + gap + chevronSize.width
+        let originX = rect.midX - width / 2
+        text.draw(at: CGPoint(x: originX, y: rect.midY - textSize.height / 2))
+        // The view is flipped; the symbol must not come out pointing up.
+        chevron?.draw(
+            in: CGRect(
+                x: originX + textSize.width + gap, y: rect.midY - chevronSize.height / 2,
+                width: chevronSize.width, height: chevronSize.height
+            ),
+            from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil
+        )
     }
 
     // MARK: Tools and style
@@ -483,7 +507,9 @@ public final class AnnotateCanvasView: NSView {
             beginCropDrag(at: point, radius: radius)
             return
         }
-        if let id = selection, let handle = document.handle(of: id, at: point, radius: radius) {
+        // Handles are drawn on the outset outline, so the hit radius grows by the outset.
+        let handleRadius = radius + (selection.flatMap { document.item($0) }.map(selectionOutset) ?? 0) / displayScale
+        if let id = selection, let handle = document.handle(of: id, at: point, radius: handleRadius) {
             drag = .resizing(id, handle, before: document)
             return
         }

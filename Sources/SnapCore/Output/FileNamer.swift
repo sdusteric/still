@@ -52,6 +52,24 @@ public struct FileNamer: Sendable, Hashable {
         return FileNamer.tidy(result)
     }
 
+    /// The names to try in order: `Base.png`, then `Base 2.png` up to `Base 10000.png`, then one
+    /// with a random suffix.
+    public func candidates(
+        date: Date,
+        counter: Int = 1,
+        app: String? = nil,
+        fileExtension: String = "png"
+    ) -> some Sequence<String> {
+        let base = baseName(date: date, counter: counter, app: app)
+        return (1...10_001).lazy.map { suffix in
+            switch suffix {
+            case 1: FileNamer.join(base, fileExtension)
+            case 10_001: FileNamer.join("\(base) \(UUID().uuidString.prefix(8))", fileExtension)
+            default: FileNamer.join("\(base) \(suffix)", fileExtension)
+            }
+        }
+    }
+
     /// The first free name: `Base.png`, then `Base 2.png`, `Base 3.png` and so on. `exists`
     /// receives the full file name (with extension) and says whether it is taken.
     public func fileName(
@@ -61,27 +79,24 @@ public struct FileNamer: Sendable, Hashable {
         fileExtension: String = "png",
         exists: (String) -> Bool
     ) -> String {
-        let base = baseName(date: date, counter: counter, app: app)
-        let first = FileNamer.join(base, fileExtension)
-        if !exists(first) { return first }
-        for suffix in 2...10_000 {
-            let candidate = FileNamer.join("\(base) \(suffix)", fileExtension)
-            if !exists(candidate) { return candidate }
-        }
-        return FileNamer.join("\(base) \(UUID().uuidString.prefix(8))", fileExtension)
+        let names = candidates(date: date, counter: counter, app: app, fileExtension: fileExtension)
+        return names.first { !exists($0) } ?? FileNamer.join("\(baseName(date: date)) \(UUID().uuidString.prefix(8))", fileExtension)
     }
 
-    /// A file name for `directory`, checking the real file system.
-    public func fileName(
-        in directory: URL,
+    /// Writes `data` into `directory` under the first free name and returns its URL. The name is
+    /// claimed atomically, so concurrent saves made in the same second each keep their file.
+    public func write(
+        _ data: Data,
+        into directory: URL,
         date: Date,
         counter: Int = 1,
         app: String? = nil,
         fileExtension: String = "png"
-    ) -> String {
-        fileName(date: date, counter: counter, app: app, fileExtension: fileExtension) { name in
-            FileManager.default.fileExists(atPath: directory.appending(path: name, directoryHint: .notDirectory).path(percentEncoded: false))
-        }
+    ) throws -> URL {
+        try AtomicFile.writeNew(
+            data, in: directory,
+            names: candidates(date: date, counter: counter, app: app, fileExtension: fileExtension)
+        )
     }
 
     /// Replaces the characters a file name cannot carry: colon and slash (and control characters).

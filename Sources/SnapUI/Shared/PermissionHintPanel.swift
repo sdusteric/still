@@ -27,16 +27,19 @@ public struct PermissionHintView: View {
                 .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.Colors.warningBackground.color))
             VStack(alignment: .leading, spacing: 0) {
                 Text("Snap needs Screen Recording permission")
-                    .font(Theme.Typography.bodyEmphasis.font.weight(.semibold))
+                    .font(Theme.Typography.headline.font)
                     .foregroundStyle(Theme.Colors.text.color)
                 Text("Capture will work as soon as it is on.")
                     .font(Theme.Typography.caption.font)
                     .foregroundStyle(Theme.Colors.text2.color)
+                    .padding(.top, 1)
             }
             .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: Theme.Spacing.xs)
+            // The text takes all the room up to the button, so the title wraps only where it must.
+            .frame(maxWidth: .infinity, alignment: .leading)
             Button("Open System Settings", action: onOpenSettings)
                 .controlSize(.regular)
+                .fixedSize()
         }
         .padding(.vertical, Theme.HintPanel.padding)
         .padding(.leading, 14)

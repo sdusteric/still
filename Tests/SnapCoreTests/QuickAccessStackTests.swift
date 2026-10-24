@@ -201,6 +201,42 @@ import Testing
         #expect(stack.expire().map(\.id) == ["a"])
     }
 
+    @Test func reapplyingTheSameSettingsKeepsRunningTimers() {
+        var (stack, clock) = makeStack(.init(autoClose: true, autoCloseSeconds: 15))
+        stack.push(id: "a", height: 100)
+        clock.advance(by: 10)
+        stack.push(id: "b", height: 100)
+        // An unrelated settings change (the key hints switching off) reapplies the same values.
+        stack.apply(.init(autoClose: true, autoCloseSeconds: 15))
+        #expect(stack.secondsRemaining(for: "a") == 5)
+        #expect(stack.secondsRemaining(for: "b") == 15)
+        clock.advance(by: 5)
+        #expect(stack.expire().map(\.id) == ["a"])
+    }
+
+    @Test func turningAutoCloseOnOnlyStartsCardsWithoutATimer() {
+        var (stack, clock) = makeStack(.init(autoClose: true, autoCloseSeconds: 15))
+        stack.push(id: "a", height: 100)
+        clock.advance(by: 4)
+        stack.apply(.init(autoClose: false, autoCloseSeconds: 15))
+        #expect(stack.secondsRemaining(for: "a") == nil)
+        clock.advance(by: 30)
+        #expect(stack.expire().isEmpty)
+        stack.apply(.init(autoClose: true, autoCloseSeconds: 15))
+        #expect(stack.secondsRemaining(for: "a") == 15)
+        clock.advance(by: 3)
+        stack.apply(.init(autoClose: true, autoCloseSeconds: 15))
+        #expect(stack.secondsRemaining(for: "a") == 12)
+    }
+
+    @Test func aNewIntervalKeepsTheTimeAlreadyUsed() {
+        var (stack, clock) = makeStack(.init(autoClose: true, autoCloseSeconds: 15))
+        stack.push(id: "a", height: 100)
+        clock.advance(by: 5)
+        stack.apply(.init(autoClose: true, autoCloseSeconds: 30))
+        #expect(stack.secondsRemaining(for: "a") == 25)
+    }
+
     @Test func settingTheHeightCanTriggerTheHeightLimit() {
         var (stack, _) = makeStack(.init(maxStackHeight: 400))
         stack.push(id: "a", height: 150)

@@ -324,7 +324,9 @@ public enum BeautifyRenderer {
     }
 
     /// Shadow first, then the card (design 10.2 step 9). A contact shadow sits under the soft one.
-    /// Shadow 0 draws none.
+    /// Shadow 0 draws none. Both shadows are cast by the card's alpha but drawn without the card,
+    /// so the card is composited once and translucent pixels (a window's own shadow, antialiased
+    /// corners) keep their alpha (step 6).
     private static func drawCard(_ card: CGImage, in context: CGContext, geometry: BeautifyGeometry, shadow: Double) {
         let destination = CGRect(
             x: Double(geometry.cardRect.x),
@@ -334,24 +336,26 @@ public enum BeautifyRenderer {
         let amount = shadow / 100
         let unit = geometry.unit * geometry.outputScale
         if amount > 0 {
-            context.saveGState()
-            // Shadow offsets are in the unflipped base space, where down is negative.
-            context.setShadow(
-                offset: CGSize(width: 0, height: -(1 * unit)), blur: 3 * unit,
-                color: CGColor(gray: 0, alpha: 0.12)
-            )
-            context.draw(card, in: destination)
-            context.restoreGState()
-
-            context.saveGState()
-            context.setShadow(
-                offset: CGSize(width: 0, height: -((6 + 18 * amount) * unit)), blur: (12 + 36 * amount) * unit,
-                color: CGColor(gray: 0, alpha: 0.10 + 0.40 * amount)
-            )
-            context.draw(card, in: destination)
-            context.restoreGState()
-        } else {
-            context.draw(card, in: destination)
+            let shadows: [(offset: Double, blur: Double, alpha: Double)] = [
+                (1 * unit, 3 * unit, 0.12),
+                ((6 + 18 * amount) * unit, (12 + 36 * amount) * unit, 0.10 + 0.40 * amount),
+            ]
+            // The caster is drawn this far to the right, off the canvas; the shadow offset brings
+            // only the shadow back under the card.
+            let away = Double(geometry.canvasSize.width) + destination.width + 4 * (shadows.map(\.blur).max() ?? 0)
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
+            for shadow in shadows {
+                context.saveGState()
+                // Shadow offsets are in the unflipped base space, where down is negative.
+                context.setShadow(
+                    offset: CGSize(width: -away, height: -shadow.offset), blur: shadow.blur,
+                    color: CGColor(gray: 0, alpha: shadow.alpha)
+                )
+                context.draw(card, in: destination.offsetBy(dx: away, dy: 0))
+                context.restoreGState()
+            }
+            context.endTransparencyLayer()
         }
+        context.draw(card, in: destination)
     }
 }

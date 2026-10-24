@@ -153,9 +153,24 @@ enum ShotMode {
               let tagged = bitmap.retagging(with: .sRGB) else { return nil }
         tagged.size = size
         view.layoutSubtreeIfNeeded()
+        // Without a window every layer rasterizes at 1x and text comes out soft at 2x, so the
+        // layers are told the target scale and redrawn before the capture.
+        if let layer = view.layer { setContentsScale(scale, of: layer) }
         view.displayIfNeeded()
         view.cacheDisplay(in: view.bounds, to: tagged)
         return tagged.cgImage
+    }
+
+    private static func setContentsScale(_ scale: Double, of layer: CALayer) {
+        // Only SwiftUI's drawing layers (text, shapes) and text fields are redrawn. Image layers
+        // (SF Symbols) and AppKit control parts (popup arrows) hold set contents that a redraw
+        // would empty.
+        let drawing = NSStringFromClass(type(of: layer)).hasSuffix("CGDrawingLayer")
+        if layer.contentsScale != scale, drawing || layer.delegate is NSTextField {
+            layer.contentsScale = scale
+            layer.setNeedsDisplay()
+        }
+        for sublayer in layer.sublayers ?? [] { setContentsScale(scale, of: sublayer) }
     }
 
     /// PNG at 72 DPI times the scale, written to a temp file in the same folder and renamed.

@@ -41,6 +41,9 @@ swift scripts/winlist.swift <pid>                     # on-screen windows of one
 - `snapctl`: the headless CLI. Depends on `SnapCore` only, so it never links ScreenCaptureKit
   (`check.sh` verifies with `otool -L`). Subcommands live in `<Name>Command.swift` files with
   `static func run(_ arguments: [String]) async -> Int32`.
+- `snapbench`: the AC05 latency bench (`snapbench latency --fake ...`). Depends on SnapCore and
+  SnapUI so it drives the real overlay and Quick Access controllers without panels; never
+  SnapSystem, so it does not link ScreenCaptureKit either (`check.sh` verifies).
 - Swift 6 language mode, Swift Testing (`@Suite struct XTests`, `@Test func descriptiveName()`).
 
 ## Safety rules (this is the user's real Mac)

@@ -346,7 +346,8 @@ final class AppWiring: CaptureResultPresenter {
 
     private func makeQuickAccessActions() -> QuickAccessActions {
         QuickAccessActions(
-            copy: { [weak self] id in await self?.copyCard(id) ?? false },
+            copy: { [weak self] id in await self?.copyCard(id, as: .image) ?? false },
+            copyFile: { [weak self] id in await self?.copyCard(id, as: .file) ?? false },
             save: { [weak self] id in await self?.saveCard(id) },
             toggleBackground: { [weak self] id in await self?.toggleBackground(id) },
             openBackgroundEditor: { [weak self] id in self?.openBackgroundEditor(cardID: id) },
@@ -357,9 +358,13 @@ final class AppWiring: CaptureResultPresenter {
         )
     }
 
-    private func copyCard(_ id: String) async -> Bool {
+    private func copyCard(_ id: String, as kind: ClipboardCopy.Kind) async -> Bool {
         guard let record = records[id] else { return false }
-        return await copyToClipboard(record.current)
+        // Copy File right after the capture waits for the history write that makes the file.
+        if kind == .file, record.item == nil, let stored = record.stored, let item = await stored.value?.item {
+            record.item = item
+        }
+        return await copyToClipboard(record.current, kind: kind, fileURL: record.currentURL)
     }
 
     private func saveCard(_ id: String) async -> URL? {
@@ -709,13 +714,12 @@ final class AppWiring: CaptureResultPresenter {
 
     // MARK: Output helpers
 
-    private func copyToClipboard(_ image: CapturedImage) async -> Bool {
+    private func copyToClipboard(_ image: CapturedImage, kind: ClipboardCopy.Kind = .image, fileURL: URL? = nil) async -> Bool {
         let clipboard = clipboard
         let log = log
         return await Task.detached(priority: .userInitiated) { () -> Bool in
             do {
-                let png = try PNGWriter.data(for: image.cgImage, scale: image.scale)
-                try clipboard.writeImage(pngData: png, image: image.cgImage, scale: image.scale)
+                try ClipboardCopy.write(kind, image: image, fileURL: fileURL, to: clipboard)
                 return true
             } catch {
                 log.error("copy: \(error)")
@@ -727,11 +731,9 @@ final class AppWiring: CaptureResultPresenter {
     /// Writes `image` into `folder` with the file pattern and a collision suffix, atomically.
     nonisolated static func write(_ image: CapturedImage, toFolder folder: URL, pattern: String, date: Date, app: String?)
         throws -> URL {
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let name = FileNamer(pattern: pattern).fileName(in: folder, date: date, app: app)
-        let url = folder.appending(path: name, directoryHint: .notDirectory)
-        try AtomicFile.write(PNGWriter.data(for: image.cgImage, scale: image.scale), to: url)
-        return url
+        try FileNamer(pattern: pattern).write(
+            PNGWriter.data(for: image.cgImage, scale: image.scale), into: folder, date: date, app: app
+        )
     }
 
     private static func saveAs(_ image: CapturedImage) {

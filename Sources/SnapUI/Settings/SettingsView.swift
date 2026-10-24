@@ -209,7 +209,7 @@ private struct SettingsTabBar: View {
     @Binding var selection: SettingsTab
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: Theme.Settings.tabGap) {
             ForEach(SettingsTab.allCases) { tab in
                 let selected = tab == selection
                 Button {
@@ -225,7 +225,8 @@ private struct SettingsTabBar: View {
                     .frame(width: Theme.Settings.tabSize.width, height: Theme.Settings.tabSize.height)
                     .background {
                         if selected {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.Colors.fill.color)
+                            RoundedRectangle(cornerRadius: Theme.Settings.tabRadius, style: .continuous)
+                                .fill(Theme.Colors.fill.color)
                         }
                     }
                     .contentShape(Rectangle())

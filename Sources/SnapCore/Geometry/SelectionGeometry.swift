@@ -172,6 +172,16 @@ public struct SelectionGeometry: Sendable, Hashable {
         return snap(standard.offsetBy(dx: moveX, dy: moveY))
     }
 
+    /// A move by pointer travel (Space-drag, a drag inside the selection). Returns the moved rect
+    /// and the pointer position it accounts for: `last` advances only by the shift applied, so
+    /// sub-pixel travel and travel past an edge carry over to the next event instead of being lost.
+    public func moved(_ rect: CGRect, from last: CGPoint, to pointer: CGPoint) -> (rect: CGRect, last: CGPoint) {
+        let standard = rect.standardized
+        let moved = translated(standard, dx: pointer.x - last.x, dy: pointer.y - last.y)
+        let shift = CGPoint(x: moved.minX - standard.minX, y: moved.minY - standard.minY)
+        return (moved, CGPoint(x: last.x + shift.x, y: last.y + shift.y))
+    }
+
     private func snapDelta(_ value: Double) -> Double { (value * scale).rounded() / scale }
 
     // A rect larger than the display has lower > upper; pin it to its low edge.
@@ -227,18 +237,17 @@ public struct SelectionDrag: Sendable, Hashable {
     @discardableResult
     public mutating func update(pointer location: CGPoint, modifiers: DragModifiers = [], moving: Bool = false) -> CGRect {
         self.modifiers = modifiers
-        defer { lastRawPointer = location }
         if moving {
-            let moved = geometry.translated(
-                rect, dx: location.x - lastRawPointer.x, dy: location.y - lastRawPointer.y
-            )
-            let shift = CGPoint(x: moved.minX - rect.minX, y: moved.minY - rect.minY)
+            let move = geometry.moved(rect, from: lastRawPointer, to: location)
+            let shift = CGPoint(x: move.rect.minX - rect.minX, y: move.rect.minY - rect.minY)
             anchor = CGPoint(x: anchor.x + shift.x, y: anchor.y + shift.y)
             pointer = CGPoint(x: pointer.x + shift.x, y: pointer.y + shift.y)
-            rect = moved
+            rect = move.rect
+            lastRawPointer = move.last
         } else {
             pointer = geometry.snap(geometry.clamp(location))
             rect = geometry.dragRect(anchor: anchor, pointer: pointer, modifiers: modifiers)
+            lastRawPointer = location
         }
         return rect
     }

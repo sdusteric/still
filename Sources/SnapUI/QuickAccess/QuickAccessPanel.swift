@@ -9,9 +9,11 @@ import SwiftUI
 public final class QuickAccessPanel: NSPanel, QuickAccessSurface {
     private var acceptsKeys = false
     private let keyHandler: (QuickAccessKey) -> Bool
+    private let optionHandler: (Bool) -> Void
 
     public init(controller: QuickAccessController) {
         keyHandler = { [weak controller] key in controller?.handleKey(key) ?? false }
+        optionHandler = { [weak controller] held in controller?.setOptionHeld(held) }
         super.init(
             contentRect: CGRect(x: 0, y: 0, width: 336, height: 400),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -86,6 +88,11 @@ public final class QuickAccessPanel: NSPanel, QuickAccessSurface {
             return
         }
         super.keyDown(with: event)
+    }
+
+    override public func flagsChanged(with event: NSEvent) {
+        optionHandler(event.modifierFlags.contains(.option))
+        super.flagsChanged(with: event)
     }
 
     override public func cancelOperation(_ sender: Any?) {

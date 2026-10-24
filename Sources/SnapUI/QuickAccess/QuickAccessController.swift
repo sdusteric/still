@@ -37,7 +37,7 @@ public struct QuickAccessThumbnail: Sendable {
 
 /// What a card button or key does.
 public enum QuickAccessCardAction: Sendable, Hashable, CaseIterable {
-    case copy, save, background, backgroundEditor, annotate, reveal, close
+    case copy, copyFile, save, background, backgroundEditor, annotate, reveal, close
 }
 
 /// What the app does for each card action. Supplied by the app wiring, so this UI does not depend
@@ -45,6 +45,8 @@ public enum QuickAccessCardAction: Sendable, Hashable, CaseIterable {
 public struct QuickAccessActions {
     /// Copies the item's current PNG; true on success.
     public var copy: @MainActor (String) async -> Bool
+    /// "Copy file" (Option on Copy): copies the URL of the item's current PNG; true on success.
+    public var copyFile: @MainActor (String) async -> Bool
     /// Saves to the save folder; the saved file on success.
     public var save: @MainActor (String) async -> URL?
     /// Applies the default preset, or removes it when applied.
@@ -59,6 +61,7 @@ public struct QuickAccessActions {
 
     public init(
         copy: @escaping @MainActor (String) async -> Bool = { _ in false },
+        copyFile: @escaping @MainActor (String) async -> Bool = { _ in false },
         save: @escaping @MainActor (String) async -> URL? = { _ in nil },
         toggleBackground: @escaping @MainActor (String) async -> QuickAccessThumbnail? = { _ in nil },
         openBackgroundEditor: @escaping @MainActor (String) -> Void = { _ in },
@@ -68,6 +71,7 @@ public struct QuickAccessActions {
         closed: @escaping @MainActor (String, QuickAccessStack.CloseReason) -> Void = { _, _ in }
     ) {
         self.copy = copy
+        self.copyFile = copyFile
         self.save = save
         self.toggleBackground = toggleBackground
         self.openBackgroundEditor = openBackgroundEditor
@@ -78,13 +82,19 @@ public struct QuickAccessActions {
     }
 }
 
-/// Keys on a hovered card (design 8): C, S, A, B, Delete or Esc.
+/// Keys on a hovered card (design 8): C, S, A, B, Delete or Esc, and Option-C for Copy File.
 public enum QuickAccessKey: Sendable, Hashable {
-    case copy, save, annotate, background, close
+    case copy, copyFile, save, annotate, background, close
 
+    /// `characters` is `charactersIgnoringModifiers`, so Option-C still reads as "c".
     public init?(characters: String?, keyCode: UInt16, modifiers: NSEvent.ModifierFlags = []) {
-        let blocking: NSEvent.ModifierFlags = [.command, .control, .option]
+        let blocking: NSEvent.ModifierFlags = [.command, .control]
         guard modifiers.intersection(blocking).isEmpty else { return nil }
+        if modifiers.contains(.option) {
+            guard characters?.lowercased() == "c" else { return nil }
+            self = .copyFile
+            return
+        }
         switch keyCode {
         case 51, 117, 53:
             self = .close
@@ -104,6 +114,7 @@ public enum QuickAccessKey: Sendable, Hashable {
     public var action: QuickAccessCardAction {
         switch self {
         case .copy: .copy
+        case .copyFile: .copyFile
         case .save: .save
         case .annotate: .annotate
         case .background: .background
@@ -209,6 +220,7 @@ public final class QuickAccessController {
     @ObservationIgnored private var surface: (any QuickAccessSurface)?
     @ObservationIgnored private let visibleFrame: @MainActor () -> CGRect?
     @ObservationIgnored private let reduceMotion: @MainActor () -> Bool
+    @ObservationIgnored private let optionHeld: @MainActor () -> Bool
     @ObservationIgnored private var timerTask: Task<Void, Never>?
     @ObservationIgnored private var copiedUntil: [String: TimeInterval] = [:]
     @ObservationIgnored private var confirmedUntil: [String: TimeInterval] = [:]
@@ -224,6 +236,7 @@ public final class QuickAccessController {
         actions: QuickAccessActions = QuickAccessActions(),
         visibleFrame: @escaping @MainActor () -> CGRect? = { nil },
         reduceMotion: @escaping @MainActor () -> Bool = { false },
+        optionHeld: @escaping @MainActor () -> Bool = { NSEvent.modifierFlags.contains(.option) },
         makeSurface: SurfaceFactory? = nil
     ) {
         self.clock = clock
@@ -231,6 +244,7 @@ public final class QuickAccessController {
         self.actions = actions
         self.visibleFrame = visibleFrame
         self.reduceMotion = reduceMotion
+        self.optionHeld = optionHeld
         self.makeSurface = makeSurface
         self.stack = QuickAccessStack(clock: clock, configuration: QuickAccessStack.Configuration(settings: settings))
     }
@@ -346,6 +360,7 @@ public final class QuickAccessController {
         guard let card = card(id), card.isHovered != hovered else { return }
         stack.setHovered(hovered, for: id)
         let animation = hovered ? Theme.Motion.enter(Theme.Motion.hoverIn) : Theme.Motion.exit(Theme.Motion.hoverOut)
+        if hovered { card.copiesFile = optionHeld() }
         withAnimation(animation) {
             card.isHovered = hovered
         }
@@ -354,6 +369,11 @@ public final class QuickAccessController {
     }
 
     public var hoveredCard: QuickAccessCardModel? { cards.first { $0.isHovered } }
+
+    /// Option went down or up while the panel had the keys: the Copy button reads Copy File.
+    public func setOptionHeld(_ held: Bool) {
+        for card in cards where card.copiesFile != held { card.copiesFile = held }
+    }
 
     public func dragBegan(_ id: String) {
         guard let card = card(id) else { return }
@@ -413,8 +433,8 @@ public final class QuickAccessController {
     public func perform(_ action: QuickAccessCardAction, on id: String) async {
         guard card(id) != nil else { return }
         switch action {
-        case .copy:
-            let copied = await actions.copy(id)
+        case .copy, .copyFile:
+            let copied = action == .copyFile ? await actions.copyFile(id) : await actions.copy(id)
             guard copied else { return }
             confirm(id, closeAfter: .copy)
         case .save:
@@ -451,7 +471,12 @@ public final class QuickAccessController {
     public func handler(for id: String) -> QuickAccessCardHandler {
         QuickAccessCardHandler(
             edgeSign: swipeRule.edgeSign,
-            perform: { [weak self] action in Task { await self?.perform(action, on: id) } },
+            perform: { [weak self] action in
+                guard let self else { return }
+                // Option-click on Copy is Copy File (design 9).
+                let resolved = action == .copy && optionHeld() ? QuickAccessCardAction.copyFile : action
+                Task { await self.perform(resolved, on: id) }
+            },
             hover: { [weak self] hovered in self?.setHovered(hovered, for: id) },
             dragBegan: { [weak self] in self?.dragBegan(id) },
             dragEnded: { [weak self] accepted in self?.dragEnded(id, accepted: accepted) },

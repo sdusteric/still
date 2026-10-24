@@ -467,6 +467,42 @@ private struct Harness {
         #expect(ticket.result.trace.order.last == .save)
     }
 
+    @Test func concurrentSavesWithTheSameNameKeepEveryFile() throws {
+        let home = FileManager.default.temporaryDirectory
+            .appending(path: "snap-race-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer {
+            do { try FileManager.default.removeItem(at: home) } catch { Issue.record("\(error)") }
+        }
+        let folder = SnapPaths(home: home).defaultSaveFolder
+        // Noise encodes to a large PNG, so the old check-then-rename window was wide enough to lose files.
+        let image = try #require(SyntheticImages.noise(width: 1600, height: 1000))
+        let date = Date(timeIntervalSince1970: 1_792_843_200)
+        let runs = 12
+        let saved = Mutex<[URL]>([])
+        // Every run has the same timestamp, so all of them want the same file name at once.
+        DispatchQueue.concurrentPerform(iterations: runs) { run in
+            // Separate history stores, so the runs reach the save step together, as a Quick Access
+            // Save and a capture's own save can.
+            let history = HistoryStore(paths: SnapPaths(home: home.appending(path: "run-\(run)", directoryHint: .isDirectory)))
+            let stage = CaptureOutputStage(history: history, clipboard: nil)
+            let result = CaptureResult(
+                mode: .area, image: CapturedImage(cgImage: image, scale: 2), createdAt: date,
+                rect: CGRect(x: 0, y: 0, width: 400, height: 300),
+                trace: CaptureTrace(mode: .area, triggerTime: 0)
+            )
+            do {
+                let stored = try stage.run(result, configuration: CaptureConfiguration(saveFolder: folder))
+                if let url = stored.savedURL { saved.withLock { $0.append(url) } }
+            } catch {
+                Issue.record("run failed: \(error)")
+            }
+        }
+        let urls = saved.withLock { $0 }
+        #expect(Set(urls).count == runs)
+        let files = try FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false))
+        #expect(files.filter { $0.hasSuffix(".png") }.count == runs)
+    }
+
     @Test func configurationFollowsSettings() {
         var settings = Settings()
         settings.capture.copyToClipboard = false

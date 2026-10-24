@@ -11,6 +11,7 @@ let package = Package(
     products: [
         .executable(name: "Snap", targets: ["Snap"]),
         .executable(name: "snapctl", targets: ["snapctl"]),
+        .executable(name: "snapbench", targets: ["snapbench"]),
     ],
     targets: [
         .target(name: "SnapCore"),
@@ -29,6 +30,9 @@ let package = Package(
             swiftSettings: mainActorByDefault
         ),
         .executableTarget(name: "snapctl", dependencies: ["SnapCore"]),
+        // The AC05 latency bench: the real overlay and Quick Access controllers, so it needs SnapUI
+        // (AppKit), which snapctl stays without. Neither links SnapSystem or ScreenCaptureKit.
+        .executableTarget(name: "snapbench", dependencies: ["SnapCore", "SnapUI"], swiftSettings: mainActorByDefault),
         .testTarget(name: "SnapCoreTests", dependencies: ["SnapCore"]),
         .testTarget(name: "SnapSystemTests", dependencies: ["SnapSystem", "SnapCore"]),
         .testTarget(name: "SnapUITests", dependencies: ["SnapUI", "SnapCore"]),

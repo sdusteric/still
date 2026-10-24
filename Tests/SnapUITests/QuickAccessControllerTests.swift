@@ -51,6 +51,10 @@ final class ActionLog {
                 self.calls.append("copy \(id)")
                 return self.copySucceeds
             },
+            copyFile: { id in
+                self.calls.append("copy file \(id)")
+                return self.copySucceeds
+            },
             save: { id in
                 self.calls.append("save \(id)")
                 return self.savedURL
@@ -79,7 +83,13 @@ final class ActionLog {
         var made = 0
     }
 
-    func makeController(settings: QuickAccessSettings = QuickAccessSettings(), box: SurfaceBox? = nil) -> QuickAccessController {
+    final class OptionKey {
+        var held = false
+    }
+
+    func makeController(
+        settings: QuickAccessSettings = QuickAccessSettings(), box: SurfaceBox? = nil, option: OptionKey = OptionKey()
+    ) -> QuickAccessController {
         let visible = visible
         var factory: QuickAccessController.SurfaceFactory?
         if let box {
@@ -95,6 +105,7 @@ final class ActionLog {
             settings: settings,
             actions: log.actions(),
             visibleFrame: { visible },
+            optionHeld: { option.held },
             makeSurface: factory
         )
     }
@@ -189,6 +200,40 @@ final class ActionLog {
         advance(controller, by: 0.01)
         #expect(controller.cards.isEmpty)
         #expect(log.closed.first?.1 == .copied)
+    }
+
+    @Test func optionOnCopyCopiesTheFileInstead() async {
+        let option = OptionKey()
+        let controller = makeController(option: option)
+        controller.show(item("a"))
+        controller.show(item("b"))
+        controller.handler(for: "a").perform(.copy)
+        for _ in 0..<5 { await Task.yield() }
+        #expect(log.calls == ["copy a"])
+
+        option.held = true
+        controller.handler(for: "b").hover(true)
+        #expect(controller.card("b")?.copiesFile == true)
+        controller.handler(for: "b").perform(.copy)
+        for _ in 0..<5 { await Task.yield() }
+        #expect(log.calls == ["copy a", "copy file b"])
+        #expect(controller.card("b")?.confirmedAction == .copy)
+
+        // The panel reports Option going up, and the button reads Copy again.
+        controller.setOptionHeld(false)
+        #expect(controller.card("b")?.copiesFile == false)
+    }
+
+    @Test func optionCOnAHoveredCardCopiesTheFile() async {
+        #expect(QuickAccessKey(characters: "c", keyCode: 8, modifiers: .option) != nil)
+        #expect(QuickAccessKey(characters: "c", keyCode: 8, modifiers: .option) == .copyFile)
+        #expect(QuickAccessKey(characters: "s", keyCode: 1, modifiers: .option) == nil)
+        let controller = makeController()
+        controller.show(item("a"))
+        controller.setHovered(true, for: "a")
+        #expect(controller.handleKey(.copyFile))
+        for _ in 0..<5 { await Task.yield() }
+        #expect(log.calls == ["copy file a"])
     }
 
     @Test func aFailedCopyKeepsTheCardWithoutACheck() async {

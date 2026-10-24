@@ -71,7 +71,7 @@ public final class CaptureTrace: Sendable {
     }
 }
 
-/// The three numbers the app logs per capture and `snapctl latency` summarizes.
+/// The three numbers the app logs per capture and `snapbench latency` summarizes.
 public struct LatencySample: Sendable, Hashable, Codable {
     /// Trigger to overlay presented.
     public var overlayMS: Double?
@@ -117,7 +117,7 @@ public enum LatencyLog {
     /// clipboard off) are left out, but the rest never change places.
     public static let canonicalOrder: [CaptureEvent] = CaptureEvent.allCases
 
-    /// The full area or window order with the clipboard on and no save, which `snapctl latency`
+    /// The full area or window order with the clipboard on and no save, which `snapbench latency`
     /// requires of every run.
     public static let fullOrder: [CaptureEvent] = [.present, .frozen, .confirm, .card, .encode, .history, .clipboard]
 

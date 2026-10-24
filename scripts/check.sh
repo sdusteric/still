@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # All gates (design section 16). Exits 0 only when every gate passes.
-#   swift build -c release -> swift test -> swiftlint --strict -> snapctl does not link
-#   ScreenCaptureKit -> scripts/bundle.sh --release -> codesign --verify --strict -> plutil -lint,
+#   swift build -c release -> swift test -> swiftlint --strict -> snapctl and snapbench do not
+#   link ScreenCaptureKit -> scripts/bundle.sh --release -> codesign --verify --strict -> plutil -lint,
 #   bundle id and LSUIElement -> designated requirement -> no em or en dashes
 #
 # Env: SNAP_SCRATCH  SwiftPM scratch path (default <repo>/.build). Agents building in parallel
@@ -58,13 +58,16 @@ run_lint() {
 }
 
 snapctl_no_sck() {
-  local bin linked
-  bin="$(swift build -c release --package-path "$ROOT" --scratch-path "$SCRATCH" --show-bin-path)/snapctl"
-  [ -x "$bin" ] || { echo "missing $bin"; return 1; }
-  linked="$(otool -L "$bin")"
-  echo "$linked"
-  if grep -q ScreenCaptureKit <<<"$linked"; then echo "snapctl links ScreenCaptureKit"; return 1; fi
-  echo "snapctl does not link ScreenCaptureKit"
+  local dir bin name linked
+  dir="$(swift build -c release --package-path "$ROOT" --scratch-path "$SCRATCH" --show-bin-path)"
+  for name in snapctl snapbench; do
+    bin="$dir/$name"
+    [ -x "$bin" ] || { echo "missing $bin"; return 1; }
+    linked="$(otool -L "$bin")"
+    echo "$linked"
+    if grep -q ScreenCaptureKit <<<"$linked"; then echo "$name links ScreenCaptureKit"; return 1; fi
+    echo "$name does not link ScreenCaptureKit"
+  done
 }
 
 bundle_app() {

@@ -104,8 +104,12 @@ import Testing
             do { try FileManager.default.removeItem(at: folder) } catch { Issue.record("cleanup failed: \(error)") }
         }
         let namer = FileNamer(pattern: "Shot", timeZone: Self.paris)
-        #expect(namer.fileName(in: folder, date: Self.date()) == "Shot.png")
-        try Data().write(to: folder.appending(path: "Shot.png", directoryHint: .notDirectory))
-        #expect(namer.fileName(in: folder, date: Self.date()) == "Shot 2.png")
+        let first = try namer.write(Data("one".utf8), into: folder, date: Self.date())
+        #expect(first.lastPathComponent == "Shot.png")
+        let second = try namer.write(Data("two".utf8), into: folder, date: Self.date())
+        #expect(second.lastPathComponent == "Shot 2.png")
+        #expect(try Data(contentsOf: first) == Data("one".utf8))
+        let left = try FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false))
+        #expect(left.sorted() == ["Shot 2.png", "Shot.png"])
     }
 }

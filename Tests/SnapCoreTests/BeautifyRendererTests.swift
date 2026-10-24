@@ -233,6 +233,42 @@ private func maxChannelDifference(_ lhs: SyntheticImages.Pixel, _ rhs: Synthetic
         #expect(canvasCorner.alpha == 0)
     }
 
+    /// A 400 x 300 window-like capture at 2x: a transparent 20 px margin around an opaque gray
+    /// body, with a 10 x 10 block of `block` at alpha 128 in the middle.
+    private func translucentBlockImage(_ block: UInt8) throws -> CGImage {
+        let width = 400
+        let height = 300
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        for row in 20..<(height - 20) {
+            for column in 20..<(width - 20) {
+                let base = (row * width + column) * 4
+                let inBlock = (195..<205).contains(column) && (145..<155).contains(row)
+                bytes[base] = inBlock ? block : 120
+                bytes[base + 1] = inBlock ? block : 120
+                bytes[base + 2] = inBlock ? block : 120
+                bytes[base + 3] = inBlock ? 128 : 255
+            }
+        }
+        return try #require(SyntheticImages.image(fromRGBA: bytes, width: width, height: height))
+    }
+
+    @Test func translucentCardPixelsKeepTheirAlphaUnderTheShadow() throws {
+        // Two captures that differ only in the colour of a 50% alpha block cast the same shadow, so
+        // the output difference there is the block's own contribution: its alpha, once.
+        let preset = preset(background: .solid(RGBAColor(hex: "#808080") ?? .white), shadow: 32, autoBalance: false)
+        let dark = try BeautifyRenderer.render(try translucentBlockImage(0), scale: 2, preset: preset)
+        let light = try BeautifyRenderer.render(try translucentBlockImage(255), scale: 2, preset: preset)
+        let geometry = dark.geometry
+        #expect(geometry.uniformBorder)
+        let inset = Int((geometry.inset * geometry.outputScale).rounded())
+        let x = geometry.cardRect.x + inset + 200
+        let y = geometry.cardRect.y + inset + 150
+        let darkPixel = try #require(SyntheticImages.pixel(of: dark.image, x: x, y: y))
+        let lightPixel = try #require(SyntheticImages.pixel(of: light.image, x: x, y: y))
+        let contribution = Int(lightPixel.green) - Int(darkPixel.green)
+        #expect(abs(contribution - 128) <= 1, "the block contributes \(contribution)/255, expected 128/255")
+    }
+
     @Test func gradientRunsFromFirstStopAtTopLeftToLastAtBottomRight() throws {
         let gradient = BackgroundPreset(background: .gradient(.dusk), padding: 60, inset: 0, shadow: 0)
         let output = try render(.noise1x, gradient)

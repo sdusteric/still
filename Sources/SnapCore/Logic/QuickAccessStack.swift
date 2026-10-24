@@ -222,12 +222,22 @@ public struct QuickAccessStack: Sendable {
     }
 
     /// Applies new settings. Running timers keep their deadlines; paused cards get one when released.
-    /// Turning auto close off clears every deadline, turning it on starts timers on free cards.
+    /// Turning auto close off clears every deadline, turning it on starts timers on free cards that
+    /// have none. A new interval keeps the time a running timer has already used.
     public mutating func apply(_ configuration: Configuration) {
+        let old = self.configuration
         self.configuration = configuration
-        let deadline = newDeadline()
-        for index in cards.indices {
-            cards[index].deadline = cards[index].isPaused ? nil : deadline
+        guard configuration.autoClose else {
+            for index in cards.indices { cards[index].deadline = nil }
+            return
+        }
+        let change = old.autoClose ? configuration.autoCloseSeconds - old.autoCloseSeconds : 0
+        for index in cards.indices where !cards[index].isPaused {
+            if let deadline = cards[index].deadline {
+                cards[index].deadline = deadline + change
+            } else {
+                cards[index].deadline = newDeadline()
+            }
         }
     }
 

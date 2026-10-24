@@ -189,6 +189,8 @@ public enum AnnotateDemo {
         guard let document = makeDocument(dark: dark) else { return NSView(frame: CGRect(origin: .zero, size: size)) }
         let model = AnnotateEditorModel()
         model.tool = .rectangle
+        // The four items were drawn in this session, so Undo is available (mockup 4).
+        model.canUndo = true
         let view = AnnotateEditorView(document: document, model: model, inlineToolbar: true)
         view.canvas.setSelection(document.items.first?.id)
         view.frame = CGRect(origin: .zero, size: size)

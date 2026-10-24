@@ -11,7 +11,7 @@ public protocol ClipboardWriting: Sendable {
 }
 
 /// What the coordinator reports after the overlay is gone. Live: the Quick Access controller in
-/// SnapUI, wired by the app. Fake: a recording presenter in tests and `snapctl latency`.
+/// SnapUI, wired by the app (`snapbench latency` uses it too). Fake: a recording presenter in tests.
 @MainActor
 public protocol CaptureResultPresenter: AnyObject {
     /// Shows the Quick Access card. Called before the image is encoded, stored or copied.
@@ -221,11 +221,7 @@ public struct CaptureOutputStage: Sendable {
         var savedURL: URL?
         if let folder = configuration.saveFolder {
             do {
-                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                let name = namer.fileName(in: folder, date: result.createdAt, app: result.sourceApp)
-                let target = folder.appending(path: name, directoryHint: .notDirectory)
-                try AtomicFile.write(png, to: target)
-                savedURL = target
+                savedURL = try namer.write(png, into: folder, date: result.createdAt, app: result.sourceApp)
                 trace.record(.save, at: clock.now())
             } catch {
                 problems.append("save: \(error)")

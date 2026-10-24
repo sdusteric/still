@@ -46,6 +46,8 @@ public final class QuickAccessCardModel: Identifiable {
     /// The button that shows a check for 900 ms after it succeeded.
     public var confirmedAction: QuickAccessCardAction?
     public var countdown: QuickAccessCountdown?
+    /// Option is held: Copy writes the file URL (design 9) and its button says so.
+    public var copiesFile = false
     public var swipeOffset = 0.0
     @ObservationIgnored var pendingCloseAction: QuickAccessStack.CardAction?
 
@@ -175,7 +177,7 @@ public struct QuickAccessCardView: View {
         let size = card.thumbnailSize
         let shape = RoundedRectangle(cornerRadius: Theme.QuickAccess.thumbnailRadius, style: .continuous)
         return ZStack {
-            Color(nsColor: .quaternaryLabelColor)
+            Theme.Colors.thumbnailBacking.color
             Image(decorative: card.thumbnail, scale: 1)
                 .resizable()
                 .interpolation(.high)
@@ -275,7 +277,11 @@ public struct QuickAccessCardView: View {
             backgroundSplitButton
             iconButton("pencil", label: "Annotate", key: "A", action: .annotate)
             iconButton(card.confirmedAction == .save ? "checkmark" : "square.and.arrow.down", label: "Save", key: "S", action: .save)
-            iconButton(card.confirmedAction == .copy ? "checkmark" : "doc.on.doc", label: "Copy", key: "C", action: .copy)
+            iconButton(
+                card.confirmedAction == .copy ? "checkmark" : (card.copiesFile ? "doc" : "doc.on.doc"),
+                label: card.copiesFile ? "Copy File" : "Copy", key: card.copiesFile ? "\u{2325}C" : "C",
+                action: card.copiesFile ? .copyFile : .copy
+            )
             if card.savedURL != nil {
                 iconButton("folder", label: "Show in Finder", key: nil, action: .reveal)
             }
@@ -297,7 +303,7 @@ public struct QuickAccessCardView: View {
             Button { handler.perform(.background) } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "wand.and.stars")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12, weight: .semibold))
                     if !card.compactBar {
                         Text("Background")
                             .font(Theme.Typography.captionSemibold.font)

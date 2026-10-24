@@ -69,7 +69,7 @@ public struct OnboardingView: View {
                 steps
                     .padding(.top, 20)
             }
-            .padding(.horizontal, Theme.Onboarding.padding - 6)
+            .padding(.horizontal, Theme.Onboarding.padding)
             .padding(.top, Theme.Onboarding.padding + 6)
             .padding(.bottom, Theme.Spacing.l)
             Rectangle().fill(Theme.Colors.separator.color).frame(height: 1)
@@ -187,7 +187,7 @@ public struct OnboardingView: View {
             }
         }
         .font(Theme.Typography.button.font)
-        .padding(.horizontal, Theme.Spacing.m)
+        .padding(.horizontal, Theme.Onboarding.footerHorizontalPadding)
         .padding(.vertical, Theme.Spacing.s)
     }
 }
@@ -260,10 +260,17 @@ struct AppIconView: View {
 
 /// The first-run window in its two states (mockup section 7), for tests and shots.
 public enum OnboardingDemo {
-    public static let size = CGSize(width: Theme.Onboarding.width, height: 500)
+    /// The window's content size in that state: the app sizes the window to fit, so the shot does too.
+    public static func size(granted: Bool) -> CGSize {
+        let model = OnboardingModel(permissionGranted: granted, cleanShotRunning: true)
+        let height = NSHostingController(rootView: OnboardingView(model: model))
+            .sizeThatFits(in: CGSize(width: Theme.Onboarding.width, height: 10_000)).height
+        return CGSize(width: Theme.Onboarding.width, height: height.rounded(.up))
+    }
 
     public static func makeView(granted: Bool = false, dark: Bool = false) -> NSView {
         let model = OnboardingModel(permissionGranted: granted, cleanShotRunning: true)
+        let size = size(granted: granted)
         let view = NSHostingView(rootView: OnboardingView(model: model)
             .frame(width: size.width, height: size.height, alignment: .top)
             .background(Theme.Colors.window.color))

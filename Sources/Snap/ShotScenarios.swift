@@ -33,7 +33,8 @@ enum ShotScenario: String, CaseIterable, Sendable {
         case .annotate: AnnotateDemo.size
         case .menu: MenuDemo.size
         case .settings, .settingsShortcuts: SettingsDemo.size
-        case .onboarding, .onboardingGranted: OnboardingDemo.size
+        case .onboarding: OnboardingDemo.size(granted: false)
+        case .onboardingGranted: OnboardingDemo.size(granted: true)
         case .permissionHint: ShotScenario.hintSceneSize
         }
     }

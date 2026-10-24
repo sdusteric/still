@@ -1,17 +1,20 @@
 import CoreGraphics
 import Foundation
 import SnapCore
+import SnapUI
 import Synchronization
 
-/// `snapctl latency --fake`: runs CaptureCoordinator with FakeCaptureSource, FakeWindowSource, a
-/// recording overlay and a real monotonic clock, then prints p50, p95 and max for each stage and
-/// the event order of every run (design 6.6, acceptance AC05). Exits 1 when any run's order is wrong.
-enum LatencyCommand {
+/// `snapbench latency --fake`: runs CaptureCoordinator with FakeCaptureSource, FakeWindowSource,
+/// the real OverlayController and QuickAccessController (no panels, a cursor that does nothing)
+/// and a real monotonic clock, then prints p50, p95 and max for each stage and the event order of
+/// every run (design 6.6, acceptance AC05). Exits 1 when any run's order is wrong.
+@MainActor
+enum LatencyBench {
     static func run(_ arguments: [String]) async -> Int32 {
         do {
-            let parsed = try CommandArguments(arguments)
+            let parsed = try BenchArguments(arguments)
             guard parsed.flags.contains("--fake") else {
-                throw UsageError("latency needs --fake: snapctl never captures the screen")
+                throw UsageError("latency needs --fake: snapbench never captures the screen")
             }
             let runs = try parsed.int("--runs", default: 50)
             guard runs > 0 else { throw UsageError("--runs must be at least 1") }
@@ -25,8 +28,10 @@ enum LatencyCommand {
                 mode: CaptureMode.area.rawValue, display: spec, runs: runs, warmupRuns: warmupRuns,
                 captureDelayMs: delayMS, expectedOrder: LatencyLog.fullOrder.map(\.rawValue), runDetails: report
             )
-            if parsed.json {
-                print(try PresetCommand.jsonString(summary))
+            if parsed.flags.contains("--json") {
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                print(String(decoding: try encoder.encode(summary), as: UTF8.self))
             } else {
                 print(summary.text)
             }
@@ -39,41 +44,54 @@ enum LatencyCommand {
     /// One untimed run first, so one-time setup (image caches, the PNG encoder) is not counted.
     static let warmupRuns = 1
 
-    @MainActor
     private static func measure(runs: Int, display: DisplayInfo, captureDelay: TimeInterval) async throws -> [RunDetail] {
         let home = FileManager.default.temporaryDirectory
-            .appending(path: "snapctl-latency-\(UUID().uuidString)", directoryHint: .isDirectory)
+            .appending(path: "snapbench-latency-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         defer {
             do {
                 try FileManager.default.removeItem(at: home)
             } catch {
-                FileHandle.standardError.write(Data("snapctl: could not remove \(home.path(percentEncoded: false)): \(error)\n".utf8))
+                FileHandle.standardError.write(Data("snapbench: could not remove \(home.path(percentEncoded: false)): \(error)\n".utf8))
             }
         }
 
         let clock = SystemClock()
         let source = FakeCaptureSource(displays: [display], windows: FakeWindowSource.sample, delay: captureDelay, clock: clock)
-        let overlay = LatencyOverlay(selection: selectionRect(on: display), displayID: display.id)
-        let results = LatencyResults()
+        let area = selectionRect(on: display)
+        // No surface factory: the controllers keep their full state but never make a window.
+        let overlay = OverlayController(
+            options: OverlayController.Options(instantCapture: true),
+            cursor: InertCursor(),
+            pointerLocation: { CGPoint(x: area.minX, y: area.minY) }
+        )
+        let user = SimulatedUser(overlay: overlay, selection: area, displayID: display.id)
+        let quickAccess = QuickAccessController(
+            clock: clock,
+            visibleFrame: { CGRect(x: 0, y: 0, width: display.frameTopLeft.width, height: display.frameTopLeft.height - 25) },
+            optionHeld: { false }
+        )
+        let results = BenchResults(quickAccess: quickAccess)
         let stage = CaptureOutputStage(
             history: HistoryStore(paths: SnapPaths(home: home), clock: clock), clipboard: DiscardingClipboard(), clock: clock
         )
         let coordinator = CaptureCoordinator(
-            captureSource: source, windowSource: FakeWindowSource(), overlay: overlay, results: results,
+            captureSource: source, windowSource: FakeWindowSource(), overlay: user, results: results,
             output: stage, clock: clock
         )
         try await coordinator.refreshDisplays()
 
         var details: [RunDetail] = []
         for index in 0..<(runs + warmupRuns) {
-            overlay.reset()
             let trigger = clock.now()
             guard let ticket = await coordinator.run(mode: .area, eventTime: trigger) else {
                 throw LatencyError.runFailed(index + 1, results.lastFailure ?? "cancelled")
             }
             guard await ticket.stored.value != nil else {
                 throw LatencyError.runFailed(index + 1, results.lastFailure ?? "output stage failed")
+            }
+            guard results.cardsShown == index + 1, quickAccess.cards.first?.id == results.lastCardID else {
+                throw LatencyError.runFailed(index + 1, "the Quick Access controller did not show the card")
             }
             guard index >= warmupRuns else { continue }
             let trace = ticket.result.trace
@@ -87,6 +105,7 @@ enum LatencyCommand {
                 cardMs: sample.cardMS
             ))
         }
+        quickAccess.closeAll()
         return details
     }
 
@@ -111,61 +130,82 @@ enum LatencyCommand {
     }
 }
 
-/// Stands in for the overlay panels: the user's mouse-up is simulated right after the frozen
-/// image is handed over, since no person selects faster than that.
+/// The real overlay with a user who drags out the selection the moment the frozen image is
+/// shown, since no person selects faster than that. Every presenter call goes to the controller.
 @MainActor
-private final class LatencyOverlay: OverlayPresenter {
+private final class SimulatedUser: OverlayPresenter {
+    private let overlay: OverlayController
     private let area: CGRect
     private let displayID: DisplayID
-    private var frozen = false
-    private var pending: CheckedContinuation<OverlaySelection, Never>?
 
-    init(selection: CGRect, displayID: DisplayID) {
+    init(overlay: OverlayController, selection: CGRect, displayID: DisplayID) {
+        self.overlay = overlay
         self.area = selection
         self.displayID = displayID
     }
 
-    func reset() {
-        frozen = false
+    func present(mode: CaptureMode, displays: [DisplayInfo]) {
+        overlay.present(mode: mode, displays: displays)
     }
-
-    func present(mode: CaptureMode, displays: [DisplayInfo]) {}
 
     func showFrozen(_ image: CapturedImage, displayID: DisplayID) {
+        overlay.showFrozen(image, displayID: displayID)
         guard displayID == self.displayID else { return }
-        frozen = true
-        resume(with: .area(displayID: displayID, rect: area))
+        let start = CGPoint(x: area.minX, y: area.minY)
+        let end = CGPoint(x: area.maxX, y: area.maxY)
+        overlay.handle(.mouseDown(start, clickCount: 1, modifiers: []))
+        overlay.handle(.mouseDragged(CGPoint(x: area.midX, y: area.midY), modifiers: []))
+        overlay.handle(.mouseDragged(end, modifiers: []))
+        overlay.handle(.mouseUp(end, modifiers: []))
     }
 
-    func updateWindows(_ windows: [WindowInfo]) {}
+    func updateWindows(_ windows: [WindowInfo]) {
+        overlay.updateWindows(windows)
+    }
 
     func selection() async -> OverlaySelection {
-        if frozen { return .area(displayID: displayID, rect: area) }
-        return await withCheckedContinuation { pending = $0 }
+        await overlay.selection()
     }
 
     func dismiss() {
-        resume(with: .cancelled)
-    }
-
-    private func resume(with selection: OverlaySelection) {
-        guard let pending else { return }
-        self.pending = nil
-        pending.resume(returning: selection)
+        overlay.dismiss()
     }
 }
 
+/// The cursor stays as it is: snapbench is not the frontmost app and must not change it.
 @MainActor
-private final class LatencyResults: CaptureResultPresenter {
-    var lastFailure: String?
+private final class InertCursor: OverlayCursor {
+    func hide() {}
+    func unhide() {}
+}
 
-    func showCard(for capture: CaptureResult) {}
+/// Shows each capture as a Quick Access card, as the app does, before the output stage runs.
+@MainActor
+private final class BenchResults: CaptureResultPresenter {
+    let quickAccess: QuickAccessController
+    var lastFailure: String?
+    private(set) var cardsShown = 0
+    private(set) var lastCardID: String?
+
+    init(quickAccess: QuickAccessController) {
+        self.quickAccess = quickAccess
+    }
+
+    func showCard(for capture: CaptureResult) {
+        cardsShown += 1
+        let id = "bench-\(cardsShown)"
+        lastCardID = id
+        quickAccess.show(QuickAccessItem(
+            id: id, thumbnail: capture.image.cgImage, pointSize: capture.image.pointSize, copied: true
+        ))
+    }
+
     func captureStored(_ stored: StoredCapture) {}
     func captureFailed(_ failure: CaptureFailure) { lastFailure = failure.message }
 }
 
-/// snapctl never touches the pasteboard; this only counts the write so the event is recorded.
-private final class DiscardingClipboard: ClipboardWriting {
+/// snapbench never touches the pasteboard; this only counts the write so the event is recorded.
+nonisolated private final class DiscardingClipboard: ClipboardWriting {
     private let writes = Atomic<Int>(0)
 
     func writeImage(pngData: Data, image: CGImage, scale: Double) throws {

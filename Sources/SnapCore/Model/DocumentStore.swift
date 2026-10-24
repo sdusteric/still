@@ -42,6 +42,33 @@ public enum AtomicFile {
             throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
         }
     }
+
+    /// Writes `data` under the first name in `names` that is free and returns its URL. The name is
+    /// claimed with `renamex_np(RENAME_EXCL)` from a temp file, so an existing file is never
+    /// replaced and two writers racing for one name both keep their file.
+    public static func writeNew(_ data: Data, in directory: URL, names: some Sequence<String>) throws -> URL {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let temp = directory.appending(path: ".snap-new.tmp-\(UUID().uuidString)", directoryHint: .notDirectory)
+        try data.write(to: temp)
+        var failure = POSIXErrorCode.EEXIST
+        for name in names {
+            let target = directory.appending(path: name, directoryHint: .notDirectory)
+            if renamex_np(temp.path(percentEncoded: false), target.path(percentEncoded: false), UInt32(RENAME_EXCL)) == 0 {
+                return target
+            }
+            let code = errno
+            if code != EEXIST {
+                failure = POSIXErrorCode(rawValue: code) ?? .EIO
+                break
+            }
+        }
+        do {
+            try FileManager.default.removeItem(at: temp)
+        } catch {
+            // The claim failure below is the useful error; a stray temp file is harmless.
+        }
+        throw POSIXError(failure)
+    }
 }
 
 /// One JSON file with atomic writes and recovery from a corrupt or newer file. Settings, state
