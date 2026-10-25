@@ -12,7 +12,7 @@ struct HistoryTileHandler {
 }
 
 /// One history tile (design 20.3, mockup 9): a 164 x 112 box on `thumbnailBacking` with the
-/// current image aspect-fit, badges (duration, wand, Interrupted), the selection ring 4 pt
+/// current image aspect-fit, badges (duration, edited, Interrupted), the selection ring 4 pt
 /// outside, and the caption with the time and the app.
 struct HistoryTile: View {
     let item: CaptureItem
@@ -134,7 +134,7 @@ struct HistoryTile: View {
     }
 
     private var editedChip: some View {
-        Image(systemName: "wand.and.sparkles")
+        Image(systemName: "pencil")
             .font(.system(size: 10, weight: .semibold))
             .foregroundStyle(Theme.Colors.chipText.color)
             .frame(width: Theme.History.editedChipSize, height: Theme.History.editedChipSize)

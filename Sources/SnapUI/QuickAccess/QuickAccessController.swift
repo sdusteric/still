@@ -22,6 +22,8 @@ public struct QuickAccessItem: Sendable {
     public var note: String?
     /// A recording whose file does not play: the card offers Reveal in Finder and Close only.
     public var revealOnly: Bool
+    /// Whether the asked-for audio is in a recording (design 20.6); nil when none was asked for.
+    public var audioCheck: AudioCheck?
 
     public init(
         id: String,
@@ -32,7 +34,8 @@ public struct QuickAccessItem: Sendable {
         kind: QuickAccessStack.CardKind = .screenshot,
         durationSeconds: Double? = nil,
         note: String? = nil,
-        revealOnly: Bool = false
+        revealOnly: Bool = false,
+        audioCheck: AudioCheck? = nil
     ) {
         self.id = id
         self.thumbnail = thumbnail
@@ -43,6 +46,7 @@ public struct QuickAccessItem: Sendable {
         self.durationSeconds = durationSeconds
         self.note = note
         self.revealOnly = revealOnly
+        self.audioCheck = audioCheck
     }
 }
 
@@ -353,6 +357,7 @@ public final class QuickAccessController {
         model.savedURL = item.savedURL
         model.note = item.note
         model.revealOnly = item.revealOnly
+        model.audioCheck = item.audioCheck
         if item.copied { copiedUntil[item.id] = clock.now() + Theme.QuickAccess.copiedChipSeconds }
         if item.note != nil { noteUntil[item.id] = clock.now() + Theme.QuickAccessM2.noteSeconds }
         withAnimation(reduceMotion() ? .easeOut(duration: Theme.Motion.reducedMotionFade) : Theme.Motion.spring) {

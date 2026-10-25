@@ -135,4 +135,64 @@ private final class FakePreflight: Sendable {
         state.captureSucceeded()
         #expect(state.offersRelaunch == false)
     }
+
+    // MARK: The re-approval badge (design 13), with the fake permission source
+
+    @Test func aGrantedMacShowsNoBadge() {
+        let source = FakePermissionSource(granted: true)
+        var state = PermissionState(source: source)
+        #expect(state.hotkeyPressed() == .capture)
+        #expect(!state.showsBadge)
+        #expect(!state.needsAttention)
+        #expect(source.reads > 0, "the badge rests on the preflight only")
+    }
+
+    @Test func missingPermissionAloneDoesNotBadgeUntilACaptureIsRefused() {
+        let source = FakePermissionSource(granted: false)
+        var state = PermissionState(source: source)
+        #expect(state.needsAttention, "the menu row is there")
+        #expect(!state.showsBadge, "nothing failed yet")
+        #expect(state.hotkeyPressed() == .showHint)
+        #expect(state.showsBadge)
+    }
+
+    @Test func aReapprovalLapseBadgesUntilACaptureWorks() {
+        let source = FakePermissionSource(granted: true)
+        var state = PermissionState(source: source)
+        // macOS asks again: the preflight still says yes, but ScreenCaptureKit declines.
+        #expect(state.captureFailed(errorCode: PermissionState.userDeclinedErrorCode) == .showHint)
+        #expect(state.status == .unknown)
+        #expect(state.showsBadge)
+        state.appDidActivate()
+        #expect(state.showsBadge, "the preflight saying yes does not end a lapse; only a capture does")
+        state.captureSucceeded()
+        #expect(!state.showsBadge)
+        #expect(!state.needsAttention)
+    }
+
+    @Test func aGrantSeenOnMenuOpenClearsTheBadge() {
+        let source = FakePermissionSource(granted: false)
+        var state = PermissionState(source: source)
+        #expect(state.captureFailed(errorCode: nil) == .showHint)
+        #expect(state.showsBadge)
+        source.granted = true
+        state.appDidActivate()
+        #expect(!state.showsBadge)
+        #expect(state.status == .granted)
+    }
+
+    @Test func anUnrelatedCaptureErrorDoesNotBadge() {
+        var state = PermissionState(source: FakePermissionSource(granted: true))
+        #expect(state.captureFailed(errorCode: -3815) == .unrelated)
+        #expect(!state.showsBadge)
+    }
+
+    @Test func theMenuRowAsksForTheOKAndIsClickable() {
+        let model = MenuModel(MenuInput(permissionNeeded: true))
+        let row = model.item(.status)
+        #expect(row?.title == "Screen Recording needs your OK")
+        #expect(row?.kind == .status)
+        #expect(row?.isEnabled == true, "a click opens the Screen Recording pane; nothing opens on its own")
+    }
 }
+

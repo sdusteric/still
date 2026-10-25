@@ -339,6 +339,8 @@ private struct SettingsGroup<Content: View>: View {
                 RoundedRectangle(cornerRadius: Theme.Settings.groupRadius, style: .continuous)
                     .fill(Theme.Colors.group.color)
             )
+            // A tinted last row (the microphone warning) follows the group's rounded corners.
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Settings.groupRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Settings.groupRadius, style: .continuous)
                     .strokeBorder(Theme.Colors.separator.color, lineWidth: 0.5)
@@ -597,7 +599,7 @@ private struct RecordingTab: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
-                .fixedSize()
+                .frame(width: Theme.SettingsM2.pairSegmentWidth)
             }
             SettingsRow(title: "Resolution") {
                 Picker("Resolution", selection: $model.settings.recording.scale) {
@@ -605,7 +607,7 @@ private struct RecordingTab: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
-                .fixedSize()
+                .frame(width: Theme.SettingsM2.pairSegmentWidth)
             }
         }
         SettingsGroup(title: "While recording") {

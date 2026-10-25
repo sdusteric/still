@@ -547,12 +547,14 @@ public final class AnnotateCanvasView: NSView {
 
     public func copyImage() {
         guard let image = flattened() else { return }
+        model.actions.keep(document)
         model.actions.copy(image, document.scale)
         toast.show("Copied", reveal: nil)
     }
 
     public func saveImage() {
         guard let image = flattened() else { return }
+        model.actions.keep(document)
         if let url = model.actions.save(image, document.scale) {
             toast.show("Saved to \(model.actions.saveFolderName)", reveal: url)
         } else {
@@ -562,11 +564,13 @@ public final class AnnotateCanvasView: NSView {
 
     public func saveImageAs() {
         guard let image = flattened() else { return }
+        model.actions.keep(document)
         model.actions.saveAs(image, document.scale)
     }
 
     public func openBackground() {
         guard let image = flattened() else { return }
+        model.actions.keep(document)
         model.actions.background(image, document.scale)
     }
 

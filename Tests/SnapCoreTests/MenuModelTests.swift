@@ -227,7 +227,7 @@ import Testing
         #expect(model().item(.status) == nil)
 
         let permission = model(permissionNeeded: true)
-        #expect(permission.item(.status)?.title == "Screen Recording permission needed")
+        #expect(permission.item(.status)?.title == "Screen Recording needs your OK")
         #expect(permission.item(.status)?.isEnabled == true)
         #expect(permission.item(.status)?.kind == .status)
 

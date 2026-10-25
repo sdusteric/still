@@ -41,8 +41,9 @@ swift scripts/winlist.swift <pid>                     # on-screen windows of one
   and fakes in `Fakes/` (`FakeCaptureSource`, `FakeWindowSource`, `FakeClock`, `SyntheticImages`,
   `SyntheticFixture`, `HistoryFixture`, `FakeTrasher`, `FakeRecordingSource`, ...).
   `Clock` shadows `Swift.Clock` in modules that import SnapCore.
-- History (design 20.4): the folder is the database. `item.json` is version 2 (kind, state, screen
-  rect, pixel size, video fields), and version 1 files still read as complete screenshots. A
+- History (design 20.4, 20.16): the folder is the database. `item.json` is version 3 (kind, state,
+  screen rect, pixel size, video fields, `audioCheck`, and `annotationsName` naming the editable
+  `annotations.json` of an edited capture); versions 1 and 2 still read. A
   recording writes `item.json` in state `recording` before its first frame; `markInterrupted()`
   at launch turns leftovers into `interrupted`. `sweep(skipping:)` skips in-use ids. Move to Trash
   goes through an injected `HistoryTrasher`: tests use `FakeTrasher`, never the real Trash.

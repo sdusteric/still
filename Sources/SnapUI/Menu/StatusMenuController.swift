@@ -23,11 +23,16 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
 
     /// What the status item shows: nil is the viewfinder, else the red timer.
     public private(set) var recording: RecordingIndicator?
+    /// The heartbeat's warning while recording: the timer turns amber (design 20.6).
+    public private(set) var stall: RecordingStall?
+    /// The permission badge on the viewfinder (design 13): a capture failed for permission.
+    public private(set) var showsBadge = false
     /// The recording menu last built, for tests.
     public private(set) var lastRecordingMenu: NSMenu?
 
     private var statusItem: NSStatusItem?
     private var timerView: RecordingStatusItemView?
+    private var badgeView: StatusBadgeView?
     private var ticker: Timer?
 
     public init(
@@ -95,6 +100,28 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         applyIndicator()
     }
 
+    /// The heartbeat's stall, or nil when samples arrive again. Only a plain state change: the
+    /// capsule's color and glyph, no animation (M24).
+    public func setStall(_ stall: RecordingStall?) {
+        guard stall != self.stall else { return }
+        self.stall = stall
+        guard let timerView, let statusItem else { return }
+        timerView.stall = stall
+        // The timer view passes clicks and hover to the button, so the button carries the text.
+        statusItem.button?.toolTip = RecordingStatusItemView.toolTip(stall: stall)
+        statusItem.button?.setAccessibilityLabel(stall.map { "Stop Recording. \($0.message)" } ?? "Stop Recording")
+        let size = RecordingStatusItemView.capsuleSize(for: timerView.text, stalled: stall != nil)
+        statusItem.length = size.width + 8
+        timerView.frame.size = size
+    }
+
+    /// Shows or hides the permission badge on the viewfinder.
+    public func setBadge(_ shows: Bool) {
+        guard shows != showsBadge else { return }
+        showsBadge = shows
+        applyIndicator()
+    }
+
     /// The text the timer shows now.
     public var timerText: String? { recording?.text(now: now()) }
 
@@ -149,23 +176,39 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         guard let recording else {
             timerView?.removeFromSuperview()
             timerView = nil
+            stall = nil
             // The system opens the attached menu on any click; the button action is not sent.
             statusItem.menu = menu
             statusItem.length = NSStatusItem.squareLength
-            let image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "Snap")
+            var image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "Snap")
+            if showsBadge, let symbol = image { image = StatusBadgeView.symbolWithHole(symbol) }
             image?.isTemplate = true
             button.image = image
-            button.toolTip = "Snap"
+            button.toolTip = showsBadge ? "Snap: Screen Recording needs your OK" : "Snap"
+            button.setAccessibilityLabel(showsBadge ? "Snap, Screen Recording needs your OK" : "Snap")
+            if showsBadge {
+                let badge = badgeView ?? StatusBadgeView()
+                if badge.superview !== button { button.addSubview(badge) }
+                badge.frame = StatusBadgeView.frame(in: button.bounds, symbolSize: image?.size ?? CGSize(width: 16, height: 16))
+                badgeView = badge
+            } else {
+                badgeView?.removeFromSuperview()
+                badgeView = nil
+            }
             return
         }
+        badgeView?.removeFromSuperview()
+        badgeView = nil
         // Detached, so a click reaches `statusItemClicked`: a plain click stops at once.
         statusItem.menu = nil
         button.image = nil
-        button.toolTip = "Stop Recording (\u{21E7}\u{2318}5)"
+        button.toolTip = RecordingStatusItemView.toolTip(stall: stall)
+        button.setAccessibilityLabel(stall.map { "Stop Recording. \($0.message)" } ?? "Stop Recording")
         let text = recording.text(now: now())
         let view = timerView ?? RecordingStatusItemView(text: text)
         view.text = text
-        let size = RecordingStatusItemView.capsuleSize(for: text)
+        view.stall = stall
+        let size = RecordingStatusItemView.capsuleSize(for: text, stalled: stall != nil)
         statusItem.length = size.width + 8
         if view.superview !== button {
             button.addSubview(view)
@@ -184,7 +227,7 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         guard let recording, let statusItem, let view = timerView else { return }
         let text = recording.text(now: now())
         view.text = text
-        let size = RecordingStatusItemView.capsuleSize(for: text)
+        let size = RecordingStatusItemView.capsuleSize(for: text, stalled: stall != nil)
         statusItem.length = size.width + 8
         view.frame.size = size
     }
@@ -307,4 +350,61 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
 private final class MenuIDBox: NSObject {
     let id: MenuItemID
     init(_ id: MenuItemID) { self.id = id }
+}
+
+/// The permission badge on the viewfinder (design 13): a `warningDot` disc at the symbol's
+/// top-right corner, sitting in a hole cut out of the template symbol so the two never touch. It
+/// is drawn, not a symbol, so it keeps its color on a template status item; clicks pass through.
+public final class StatusBadgeView: NSView {
+    override public var isFlipped: Bool { true }
+    override public var isOpaque: Bool { false }
+    override public func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    public init() {
+        let side = Theme.Menu.badgeSize + 2 * Theme.Menu.badgeGap
+        super.init(frame: CGRect(x: 0, y: 0, width: side, height: side))
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    /// The badge's center in a symbol of `size` (top-left origin): on its top-right corner.
+    nonisolated static func center(inSymbolOf size: CGSize) -> CGPoint {
+        // Centered 1 pt inside the corner, so most of the corner bracket stays visible.
+        let inset = Theme.Menu.badgeSize / 2 - 2
+        return CGPoint(x: size.width - inset, y: inset)
+    }
+
+    /// The badge over a symbol of `symbolSize` centered in `bounds` (a flipped button).
+    static func frame(in bounds: CGRect, symbolSize: CGSize) -> CGRect {
+        let side = Theme.Menu.badgeSize + 2 * Theme.Menu.badgeGap
+        let origin = CGPoint(x: bounds.midX - symbolSize.width / 2, y: bounds.midY - symbolSize.height / 2)
+        let center = center(inSymbolOf: symbolSize)
+        return CGRect(x: origin.x + center.x - side / 2, y: origin.y + center.y - side / 2, width: side, height: side)
+    }
+
+    /// `symbol` with a round hole where the badge goes, still usable as a template image.
+    /// Nonisolated, since AppKit may run the drawing handler on any thread.
+    nonisolated static func symbolWithHole(_ symbol: NSImage) -> NSImage {
+        let size = symbol.size
+        let side = Theme.Menu.badgeSize + 2 * Theme.Menu.badgeGap
+        let center = center(inSymbolOf: size)
+        return NSImage(size: size, flipped: true) { @Sendable rect in
+            symbol.draw(in: rect)
+            NSGraphicsContext.current?.compositingOperation = .clear
+            NSBezierPath(ovalIn: CGRect(x: center.x - side / 2, y: center.y - side / 2, width: side, height: side)).fill()
+            return true
+        }
+    }
+
+    override public func draw(_ dirtyRect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        Self.draw(in: bounds, color: Theme.Colors.warningDot.cgColor(for: effectiveAppearance), context: context)
+    }
+
+    /// The disc inside `rect` (the gap ring stays clear, so the symbol's stroke does not touch it).
+    static func draw(in rect: CGRect, color: CGColor, context: CGContext) {
+        context.setFillColor(color)
+        context.fillEllipse(in: rect.insetBy(dx: Theme.Menu.badgeGap, dy: Theme.Menu.badgeGap))
+    }
 }

@@ -2,7 +2,7 @@ import Foundation
 import SnapCore
 
 /// `snapctl probe <file.mp4> [--json]` (design 20.14): duration, frame count, codec FourCC, pixel
-/// size, audio track count and the playable flag, read with `AVURLAsset` and `AVAssetReader`
+/// size, audio track count, the audio peak in dBFS and the playable flag, read with `AVURLAsset` and `AVAssetReader`
 /// only, independent of the writer. Exits 0 for a playable file and 1 for one that is not.
 enum ProbeCommand {
     static func run(_ arguments: [String]) async -> Int32 {
@@ -12,7 +12,7 @@ enum ProbeCommand {
                 throw UsageError("probe needs one <file.mp4>")
             }
             let url = URL(filePath: path).standardizedFileURL
-            let result = await VideoProbe.probe(url)
+            let result = await VideoProbe.probe(url, measureAudio: true)
             if parsed.json {
                 print(try RecordCommand.jsonString(ProbeOutput(file: url.path(percentEncoded: false), result)))
             } else {
@@ -36,6 +36,7 @@ enum ProbeCommand {
         var nominalFrameRate: Double?
         var videoTrackCount: Int
         var audioTrackCount: Int
+        var audioPeakDBFS: Double?
         var playable: Bool
         var fileBytes: Int64
         var error: String?
@@ -51,6 +52,7 @@ enum ProbeCommand {
             nominalFrameRate = result.nominalFrameRate
             videoTrackCount = result.videoTrackCount
             audioTrackCount = result.audioTrackCount
+            audioPeakDBFS = result.audioPeakDBFS
             playable = result.playable
             fileBytes = result.fileBytes
             error = result.error
@@ -61,7 +63,9 @@ enum ProbeCommand {
         let size = result.pixelSize.map(\.description) ?? "-"
         let frames = result.frameCount.map(String.init) ?? "-"
         var line = "\(result.codec ?? "-") \(size) \(String(format: "%.3f", result.durationSeconds)) s, \(frames) frames, "
-            + "\(result.audioTrackCount) audio tracks, \(result.playable ? "playable" : "not playable")"
+            + "\(result.audioTrackCount) audio tracks"
+            + (result.audioPeakDBFS.map { String(format: " (peak %.1f dBFS)", $0) } ?? "")
+            + ", \(result.playable ? "playable" : "not playable")"
         if let error = result.error { line += " (\(error))" }
         return line
     }

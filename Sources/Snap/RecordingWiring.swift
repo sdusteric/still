@@ -17,6 +17,8 @@ final class RecordingWiring {
 
     /// The status item shows the timer, "Saving" or the viewfinder (nil).
     var onIndicatorChange: ((RecordingIndicator?) -> Void)?
+    /// The heartbeat's stall, or nil when samples arrive again (the timer turns amber).
+    var onStallChange: ((RecordingStall?) -> Void)?
     /// What the timer's Option-click menu shows for the current recording.
     private(set) var menuInput: RecordingMenuInput?
     /// The area being recorded, for the outline.
@@ -31,6 +33,10 @@ final class RecordingWiring {
             microphone: app.microphone, fileNamer: FileNamer(pattern: app.settings.general.fileNamePattern), log: app.log
         )
         controller.onStateChange = { [weak self] state in self?.stateChanged(state) }
+        controller.onStallChange = { [weak self] stall in
+            self?.menuInput?.stall = stall
+            self?.onStallChange?(stall)
+        }
     }
 
     /// Counting down, starting, recording or finishing: Cmd+Shift+5 and Record Screen stop instead.
@@ -209,6 +215,7 @@ extension AppWiring {
     /// microphone"). A file that does not play gets a card with Reveal only.
     func recordingFinished(_ result: RecordingResult) {
         historyChanged()
+        // The audio check has its own pill on the card, so the note stays for how the recording ended.
         let note = result.note ?? (result.noMicrophone ? "No microphone" : nil)
         if let note { log.info("recording \(result.item.id): \(note)") }
         let item = result.item
@@ -267,7 +274,7 @@ extension AppWiring {
         videoCards[cardID] = item
         quickAccess.show(QuickAccessItem(
             id: cardID, thumbnail: thumbnail, pointSize: pointSize, copied: copied, kind: .video,
-            durationSeconds: item.durationSeconds, note: note, revealOnly: revealOnly
+            durationSeconds: item.durationSeconds, note: note, revealOnly: revealOnly, audioCheck: item.audioCheck
         ))
     }
 

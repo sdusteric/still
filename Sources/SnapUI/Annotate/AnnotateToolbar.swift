@@ -97,6 +97,12 @@ public struct AnnotateActions {
     public var settings: AnnotateSettings
     /// Called when the user changes the highlight color or the Redact style.
     public var settingsChanged: (AnnotateSettings) -> Void
+    /// The document as it is exported (Copy, Save, Save As, Background), so the app can keep it
+    /// next to the history item and reopen it editable (design 20.4, `annotations.json`).
+    public var keep: (AnnotationDocument) -> Void
+    /// A Background preset is applied around the annotated image: Copy and Save add it, and the
+    /// toolbar's Background button shows it is on.
+    public var backgroundApplied: Bool
 
     public init(
         copy: @escaping (CGImage, Double) -> Void = { _, _ in },
@@ -106,7 +112,9 @@ public struct AnnotateActions {
         reveal: @escaping (URL) -> Void = { _ in },
         saveFolderName: String = "Downloads",
         settings: AnnotateSettings = AnnotateSettings(),
-        settingsChanged: @escaping (AnnotateSettings) -> Void = { _ in }
+        settingsChanged: @escaping (AnnotateSettings) -> Void = { _ in },
+        keep: @escaping (AnnotationDocument) -> Void = { _ in },
+        backgroundApplied: Bool = false
     ) {
         self.copy = copy
         self.save = save
@@ -116,6 +124,8 @@ public struct AnnotateActions {
         self.saveFolderName = saveFolderName
         self.settings = settings
         self.settingsChanged = settingsChanged
+        self.keep = keep
+        self.backgroundApplied = backgroundApplied
     }
 }
 
@@ -175,6 +185,8 @@ public final class AnnotateEditorModel {
     public internal(set) var canUndo = false
     public internal(set) var canRedo = false
     public internal(set) var zoomLabel = "Fit"
+    /// A Background preset sits around the image on export (`AnnotateActions.backgroundApplied`).
+    public var backgroundApplied = false
 
     @ObservationIgnored public var actions: AnnotateActions
     @ObservationIgnored var onToolChange: ((AnnotateTool) -> Void)?
@@ -187,6 +199,7 @@ public final class AnnotateEditorModel {
         self.actions = actions
         highlightColor = actions.settings.highlightColor
         redactStyle = actions.settings.redactStyle
+        backgroundApplied = actions.backgroundApplied
     }
 
     private func notifySettings() {
@@ -241,8 +254,14 @@ public struct AnnotateToolbar: View {
                 .disabled(!model.canRedo)
                 .help("Redo (\u{21E7}\u{2318}Z)")
             Spacer(minLength: 12)
-            Button { model.background() } label: { Label("Background", systemImage: "wand.and.sparkles") }
-                .help("Open the Background editor on this image")
+            Button { model.background() } label: {
+                Label(model.backgroundApplied ? "Background On" : "Background", systemImage: "rectangle.center.inset.filled")
+                    // On reads as a state, like the selected tool, not as a different label only.
+                    .foregroundStyle(model.backgroundApplied ? Theme.Colors.accentText.color : Theme.Colors.text.color)
+            }
+            .help(model.backgroundApplied
+                ? "Copy and Save add the Background. Click to change it."
+                : "Open the Background editor on this image")
             Button { model.copy() } label: { Label("Copy", systemImage: "square.on.square") }
                 .help("Copy (\u{2318}C)")
             Button("Save") { model.save() }

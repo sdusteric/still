@@ -32,6 +32,11 @@ enum ShotScenario: String, CaseIterable, Sendable {
     case backgroundMesh = "background-mesh"
     case settingsRecording = "settings-recording"
     case menuM2 = "menu-m2"
+    // Reliability and trust additions (design 20.16): `scripts/shots.sh m2-polish`.
+    case recordingStalled = "recording-stalled"
+    case quickAccessAudio = "quick-access-audio"
+    case annotateReopened = "annotate-reopened"
+    case menuPermission = "menu-permission"
 
     /// What `scripts/shots.sh` renders by default and acceptance AC04 checks.
     static let acceptance: [ShotScenario] = [.overlayArea, .quickAccess, .backgroundEditor, .annotate, .menu, .settings]
@@ -41,6 +46,9 @@ enum ShotScenario: String, CaseIterable, Sendable {
         .pin, .history, .historyEmpty, .hud, .recordingCountdown, .recording, .quickAccessVideo, .annotateTools,
         .backgroundMesh, .settingsRecording, .menuM2,
     ]
+
+    /// What `scripts/shots.sh m2-polish` renders: the surfaces of design 20.16.
+    static let polish: [ShotScenario] = [.recordingStalled, .quickAccessAudio, .annotateReopened, .menuPermission]
 
     /// The size in points (design 16 table); the PNG is this times the scale.
     var pointSize: CGSize {
@@ -62,6 +70,10 @@ enum ShotScenario: String, CaseIterable, Sendable {
         case .backgroundMesh: BackgroundEditorDemo.size
         case .settingsRecording: SettingsDemo.size
         case .menuM2: MenuM2Demo.size
+        case .recordingStalled: HUDDemo.sceneSize
+        case .quickAccessAudio: QuickAccessDemo.videoSceneSize
+        case .annotateReopened: AnnotateDemo.size
+        case .menuPermission: MenuPermissionDemo.size
         }
     }
 
@@ -125,6 +137,14 @@ enum ShotScenario: String, CaseIterable, Sendable {
             .view(SettingsDemo.makeView(tab: .recording, dark: dark))
         case .menuM2:
             .image(MenuM2Demo.renderScene(dark: dark, scale: scale))
+        case .recordingStalled:
+            .image(HUDDemo.renderRecordingStalled(dark: dark, scale: scale))
+        case .quickAccessAudio:
+            .image(QuickAccessDemo.renderAudioScene(dark: dark, scale: scale))
+        case .annotateReopened:
+            .view(AnnotateDemo.makeReopenedView(dark: dark))
+        case .menuPermission:
+            .image(MenuPermissionDemo.renderScene(dark: dark, scale: scale))
         }
     }
 

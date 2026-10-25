@@ -80,7 +80,7 @@ private final class V2Scratch {
         #expect(loaded.pixelSize == PixelSize(width: 1280, height: 800))
         #expect(loaded.kind == .image)
         let json = try scratch.itemJSON(added.id)
-        #expect(json["version"] as? Int == 2)
+        #expect(json["version"] as? Int == HistoryStore.currentVersion)
         #expect(json["kind"] as? String == "image")
         #expect(json["screenRect"] as? [Double] == [330, 150, 640, 400])
         #expect(json["pixelSize"] as? [Int] == [1280, 800])

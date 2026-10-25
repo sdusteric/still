@@ -402,6 +402,10 @@ nonisolated public enum Theme {
         public static let iconRadius: Double = 14.4
         public static let stepPadding: Double = 16
         public static let stepIconSize: Double = 36
+        /// Step 2 before step 1 is done: dimmed, but its text stays readable (text2 at 0.7 is
+        /// about 4:1 on the group in both themes; 0.55 fell under 3:1 in dark).
+        public static let inactiveStepOpacity: Double = 0.7
+        public static let iconShadowOpacity: Double = 0.18
         public static let footerHorizontalPadding: Double = 20
     }
 
@@ -424,6 +428,10 @@ nonisolated public enum Theme {
         public static let thumbnailRadius: Double = 6
         public static let radius: Double = 12
         public static let statusDotSize: Double = 7
+        /// The permission badge on the menu bar symbol: a `warningDot` disc at the symbol's
+        /// top-right, cut out of the symbol by a ring of clear space.
+        public static let badgeSize: Double = 6
+        public static let badgeGap: Double = 1.5
     }
 
     // MARK: M2 surfaces (design 20.2 to 20.11)
@@ -572,11 +580,18 @@ nonisolated public enum Theme {
         public static let stopSquareRadius: Double = 2
         public static let timerStyle = TextStyle(size: 12, lineHeight: 16, weight: .semibold, tabular: true)
         public static let menuWidth: Double = 260
+        /// The recording menu with the stall row, which an NSMenu widens to fit on one line.
+        public static let stalledMenuWidth: Double = 300
         public static let infoStyle = TextStyle(size: 12, lineHeight: 16, weight: .regular)
         /// Smallest recordable output, in pixels.
         public static let minimumPixels = 64
         /// "Recording could not start" and "No microphone" chips.
         public static let noticeSeconds: Double = 4
+        /// A stalled recording (heartbeat): the capsule turns amber with dark ink, plus a warning
+        /// glyph after the time, so the state does not rest on hue alone. Ink on the fill is 7:1.
+        public static let stalledFill = ThemeColor(light: .init(hex: 0xF08A00), dark: .init(hex: 0xFF9F0A))
+        public static let stalledInk = ThemeColor(light: .init(hex: 0x1D1D1F), dark: .init(hex: 0x1D1D1F))
+        public static let stallGlyphSize: Double = 10
     }
 
     /// Quick Access additions for M2 (20.2 and 20.6, mockup 11c).
@@ -592,6 +607,9 @@ nonisolated public enum Theme {
         public static let openButtonSpacing: Double = 5
         /// How long a recording's note chip stays on its card ("No microphone", design 20.6).
         public static let noteSeconds: Double = 4
+        /// The audio check pill next to the duration pill (design 20.6): it stays while the card
+        /// is up, since it is about the file, not a moment.
+        public static let audioGlyphSize: Double = 9
     }
 
     /// Annotate additions (20.8, mockup 12).
@@ -618,6 +636,9 @@ nonisolated public enum Theme {
         /// The Recording tab shot: 480 x 690.
         public static let recordingTabSize = CGSize(width: 480, height: 690)
         public static let warningRowIconSize: Double = 14
+        /// Two-choice segmented controls (30 fps | 60 fps, Retina | 1x) share one width, so their
+        /// left edges line up down the group.
+        public static let pairSegmentWidth: Double = 132
     }
 
     /// Menu additions (20.10, mockup 15).

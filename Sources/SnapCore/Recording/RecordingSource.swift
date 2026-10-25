@@ -69,6 +69,8 @@ public enum RecordingSourceError: Error, Sendable, Hashable, CustomStringConvert
 public protocol RecordingSession: AnyObject, Sendable {
     /// Events after `start` returned. One consumer: the controller.
     var events: AsyncStream<RecordingSessionEvent> { get }
+    /// Samples delivered so far, read once a second by the heartbeat. Must be cheap and nonblocking.
+    var sampleCounts: RecordingSampleCounts { get }
     /// Stops the stream, finishes the file and returns its URL.
     func stop() async throws -> URL
 }

@@ -116,7 +116,7 @@ public struct OnboardingView: View {
             .padding(.top, 6)
             if model.offersRelaunch {
                 HStack(spacing: 8) {
-                    Text("Allowed it already? Snap may need a fresh start.")
+                    Text("If you turned Snap on, relaunch it so macOS applies the change.")
                         .font(Theme.Typography.captionSmall.font)
                         .foregroundStyle(Theme.Colors.text2.color)
                     Button("Relaunch Snap") { model.actions.relaunch() }
@@ -218,6 +218,7 @@ private struct StepRow<Content: View>: View {
                 .fill(active ? tint.opacity(0.14) : Theme.Colors.fill.color)
                 .overlay(
                     Image(systemName: symbol)
+                        .symbolRenderingMode(.monochrome)
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(active ? tint : Theme.Colors.text3.color)
                 )
@@ -229,7 +230,7 @@ private struct StepRow<Content: View>: View {
             Spacer(minLength: 0)
         }
         .padding(Theme.Onboarding.stepPadding)
-        .opacity(active ? 1 : 0.55)
+        .opacity(active ? 1 : Theme.Onboarding.inactiveStepOpacity)
         .accessibilityElement(children: .contain)
     }
 }
@@ -282,7 +283,8 @@ struct AppIconView: View {
                     .foregroundStyle(.white)
             )
             .frame(width: Theme.Onboarding.iconSize, height: Theme.Onboarding.iconSize)
-            .shadow(color: ThemeRGBA(hex: 0x3B4CE0).color.opacity(0.3), radius: 8, y: 4)
+            // A neutral drop shadow, as macOS draws app icons; a tinted one reads as a glow.
+            .shadow(color: .black.opacity(Theme.Onboarding.iconShadowOpacity), radius: 6, y: 3)
             .accessibilityHidden(true)
     }
 }

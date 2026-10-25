@@ -15,6 +15,9 @@ public struct VideoProbeResult: Sendable, Hashable, Codable {
     public var nominalFrameRate: Double?
     public var videoTrackCount: Int
     public var audioTrackCount: Int
+    /// The loudest audio sample in dBFS, floored at -160 for digital silence; nil when there is no
+    /// audio track or it was not measured.
+    public var audioPeakDBFS: Double?
     /// The asset loads, says it is playable, and has a video track and a positive duration.
     public var playable: Bool
     public var fileBytes: Int64
@@ -29,6 +32,7 @@ public struct VideoProbeResult: Sendable, Hashable, Codable {
         nominalFrameRate: Double? = nil,
         videoTrackCount: Int = 0,
         audioTrackCount: Int = 0,
+        audioPeakDBFS: Double? = nil,
         playable: Bool = false,
         fileBytes: Int64 = 0,
         error: String? = nil
@@ -40,6 +44,7 @@ public struct VideoProbeResult: Sendable, Hashable, Codable {
         self.nominalFrameRate = nominalFrameRate
         self.videoTrackCount = videoTrackCount
         self.audioTrackCount = audioTrackCount
+        self.audioPeakDBFS = audioPeakDBFS
         self.playable = playable
         self.fileBytes = fileBytes
         self.error = error
@@ -47,9 +52,15 @@ public struct VideoProbeResult: Sendable, Hashable, Codable {
 }
 
 public enum VideoProbe {
+    /// What digital silence reports as, so the value stays a finite number in JSON.
+    public static let silentDBFS = -160.0
+
     /// Probes `url`. Never throws: a missing or broken file probes as not playable, with `error`.
-    /// - Parameter countFrames: reads every video sample (no decoding) to count frames.
-    public static func probe(_ url: URL, countFrames: Bool = true) async -> VideoProbeResult {
+    /// - Parameters:
+    ///   - countFrames: reads every video sample (no decoding) to count frames.
+    ///   - measureAudio: decodes the audio until it finds a sample above the silence floor
+    ///     (`AudioLevelProbe`), for the audio check.
+    public static func probe(_ url: URL, countFrames: Bool = true, measureAudio: Bool = false) async -> VideoProbeResult {
         var result = VideoProbeResult(fileBytes: fileSize(url))
         guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else {
             result.error = "no file at \(url.path(percentEncoded: false))"
@@ -78,6 +89,14 @@ public enum VideoProbe {
                 }
             }
             result.playable = isPlayable && !videoTracks.isEmpty && result.durationSeconds > 0
+            if measureAudio, !audioTracks.isEmpty {
+                // An unreadable audio track leaves the peak unknown; it does not make the video unplayable.
+                do {
+                    result.audioPeakDBFS = try await AudioLevelProbe.peakDBFS(of: url).map { max($0, silentDBFS) }
+                } catch {
+                    result.error = "audio level: \(error)"
+                }
+            }
         } catch {
             result.playable = false
             result.error = String(describing: error)

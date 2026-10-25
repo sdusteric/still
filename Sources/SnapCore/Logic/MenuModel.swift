@@ -173,7 +173,7 @@ public enum MenuStatus: Sendable, Hashable {
 
     public var title: String {
         switch self {
-        case .permissionNeeded: "Screen Recording permission needed"
+        case .permissionNeeded: "Screen Recording needs your OK"
         case .waitingForCleanShot: "Waiting for CleanShot X to quit"
         case .systemShortcutOverlap: "A macOS shortcut overlaps Snap's. See Settings."
         }
@@ -401,10 +401,12 @@ public struct RecordingMenuInput: Sendable, Hashable {
     public var microphoneName: String?
     public var systemAudio: Bool
     public var stopShortcut: KeyShortcut?
+    /// The heartbeat's warning, shown as the first row while a track has stopped.
+    public var stall: RecordingStall?
 
     public init(
         target: CaptureMode, size: CGSize, fps: Int, format: VideoFormat, microphoneName: String? = nil,
-        systemAudio: Bool = false, stopShortcut: KeyShortcut? = nil
+        systemAudio: Bool = false, stopShortcut: KeyShortcut? = nil, stall: RecordingStall? = nil
     ) {
         self.target = target
         self.size = size
@@ -413,11 +415,13 @@ public struct RecordingMenuInput: Sendable, Hashable {
         self.microphoneName = microphoneName
         self.systemAudio = systemAudio
         self.stopShortcut = stopShortcut
+        self.stall = stall
     }
 }
 
-/// The recording menu as data: Stop Recording (Cmd+Shift+5), Cancel Recording, then three quiet
-/// rows: target, size, fps and codec; the microphone or "Microphone off"; system audio on or off.
+/// The recording menu as data: the stall warning when there is one, Stop Recording
+/// (Cmd+Shift+5), Cancel Recording, then three quiet rows: target, size, fps and codec; the
+/// microphone or "Microphone off"; system audio on or off.
 public struct RecordingMenuModel: Sendable, Hashable {
     public let items: [MenuItem]
 
@@ -431,7 +435,13 @@ public struct RecordingMenuModel: Sendable, Hashable {
         case .window: "Window"
         case .fullscreen: "Fullscreen"
         }
-        items = [
+        var items: [MenuItem] = []
+        if let stall = input.stall {
+            // Not clickable: Stop Recording right below keeps what was written.
+            items.append(MenuItem(id: .status, kind: .status, title: stall.message, isEnabled: false))
+            items.append(MenuItem(id: .separator(0), kind: .separator, title: ""))
+        }
+        items += [
             MenuItem(
                 id: .stopRecording, title: "Stop Recording", keyEquivalent: MenuKeyEquivalent(combo),
                 shortcutText: combo.displayString
@@ -451,6 +461,7 @@ public struct RecordingMenuModel: Sendable, Hashable {
                 isEnabled: false, symbolName: "speaker.wave.2"
             ),
         ]
+        self.items = items
     }
 
     public func item(_ id: MenuItemID) -> MenuItem? {

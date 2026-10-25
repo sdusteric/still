@@ -218,8 +218,10 @@ public enum AllInOneToolbar {
                 if selected {
                     fillRounded(frame, radius: Theme.HUD.targetButtonRadius, color: Theme.Colors.hudSelected.cgColor(dark: false), context)
                 }
+                // `display` keeps its screen layer empty, so the three targets read as one outline family.
                 drawSymbol(symbol(for: item), size: Theme.HUD.targetGlyphSize - 2, weight: .regular,
-                           color: selected ? selectedText : idleText, center: CGPoint(x: frame.midX, y: frame.midY))
+                           color: selected ? selectedText : idleText, center: CGPoint(x: frame.midX, y: frame.midY),
+                           outlineOnly: item == .fullscreen)
             case .options:
                 let color = Theme.Colors.hudOptions.light.nsColor
                 let textX = frame.minX + Theme.HUD.optionsHorizontalPadding
@@ -258,22 +260,26 @@ public enum AllInOneToolbar {
         var size: Double
         var weight: Double
         var color: ThemeRGBA
+        var outlineOnly: Bool
     }
 
     private static var symbols: [SymbolKey: NSImage] = [:]
 
     /// Draws an SF Symbol tinted `color`, centered on `center`, in the current flipped context.
-    static func drawSymbol(_ name: String, size: Double, weight: NSFont.Weight, color: NSColor, center: CGPoint) {
+    /// `outlineOnly` leaves the symbol's secondary layer clear (a one-color palette fills it).
+    static func drawSymbol(
+        _ name: String, size: Double, weight: NSFont.Weight, color: NSColor, center: CGPoint, outlineOnly: Bool = false
+    ) {
         let rgba = color.usingColorSpace(.sRGB).map {
             ThemeRGBA(red: $0.redComponent, green: $0.greenComponent, blue: $0.blueComponent, alpha: $0.alphaComponent)
         } ?? ThemeRGBA.white(1)
-        let key = SymbolKey(name: name, size: size, weight: weight.rawValue, color: rgba)
+        let key = SymbolKey(name: name, size: size, weight: weight.rawValue, color: rgba, outlineOnly: outlineOnly)
         let image: NSImage
         if let cached = symbols[key] {
             image = cached
         } else {
             let configuration = NSImage.SymbolConfiguration(pointSize: size, weight: weight)
-                .applying(NSImage.SymbolConfiguration(paletteColors: [rgba.nsColor]))
+                .applying(NSImage.SymbolConfiguration(paletteColors: outlineOnly ? [rgba.nsColor, .clear] : [rgba.nsColor]))
             guard let made = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
                 .withSymbolConfiguration(configuration) else { return }
             symbols[key] = made

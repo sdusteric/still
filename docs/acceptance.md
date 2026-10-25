@@ -441,3 +441,39 @@ another app frontmost:
 7. **Interrupted recovery after a forced quit.** Start a recording and force quit Snap from
    Activity Monitor. Relaunch: the item shows in history with the Interrupted pill and offers
    only Reveal and Move to Trash; it is swept with the rest after 3 days.
+8. **A still screen is not a stall.** Record an area and leave the screen untouched for 10 s, with
+   Record system audio on and nothing playing. The timer must stay red. If it turns amber with
+   "Recording stalled: ..." in the Option-click menu, ScreenCaptureKit is not delivering buffers
+   for still frames or silence on this Mac, and the heartbeat needs another signal (design
+   20.16). A real stall cannot be provoked by hand; it is covered offscreen by
+   `RecordingHeartbeatTests` and the `recording-stalled` shot.
+9. **The audio check.** Record 5 s with the microphone on and say something: the card shows a
+   speaker in the duration pill. Record again with the microphone muted in Control Center: the
+   card shows "Microphone silent". Covered offscreen: `AudioCheckTests` on generated tone,
+   silence and no-track files. Not covered: the level of a real microphone in a quiet room.
+10. **Editable annotations from History.** Annotate a capture (an arrow, a step, a black-out),
+    apply Background, close the card. Open Capture History, choose Open in Annotate: every item
+    is selectable and movable, the toolbar says "Background On", and Copy pastes the annotated
+    image with the Background. Covered offscreen: `HistoryStoreV3Tests` (round trip, version 1
+    and 2 reads) and `ReliabilitySurfaceTests`.
+11. **The re-approval badge.** When macOS asks to approve Screen Recording again, press ⇧⌘4
+    before answering: the menu bar symbol gets an orange dot and the menu shows "Screen
+    Recording needs your OK". Clicking the row opens the Screen Recording pane; nothing opens
+    unless you click. After approving, the next capture clears the dot. Covered offscreen:
+    `PermissionStateTests` with `FakePermissionSource` and `ReliabilitySurfaceTests`.
+
+## Reliability and trust additions
+
+Design section 20.16 adds four checks on top of milestone 2. They have no acceptance ids of their
+own: `scripts/check.sh` (AC01, AC-M2-1) runs their suites with every other test, and the shots are
+rendered and reviewed by eye.
+
+| Addition | Suites | Shot (`scripts/shots.sh m2-polish`) |
+|---|---|---|
+| Recording heartbeat: amber timer and menu row after 3 s without frames or enabled audio; Stop keeps the file | `RecordingHeartbeatTests` (pure heartbeat, and the controller with `FakeRecordingSource` and `FakeClock`), `ReliabilitySurfaceTests` | `recording-stalled` |
+| Audio check: "No audio track", "Microphone silent", "System audio silent", or a speaker glyph, stored in `item.json` | `AudioCheckTests` (rule table, generated tone at -20 dBFS, silence, no track; the controller writes `audioCheck`), `ReliabilitySurfaceTests` | `quick-access-audio` |
+| Editable annotations: `item.json` version 3 with `annotations.json` (items, crop, Background preset); versions 1 and 2 still read | `HistoryStoreV3Tests`, `ReliabilitySurfaceTests` | `annotate-reopened` |
+| Screen Recording re-approval badge and the row "Screen Recording needs your OK", from `CGPreflightScreenCaptureAccess` and the capture error only | `PermissionStateTests` (with `FakePermissionSource`), `MenuModelTests`, `ReliabilitySurfaceTests` | `menu-permission` |
+
+`snapctl record --fake --audio microphone --tone-dbfs -20` and `--no-audio-track` exercise the
+audio check from the command line; `snapctl probe` prints `audioPeakDBFS`.

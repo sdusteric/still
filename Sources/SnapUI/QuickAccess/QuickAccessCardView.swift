@@ -60,6 +60,9 @@ public final class QuickAccessCardModel: Identifiable {
     public var note: String?
     /// A recording that does not play: Reveal in Finder and Close only (design D69).
     public var revealOnly = false
+    /// Whether the asked-for audio is in a recording (design 20.6): a speaker in the duration pill
+    /// when it is, a warning pill beside it when it is not. Nil when no audio was asked for.
+    public var audioCheck: AudioCheck?
     @ObservationIgnored var pendingCloseAction: QuickAccessStack.CardAction?
 
     public init(
@@ -209,7 +212,13 @@ public struct QuickAccessCardView: View {
             .offset(x: card.swipeOffset)
             .onHover { hovering in handler.hover(hovering) }
             .accessibilityElement(children: .contain)
-            .accessibilityLabel(card.isVideo ? "Recording \(card.durationText)" : "Screenshot \(card.dimensionText)")
+            .accessibilityLabel(accessibilityTitle)
+    }
+
+    private var accessibilityTitle: String {
+        guard card.isVideo else { return "Screenshot \(card.dimensionText)" }
+        let audio = card.audioCheck.map { $0.warning ?? "with audio" }
+        return ["Recording \(card.durationText)", audio].compactMap(\.self).joined(separator: ", ")
     }
 
     // MARK: Thumbnail
@@ -242,7 +251,14 @@ public struct QuickAccessCardView: View {
         .overlay(alignment: .bottomLeading) {
             if !card.isHovered {
                 Group {
-                    if card.isVideo { durationPill } else { dimensionPill }
+                    if card.isVideo {
+                        HStack(spacing: Theme.QuickAccessM2.durationPillSpacing) {
+                            durationPill
+                            if let warning = card.audioCheck?.warning { audioWarningPill(warning) }
+                        }
+                    } else {
+                        dimensionPill
+                    }
                 }
                 .padding(Theme.Spacing.xs)
                 .transition(.opacity)
@@ -297,6 +313,11 @@ public struct QuickAccessCardView: View {
                 .font(.system(size: Theme.QuickAccessM2.durationGlyphSize, weight: .bold))
             Text(card.durationText)
                 .font(Theme.Typography.chip.font)
+            if card.audioCheck == .captured {
+                Image(systemName: "speaker.wave.2.fill")
+                    .font(.system(size: Theme.QuickAccessM2.audioGlyphSize, weight: .semibold))
+                    .accessibilityHidden(true)
+            }
         }
         .foregroundStyle(Theme.Colors.chipText.color)
         .padding(.leading, 6)
@@ -304,6 +325,30 @@ public struct QuickAccessCardView: View {
         .frame(height: Theme.QuickAccessM2.durationPillHeight)
         .background(Capsule().fill(Theme.Colors.dimensionPill.color))
         .allowsHitTesting(false)
+    }
+
+    /// "No audio track" or "Microphone silent" beside the duration pill, for as long as the card is
+    /// up: the file is what gets shared, so the warning is not timed like the note chip. At Small
+    /// only the glyph shows.
+    private func audioWarningPill(_ warning: String) -> some View {
+        HStack(spacing: Theme.QuickAccessM2.durationPillSpacing) {
+            Image(systemName: "speaker.slash.fill")
+                .font(.system(size: Theme.QuickAccessM2.audioGlyphSize, weight: .semibold))
+                .foregroundStyle(Theme.Colors.warningDot.color)
+            if card.size != .small {
+                Text(warning)
+                    .font(Theme.Typography.chip.font)
+                    .foregroundStyle(Theme.Colors.chipText.color)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.leading, 6)
+        .padding(.trailing, card.size == .small ? 6 : 7)
+        .frame(height: Theme.QuickAccessM2.durationPillHeight)
+        .background(Capsule().fill(Theme.Colors.dimensionPill.color))
+        .allowsHitTesting(false)
+        .help(warning)
+        .accessibilityLabel(warning)
     }
 
     private var copiedChip: some View {
@@ -456,7 +501,7 @@ public struct QuickAccessCardView: View {
         HStack(spacing: 0) {
             Button { handler.perform(.background) } label: {
                 HStack(spacing: 5) {
-                    Image(systemName: "wand.and.sparkles")
+                    Image(systemName: "rectangle.center.inset.filled")
                         .font(.system(size: 12, weight: .semibold))
                     if !card.compactBar {
                         Text("Background")
@@ -778,6 +823,46 @@ public enum QuickAccessDemo {
 
     public static func renderVideoScene(dark: Bool, scale: Double = 2) -> CGImage? {
         render(videoScene(dark: dark), size: videoSceneSize, dark: dark, scale: scale)
+    }
+
+    // MARK: Audio check scene
+
+    /// Top to bottom: a recording whose microphone was silent, one that lost its audio track, and
+    /// the newest, whose sound came through (design 20.6, audio check).
+    public static func audioCards(dark: Bool = false) -> [QuickAccessCardModel] {
+        guard let poster = M2DemoArt.terminal(M2DemoArt.buildLines, size: CGSize(width: 360, height: 225), dark: dark, bar: true)
+        else { return [] }
+        let recording = CGSize(width: 1280, height: 800)
+        let checks: [(String, AudioCheck, Double)] = [
+            ("demo-audio-captured", .captured, 42), ("demo-audio-missing", .noTrack, 95), ("demo-audio-silent", .microphoneSilent, 3_725),
+        ]
+        return checks.map { id, check, seconds in
+            let card = QuickAccessCardModel(id: id, thumbnail: poster, pointSize: recording, kind: .video, durationSeconds: seconds)
+            card.audioCheck = check
+            card.showsCopied = check == .captured
+            return card
+        }
+    }
+
+    /// The `quick-access-audio` shot: the three audio cards on the video scene's desktop.
+    public static func audioScene(dark: Bool) -> some View {
+        let inset = Theme.QuickAccess.edgeInset - QuickAccessLayout.shadowMargin
+        let desktop = videoDesktop(dark: dark)
+        return ZStack(alignment: .bottomLeading) {
+            if let desktop {
+                Image(decorative: desktop, scale: 2)
+                    .frame(width: videoSceneSize.width, height: videoSceneSize.height)
+            }
+            QuickAccessStackView(cards: audioCards(dark: dark), corner: .bottomLeft, interactive: false) { _ in .inert }
+                .frame(width: QuickAccessLayout.cardWidth(.medium) + 2 * QuickAccessLayout.shadowMargin)
+                .offset(x: inset, y: -inset)
+        }
+        .frame(width: videoSceneSize.width, height: videoSceneSize.height, alignment: .bottomLeading)
+        .environment(\.colorScheme, dark ? .dark : .light)
+    }
+
+    public static func renderAudioScene(dark: Bool, scale: Double = 2) -> CGImage? {
+        render(audioScene(dark: dark), size: videoSceneSize, dark: dark, scale: scale)
     }
 
     /// A Background-style thumbnail: the window on a violet gradient with a margin.

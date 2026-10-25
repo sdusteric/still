@@ -22,6 +22,11 @@ public final class FakeRecordingSource: RecordingSource {
         /// After this many frames the session stops writing and never finishes the file, as a
         /// crash would: the mp4 has no index and does not play.
         public var killAfterFrames: Int?
+        /// The level of a 440 Hz tone in the audio tracks, in dBFS; nil writes digital silence.
+        public var audioToneDBFS: Double?
+        /// False leaves the audio tracks out although the plan asks for audio, as a recorder that
+        /// lost its audio would.
+        public var writesAudioTracks: Bool
 
         public init(
             frames: Int = 30,
@@ -29,7 +34,9 @@ public final class FakeRecordingSource: RecordingSource {
             startError: RecordingSourceError = .startFailed("the fake source was told to fail"),
             stopAfterFrames: Int? = nil,
             systemStopReason: RecordingStopReason = .windowClosed,
-            killAfterFrames: Int? = nil
+            killAfterFrames: Int? = nil,
+            audioToneDBFS: Double? = nil,
+            writesAudioTracks: Bool = true
         ) {
             self.frames = max(frames, 0)
             self.failOnStart = failOnStart
@@ -37,6 +44,8 @@ public final class FakeRecordingSource: RecordingSource {
             self.stopAfterFrames = stopAfterFrames
             self.systemStopReason = systemStopReason
             self.killAfterFrames = killAfterFrames
+            self.audioToneDBFS = audioToneDBFS
+            self.writesAudioTracks = writesAudioTracks
         }
     }
 
@@ -115,6 +124,8 @@ public final class FakeRecordingSession: RecordingSession {
         /// or failed); nil until the video task decides.
         var finishAudio: Bool?
         var audioWaiters: [CheckedContinuation<Bool, Never>] = []
+        /// Samples delivered after the written frames, by `deliver(...)` (the heartbeat tests).
+        var extra = RecordingSampleCounts()
     }
 
     public static let counterCellSize = 16
@@ -141,12 +152,37 @@ public final class FakeRecordingSession: RecordingSession {
         (events, continuation) = AsyncStream.makeStream(of: RecordingSessionEvent.self)
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
         videoSlot = Mutex(try FakeRecordingSession.makeVideoReceiver(writer: writer, plan: plan))
-        audioSlot = Mutex(try FakeRecordingSession.makeAudioReceivers(writer: writer, plan: plan))
+        audioSlot = Mutex(
+            options.writesAudioTracks ? try FakeRecordingSession.makeAudioReceivers(writer: writer, plan: plan) : nil
+        )
         slot = Mutex(try FakeRecordingSession.startWriting(writer, plan: plan))
     }
 
     public var framesWritten: Int { progress.withLock { $0.framesWritten } }
     public var phase: Phase { progress.withLock { $0.phase } }
+
+    /// Every written frame counts as one video sample and, for each audio source the plan records,
+    /// one audio sample; `deliver` adds more without writing them.
+    public var sampleCounts: RecordingSampleCounts {
+        progress.withLock { progress in
+            let frames = progress.framesWritten
+            return RecordingSampleCounts(
+                videoFrames: frames + progress.extra.videoFrames,
+                systemAudio: plan.capturesAudio ? frames + progress.extra.systemAudio : 0,
+                microphone: plan.capturesMicrophone ? frames + progress.extra.microphone : 0
+            )
+        }
+    }
+
+    /// Counts samples as delivered without writing them, as a running stream would between
+    /// heartbeat reads. A test that wants a stall stops calling it for one track.
+    public func deliver(video: Int = 1, systemAudio: Int = 1, microphone: Int = 1) {
+        progress.withLock { progress in
+            progress.extra.videoFrames += video
+            progress.extra.systemAudio += systemAudio
+            progress.extra.microphone += microphone
+        }
+    }
 
     /// The frame count the writing loop stops at before idling, being killed or reporting a system stop.
     public var frameTarget: Int {
@@ -328,7 +364,9 @@ public final class FakeRecordingSession: RecordingSession {
             for (index, receiver) in receivers.enumerated() where written[index] < goal {
                 let start = written[index]
                 let count = min(1024, goal - start)
-                let sample = try FakeRecordingSession.silentAudio(format: format, start: start, count: count)
+                let sample = try FakeRecordingSession.audio(
+                    format: format, start: start, count: count, toneDBFS: options.audioToneDBFS
+                )
                 let ready = CMReadySampleBuffer(unsafeBuffer: sample)
                 let outcome = try await WriterInputAppend.untilAccepted(giveUp: giveUp) {
                     do {
@@ -434,8 +472,11 @@ public final class FakeRecordingSession: RecordingSession {
         }
     }
 
-    private static func silentAudio(format: CMAudioFormatDescription, start: Int, count: Int) throws -> CMSampleBuffer {
-        let bytes = count * 2 * RecordingPlan.audioChannelCount
+    /// `count` frames of 16-bit stereo PCM starting at frame `start`: silence, or a 440 Hz tone at
+    /// `toneDBFS`.
+    private static func audio(format: CMAudioFormatDescription, start: Int, count: Int, toneDBFS: Double?) throws -> CMSampleBuffer {
+        let channels = RecordingPlan.audioChannelCount
+        let bytes = count * 2 * channels
         var block: CMBlockBuffer?
         var status = CMBlockBufferCreateWithMemoryBlock(
             allocator: kCFAllocatorDefault, memoryBlock: nil, blockLength: bytes, blockAllocator: kCFAllocatorDefault,
@@ -443,7 +484,20 @@ public final class FakeRecordingSession: RecordingSession {
             blockBufferOut: &block
         )
         guard status == noErr, let block else { throw FakeRecordingError.audioBuffer(status) }
-        status = CMBlockBufferFillDataBytes(with: 0, blockBuffer: block, offsetIntoDestination: 0, dataLength: bytes)
+        if let toneDBFS {
+            let amplitude = pow(10, toneDBFS / 20) * Double(Int16.max)
+            let rate = Double(RecordingPlan.audioSampleRate)
+            var samples = [Int16](repeating: 0, count: count * channels)
+            for frame in 0..<count {
+                let value = Int16(clamping: Int((amplitude * sin(2 * .pi * 440 * Double(start + frame) / rate)).rounded()))
+                for channel in 0..<channels { samples[frame * channels + channel] = value }
+            }
+            status = samples.withUnsafeBytes { raw in
+                CMBlockBufferReplaceDataBytes(with: raw.baseAddress!, blockBuffer: block, offsetIntoDestination: 0, dataLength: bytes)
+            }
+        } else {
+            status = CMBlockBufferFillDataBytes(with: 0, blockBuffer: block, offsetIntoDestination: 0, dataLength: bytes)
+        }
         guard status == noErr else { throw FakeRecordingError.audioBuffer(status) }
         var sample: CMSampleBuffer?
         status = CMAudioSampleBufferCreateReadyWithPacketDescriptions(

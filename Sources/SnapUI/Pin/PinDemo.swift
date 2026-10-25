@@ -100,8 +100,9 @@ enum M2DemoArt {
         context.restoreGState()
     }
 
-    /// The 24 pt menu bar: Notes, File, Edit, View, Window, the Snap symbol and the clock.
-    static func menuBar(width: Double, dark: Bool, in context: CGContext) {
+    /// The 24 pt menu bar: Notes, File, Edit, View, Window, the Snap symbol and the clock. With
+    /// `badge`, the symbol carries the permission badge as the status item draws it (design 13).
+    static func menuBar(width: Double, dark: Bool, badge: Bool = false, in context: CGContext) {
         context.setFillColor(dark ? rgb(0x141418, alpha: 0.5) : CGColor(gray: 1, alpha: 0.42))
         context.fill(CGRect(x: 0, y: 0, width: width, height: 24))
         let color = text(dark: dark)
@@ -116,9 +117,30 @@ enum M2DemoArt {
         let clockWidth = lineWidth(clock, font: font(13, .medium))
         line(clock, x: width - 14 - clockWidth, y: 0, font: font(13, .medium), color: color, lineHeight: 24)
         let icon = CGRect(x: width - 14 - clockWidth - 14 - 15, y: 4.5, width: 15, height: 15)
-        context.setStrokeColor(color.cgColor)
+        guard badge else {
+            viewfinder(in: icon, color: color.cgColor, context: context)
+            return
+        }
+        // The symbol in its own layer with a hole where the badge sits, then the badge in it.
+        let side = Theme.Menu.badgeSize + 2 * Theme.Menu.badgeGap
+        let center = StatusBadgeView.center(inSymbolOf: icon.size)
+        let hole = CGRect(x: center.x - side / 2, y: center.y - side / 2, width: side, height: side)
+        if let layer = render(size: icon.size, scale: 4, { layerContext in
+            viewfinder(in: CGRect(origin: .zero, size: icon.size), color: color.cgColor, context: layerContext)
+            layerContext.setBlendMode(.clear)
+            layerContext.fillEllipse(in: hole)
+        }) {
+            draw(layer, in: icon, context: context)
+        }
+        StatusBadgeView.draw(
+            in: hole.offsetBy(dx: icon.minX, dy: icon.minY), color: Theme.Colors.warningDot.cgColor(dark: dark), context: context
+        )
+    }
+
+    /// The viewfinder symbol: four corner brackets and a dot ring, stroked in `rect`.
+    static func viewfinder(in icon: CGRect, color: CGColor, context: CGContext) {
+        context.setStrokeColor(color)
         context.setLineWidth(1.4)
-        // The viewfinder: four corner brackets and a dot ring.
         let box = icon.insetBy(dx: 1.5, dy: 1.5)
         let arm = 3.5
         for (corner, dx, dy) in [

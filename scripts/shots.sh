@@ -2,10 +2,12 @@
 # Background screenshots (design section 16): renders Snap's own surfaces from fakes and demo
 # builders in a process that has no window and no NSApplication run loop.
 #
-# Usage: scripts/shots.sh [scenario ... | m2]
+# Usage: scripts/shots.sh [scenario ... | m2 | m2-polish]
 #        default: overlay-area quick-access background-editor annotate menu settings
 #        m2: pin history history-empty hud recording-countdown recording quick-access-video
 #            annotate-tools background-mesh settings-recording menu-m2 (design 20.11)
+#        m2-polish: recording-stalled quick-access-audio annotate-reopened menu-permission
+#            (design 20.16)
 #        each scenario in light and dark -> build/shots/<scenario>-<light|dark>.png (2x points)
 #        other scenarios: overlay-before overlay-window settings-shortcuts onboarding
 #                         onboarding-granted permission-hint
@@ -35,13 +37,14 @@ TMP_ROOT="${TMP_ROOT%/}"
 TIMEOUT_SECONDS=60
 M2_SCENARIOS=(pin history history-empty hud recording-countdown recording quick-access-video annotate-tools
   background-mesh settings-recording menu-m2)
+POLISH_SCENARIOS=(recording-stalled quick-access-audio annotate-reopened menu-permission)
 SCENARIOS=()
 for arg in "$@"; do
-  if [ "$arg" = m2 ]; then
-    SCENARIOS+=("${M2_SCENARIOS[@]}")
-  else
-    SCENARIOS+=("$arg")
-  fi
+  case "$arg" in
+    m2) SCENARIOS+=("${M2_SCENARIOS[@]}") ;;
+    m2-polish) SCENARIOS+=("${POLISH_SCENARIOS[@]}") ;;
+    *) SCENARIOS+=("$arg") ;;
+  esac
 done
 [ ${#SCENARIOS[@]} -gt 0 ] || SCENARIOS=(overlay-area quick-access background-editor annotate menu settings)
 

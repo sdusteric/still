@@ -4,6 +4,7 @@ import CoreVideo
 import Foundation
 @preconcurrency import ScreenCaptureKit
 import SnapCore
+import Synchronization
 
 /// A ScreenCaptureKit error reduced to what the mapping needs, so the mapping is testable
 /// without ScreenCaptureKit objects.
@@ -235,6 +236,29 @@ extension LiveCaptureSource {
     }
 }
 
+// MARK: - Heartbeat counter
+
+/// Counts the sample buffers ScreenCaptureKit delivers for the heartbeat (design 20.6). Every
+/// screen buffer counts, also the ones with an idle frame status, so a still screen is not taken
+/// for a stall; the recording output writes the file on its own. Buffers are dropped at once.
+final class LiveSampleCounter: NSObject, SCStreamOutput, Sendable {
+    private let counts = Mutex(RecordingSampleCounts())
+    let queue = DispatchQueue(label: "dev.sdusteric.snap.recording.heartbeat", qos: .utility)
+
+    var current: RecordingSampleCounts { counts.withLock { $0 } }
+
+    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        counts.withLock { counts in
+            switch type {
+            case .screen: counts.videoFrames += 1
+            case .audio: counts.systemAudio += 1
+            case .microphone: counts.microphone += 1
+            @unknown default: break
+            }
+        }
+    }
+}
+
 // MARK: - Session
 
 /// What the stream and recording output delegates report, in order.
@@ -301,6 +325,9 @@ public actor LiveRecordingSession: RecordingSession {
     private let callbacks: AsyncStream<LiveRecordingCallback>
     private let callbackSink: AsyncStream<LiveRecordingCallback>.Continuation
     private let delegate: LiveRecordingDelegate
+    private let counter = LiveSampleCounter()
+    private let countsAudio: Bool
+    private let countsMicrophone: Bool
     private let stream: SCStream
     private let output: SCRecordingOutput
     private let outputURL: URL
@@ -329,6 +356,8 @@ public actor LiveRecordingSession: RecordingSession {
         (callbacks, callbackSink) = AsyncStream.makeStream(of: LiveRecordingCallback.self)
         delegate = LiveRecordingDelegate(sink: callbackSink, clock: clock)
         stream = SCStream(filter: filter, configuration: configuration, delegate: delegate)
+        countsAudio = configuration.capturesAudio
+        countsMicrophone = configuration.captureMicrophone
         output = SCRecordingOutput(configuration: outputConfiguration, delegate: delegate)
         self.outputURL = outputURL
         self.filterKind = filterKind
@@ -350,6 +379,9 @@ public actor LiveRecordingSession: RecordingSession {
         }
         do {
             try stream.addRecordingOutput(output)
+            try stream.addStreamOutput(counter, type: .screen, sampleHandlerQueue: counter.queue)
+            if countsAudio { try stream.addStreamOutput(counter, type: .audio, sampleHandlerQueue: counter.queue) }
+            if countsMicrophone { try stream.addStreamOutput(counter, type: .microphone, sampleHandlerQueue: counter.queue) }
             try await stream.startCapture()
         } catch {
             close()
@@ -384,6 +416,8 @@ public actor LiveRecordingSession: RecordingSession {
             if phase == .starting { phase = .recording }
         }
     }
+
+    public nonisolated var sampleCounts: RecordingSampleCounts { counter.current }
 
     public func stop() async throws -> URL {
         switch phase {

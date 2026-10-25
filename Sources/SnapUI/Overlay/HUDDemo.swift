@@ -65,8 +65,12 @@ public enum HUDDemo {
         target: .area, size: area.size, fps: 30, format: .h264, microphoneName: "MacBook Pro Microphone", systemAudio: false
     )
 
-    /// The live desktop with the red timer in the menu bar and the outline 2 pt outside the area.
-    static func recordingDesktop(dark: Bool, scale: Double = 2) -> CGImage? {
+    /// The heartbeat warning of the `recording-stalled` shot: no frame for 5 s, 38 s in.
+    public static let demoStall = RecordingStall(track: .video, seconds: 5, lastSampleElapsed: 37)
+
+    /// The live desktop with the red timer in the menu bar and the outline 2 pt outside the area;
+    /// with `stall`, the timer is amber with the warning glyph.
+    static func recordingDesktop(dark: Bool, scale: Double = 2, stall: RecordingStall? = nil) -> CGImage? {
         let notes = M2DemoArt.notes(dark: dark, scale: scale)
         return M2DemoArt.render(size: sceneSize, scale: scale) { context in
             M2DemoArt.wallpaper(CGRect(origin: .zero, size: sceneSize), dark: dark, in: context)
@@ -76,13 +80,13 @@ public enum HUDDemo {
             M2DemoArt.window(PinDemo.notesFrame, dark: dark, scale: scale, in: context) { frame in
                 if let notes { M2DemoArt.draw(notes, in: frame, context: context) }
             }
-            recordingMenuBar(width: sceneSize.width, dark: dark, context: context)
+            recordingMenuBar(width: sceneSize.width, dark: dark, stalled: stall != nil, context: context)
             RecordingOutline.draw(around: area, context: context)
         }
     }
 
     /// The fake menu bar with the timer where the Snap symbol sits.
-    static func recordingMenuBar(width: Double, dark: Bool, context: CGContext) {
+    static func recordingMenuBar(width: Double, dark: Bool, stalled: Bool = false, context: CGContext) {
         context.setFillColor(dark ? M2DemoArt.rgb(0x141418, alpha: 0.5) : CGColor(gray: 1, alpha: 0.42))
         context.fill(CGRect(x: 0, y: 0, width: width, height: 24))
         let color = M2DemoArt.text(dark: dark)
@@ -97,21 +101,24 @@ public enum HUDDemo {
         let clockWidth = M2DemoArt.lineWidth(clock, font: M2DemoArt.font(13, .medium))
         M2DemoArt.line(clock, x: width - 14 - clockWidth, y: 0, font: M2DemoArt.font(13, .medium), color: color, lineHeight: 24)
         let text = RecordingIndicator.recording(since: 0).text(now: 42)
-        let size = RecordingStatusItemView.capsuleSize(for: text)
+        let size = RecordingStatusItemView.capsuleSize(for: text, stalled: stalled)
         let timer = CGRect(x: width - 14 - clockWidth - 12 - size.width, y: (24 - size.height) / 2, width: size.width, height: size.height)
-        RecordingStatusItemView.draw(text: text, in: timer, red: Theme.Colors.record.cgColor(dark: dark), context: context)
+        let fill = stalled ? Theme.Recording.stalledFill : Theme.Colors.record
+        RecordingStatusItemView.draw(text: text, in: timer, red: fill.cgColor(dark: dark), stalled: stalled, context: context)
     }
 
-    public static func recordingScene(dark: Bool) -> some View {
-        let desktop = recordingDesktop(dark: dark)
+    public static func recordingScene(dark: Bool, stall: RecordingStall? = nil) -> some View {
+        let desktop = recordingDesktop(dark: dark, stall: stall)
+        var input = recordingMenuInput
+        input.stall = stall
+        let width = stall == nil ? Theme.Recording.menuWidth : Theme.Recording.stalledMenuWidth
         return ZStack(alignment: .topLeading) {
             if let desktop {
                 Image(decorative: desktop, scale: 2).frame(width: sceneSize.width, height: sceneSize.height)
             }
-            MenuPreviewView(
-                items: RecordingMenuModel(recordingMenuInput).items, width: Theme.Recording.menuWidth
-            )
-            .offset(x: recordingMenuOrigin.x, y: recordingMenuOrigin.y)
+            // An NSMenu grows to its longest row; the preview does the same for the stall row.
+            MenuPreviewView(items: RecordingMenuModel(input).items, width: width)
+                .offset(x: recordingMenuOrigin.x - (width - Theme.Recording.menuWidth), y: recordingMenuOrigin.y)
         }
         .frame(width: sceneSize.width, height: sceneSize.height, alignment: .topLeading)
         .environment(\.colorScheme, dark ? .dark : .light)
@@ -119,6 +126,11 @@ public enum HUDDemo {
 
     public static func renderRecording(dark: Bool, scale: Double = 2) -> CGImage? {
         QuickAccessDemo.render(recordingScene(dark: dark), size: sceneSize, dark: dark, scale: scale)
+    }
+
+    /// The `recording-stalled` shot: the amber timer and the recording menu with the stall row.
+    public static func renderRecordingStalled(dark: Bool, scale: Double = 2) -> CGImage? {
+        QuickAccessDemo.render(recordingScene(dark: dark, stall: demoStall), size: sceneSize, dark: dark, scale: scale)
     }
 }
 

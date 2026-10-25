@@ -313,3 +313,52 @@ public enum MenuM2Demo {
         QuickAccessDemo.render(scene(dark: dark), size: size, dark: dark, scale: scale)
     }
 }
+
+/// The `menu-permission` shot (design 13): a capture failed because macOS wants Screen Recording
+/// approved again, so the symbol carries the badge and the menu shows "Screen Recording needs your
+/// OK" above Settings. The scene matches `menu-m2` (420 x 600 pt) with the menu open.
+public enum MenuPermissionDemo {
+    public static var size: CGSize { MenuM2Demo.size }
+
+    public static func makeModel() -> MenuModel {
+        let now = MenuDemo.now
+        let captures = [
+            CaptureItem(id: "demo-1", createdAt: now.addingTimeInterval(-120), mode: .area, scale: 2,
+                        originalURL: URL(filePath: "/demo/history/demo-1/shot.png")),
+            CaptureItem(id: "demo-2", createdAt: now.addingTimeInterval(-8_233), mode: .area, scale: 2,
+                        originalURL: URL(filePath: "/demo/history/demo-2/recording.mp4"), kind: .video,
+                        durationSeconds: 42.4),
+            CaptureItem(id: "demo-3", createdAt: now.addingTimeInterval(-17_382), mode: .window, scale: 2,
+                        originalURL: URL(filePath: "/demo/history/demo-3/shot.png")),
+        ]
+        return MenuModel(MenuInput(recentCaptures: captures, permissionNeeded: true, now: now, timeZone: MenuDemo.timeZone))
+    }
+
+    static func stage(dark: Bool, scale: Double = 2) -> CGImage? {
+        M2DemoArt.render(size: size, scale: scale) { context in
+            M2DemoArt.wallpaper(CGRect(origin: .zero, size: size), dark: dark, in: context)
+            M2DemoArt.menuBar(width: size.width, dark: dark, badge: true, in: context)
+        }
+    }
+
+    public static func scene(dark: Bool) -> some View {
+        let stage = stage(dark: dark)
+        return ZStack(alignment: .topLeading) {
+            if let stage {
+                Image(decorative: stage, scale: 2).frame(width: size.width, height: size.height)
+            }
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Theme.Colors.separatorStrong.color)
+                .frame(width: 27, height: 20)
+                .offset(x: MenuM2Demo.statusItemX - 6, y: 2)
+            MenuPreviewView(model: makeModel(), thumbnails: MenuM2Demo.makeThumbnails())
+                .offset(x: MenuM2Demo.menuOrigin.x, y: MenuM2Demo.menuOrigin.y)
+        }
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+        .environment(\.colorScheme, dark ? .dark : .light)
+    }
+
+    public static func renderScene(dark: Bool, scale: Double = 2) -> CGImage? {
+        QuickAccessDemo.render(scene(dark: dark), size: size, dark: dark, scale: scale)
+    }
+}

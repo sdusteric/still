@@ -11,7 +11,9 @@ import SnapCore
 /// Options: `--target area|window|fullscreen --display WxH@S [--rect x,y,w,h] --frames N --fps F
 /// [--codec h264|hevc] [--audio system,microphone] [--countdown S] [--kill-after-frames K]
 /// [--runs R] [--json]`. Test flags: `--press-esc` and `--press-return` press Esc or Return at
-/// the first countdown tick; `--microphone-denied` records with microphone access off.
+/// the first countdown tick; `--microphone-denied` records with microphone access off;
+/// `--tone-dbfs D` writes a 440 Hz tone at D dBFS instead of silence and `--no-audio-track` leaves
+/// the audio tracks out (the audio check, design 20.6).
 /// Refuses the default SNAP_HOME, so it never writes into the user's history.
 @MainActor
 enum RecordCommand {
@@ -38,6 +40,8 @@ enum RecordCommand {
         var pressEsc: Bool
         var pressReturn: Bool
         var microphoneDenied: Bool
+        var toneDBFS: Double?
+        var writesAudioTracks: Bool
 
         init(_ parsed: CommandArguments) throws {
             guard parsed.flags.contains("--fake") else {
@@ -91,6 +95,13 @@ enum RecordCommand {
             pressEsc = parsed.flags.contains("--press-esc")
             pressReturn = parsed.flags.contains("--press-return")
             microphoneDenied = parsed.flags.contains("--microphone-denied")
+            if let tone = parsed.options["--tone-dbfs"] {
+                guard let value = Double(tone), value <= 0 else { throw UsageError("--tone-dbfs must be a number <= 0") }
+                toneDBFS = value
+            } else {
+                toneDBFS = nil
+            }
+            writesAudioTracks = !parsed.flags.contains("--no-audio-track")
         }
     }
 
@@ -124,7 +135,10 @@ enum RecordCommand {
         let history = HistoryStore(paths: paths, clock: clock)
         let source = FakeRecordingSource(
             clock: clock,
-            options: FakeRecordingSource.Options(frames: request.frames, killAfterFrames: request.killAfterFrames)
+            options: FakeRecordingSource.Options(
+                frames: request.frames, killAfterFrames: request.killAfterFrames, audioToneDBFS: request.toneDBFS,
+                writesAudioTracks: request.writesAudioTracks
+            )
         )
         let microphone = FakeMicrophoneAuthorization(status: request.microphoneDenied ? .denied : .authorized)
         let controller = RecordingController(
@@ -331,6 +345,8 @@ enum RecordCommand {
         var stopReason: String?
         var note: String?
         var noMicrophone: Bool
+        /// `captured`, `noTrack`, `microphoneSilent` or `systemSilent`; nil when no audio was asked for.
+        var audioCheck: String?
         var plan: PlanOutput
         var events: [RecordingEvent]
         var historyFoldersBefore: Int
@@ -363,7 +379,7 @@ enum RecordCommand {
             output.item = try JSONValue(fileAt: itemFile)
             output.file = item.originalURL.path(percentEncoded: false)
             output.probe = ProbeCommand.ProbeOutput(
-                file: item.originalURL.path(percentEncoded: false), await VideoProbe.probe(item.originalURL)
+                file: item.originalURL.path(percentEncoded: false), await VideoProbe.probe(item.originalURL, measureAudio: true)
             )
             if let posterURL = item.posterURL {
                 output.poster = try posterOutput(posterURL)
@@ -372,6 +388,7 @@ enum RecordCommand {
         if let result = last.result {
             output.stopReason = result.stopReason.rawValue
             output.note = result.note
+            output.audioCheck = result.audioCheck?.rawValue
         }
         return output
     }

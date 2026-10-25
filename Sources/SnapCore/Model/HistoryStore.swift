@@ -83,6 +83,8 @@ public struct FinishedVideo: Sendable, Hashable {
     public var posterPNGData: Data?
     /// `.complete` for a playable file, `.interrupted` when it did not probe as playable.
     public var state: CaptureState
+    /// Whether the asked-for audio is in the file; nil when none was asked for.
+    public var audioCheck: AudioCheck?
 
     public init(
         durationSeconds: Double,
@@ -91,7 +93,8 @@ public struct FinishedVideo: Sendable, Hashable {
         fps: Double? = nil,
         audio: [AudioSource]? = nil,
         posterPNGData: Data? = nil,
-        state: CaptureState = .complete
+        state: CaptureState = .complete,
+        audioCheck: AudioCheck? = nil
     ) {
         self.durationSeconds = durationSeconds
         self.pixelSize = pixelSize
@@ -100,6 +103,7 @@ public struct FinishedVideo: Sendable, Hashable {
         self.audio = audio
         self.posterPNGData = posterPNGData
         self.state = state
+        self.audioCheck = audioCheck
     }
 }
 
@@ -110,10 +114,11 @@ public struct FinishedVideo: Sendable, Hashable {
 public final class HistoryStore: Sendable {
     public static let retention: TimeInterval = 3 * 24 * 60 * 60
     public static let itemFileName = "item.json"
-    public static let currentVersion = 2
+    public static let currentVersion = 3
 
     /// What `item.json` holds. File names are relative to the item folder, so the folder can move.
-    /// Every field added in version 2 is optional, so a version 1 file reads as a complete image.
+    /// Every field added in versions 2 and 3 is optional, so a version 1 file reads as a complete
+    /// image and a version 2 file as an item without annotations or audio check.
     struct Record: Codable {
         var version = HistoryStore.currentVersion
         var id: String
@@ -133,6 +138,10 @@ public final class HistoryStore: Sendable {
         var codec: String?
         var fps: Double?
         var audio: [String]?
+        /// Version 3: `annotations.json` next to an edited image.
+        var annotationsName: String?
+        /// Version 3: `AudioCheck` of a finished recording.
+        var audioCheck: String?
 
         var resolvedKind: CaptureKind { kind ?? .image }
         var resolvedState: CaptureState { state ?? .complete }
@@ -258,24 +267,49 @@ public final class HistoryStore: Sendable {
             if let codec = finished.codec { record.codec = codec }
             if let fps = finished.fps { record.fps = fps }
             if let audio = finished.audio { record.audio = audio.map(\.rawValue) }
+            record.audioCheck = finished.audioCheck?.rawValue
             try write(record, in: folder)
             return item(from: record)
         }
     }
 
     /// Writes `<file name> (edited).png` next to the original and records it. Called again, it
-    /// replaces the earlier edited version.
+    /// replaces the earlier edited version. With `annotations`, also writes `annotations.json`
+    /// (version 3) so the edit can be reopened with every annotation editable; without, an
+    /// existing `annotations.json` is left as it is.
     @discardableResult
-    public func saveEdited(id: String, pngData: Data) throws -> CaptureItem {
+    public func saveEdited(id: String, pngData: Data, annotations: AnnotationFile? = nil) throws -> CaptureItem {
         let folder = folder(for: id)
+        let annotationData = try annotations.map { try HistoryStore.makeEncoder().encode($0) }
         return try lock.withLock { _ -> CaptureItem in
             guard var record = try readRecord(in: folder) else { throw HistoryError.itemNotFound(id) }
             let base = URL(filePath: record.originalName).deletingPathExtension().lastPathComponent
             let editedName = "\(base) (edited).png"
             try AtomicFile.write(pngData, to: folder.appending(path: editedName, directoryHint: .notDirectory))
             record.editedName = editedName
+            if let annotationData {
+                let name = AnnotationFile.fileName
+                try AtomicFile.write(annotationData, to: folder.appending(path: name, directoryHint: .notDirectory))
+                record.annotationsName = name
+            }
             try write(record, in: folder)
             return item(from: record)
+        }
+    }
+
+    /// The annotations of an edited capture, nil when it has none (unedited, or edited before
+    /// version 3). Throws when the file exists but does not decode.
+    public func annotations(id: String) throws -> AnnotationFile? {
+        let folder = folder(for: id)
+        return try lock.withLock { _ -> AnnotationFile? in
+            guard let record = try readRecord(in: folder), let name = record.annotationsName else { return nil }
+            let data: Data
+            do {
+                data = try Data(contentsOf: folder.appending(path: name, directoryHint: .notDirectory))
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+                return nil
+            }
+            return try JSONDecoder().decode(AnnotationFile.self, from: data)
         }
     }
 
@@ -441,11 +475,15 @@ public final class HistoryStore: Sendable {
     private func write(_ record: Record, in folder: URL) throws {
         var record = record
         record.version = HistoryStore.currentVersion
+        let file = folder.appending(path: HistoryStore.itemFileName, directoryHint: .notDirectory)
+        try AtomicFile.write(try HistoryStore.makeEncoder().encode(record), to: file)
+    }
+
+    private static func makeEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         encoder.dateEncodingStrategy = .iso8601
-        let file = folder.appending(path: HistoryStore.itemFileName, directoryHint: .notDirectory)
-        try AtomicFile.write(try encoder.encode(record), to: file)
+        return encoder
     }
 
     private static func makeDecoder() -> JSONDecoder {
@@ -473,7 +511,9 @@ public final class HistoryStore: Sendable {
             posterURL: isVideo ? record.posterName.map { folder.appending(path: $0, directoryHint: .notDirectory) } : nil,
             codec: isVideo ? record.codec : nil,
             fps: isVideo ? record.fps : nil,
-            audio: isVideo ? (record.audio ?? []).compactMap(AudioSource.init(rawValue:)) : []
+            audio: isVideo ? (record.audio ?? []).compactMap(AudioSource.init(rawValue:)) : [],
+            audioCheck: isVideo ? record.audioCheck.flatMap(AudioCheck.init(rawValue:)) : nil,
+            annotationsURL: isVideo ? nil : record.annotationsName.map { folder.appending(path: $0, directoryHint: .notDirectory) }
         )
     }
 

@@ -33,6 +33,12 @@ public struct CaptureItem: Sendable, Hashable, Codable, Identifiable {
     public var fps: Double?
     /// Video only: the audio sources the recording asked for. Empty for a silent recording.
     public var audio: [AudioSource]
+    /// Video only: whether the asked-for audio is in the file (version 3), nil when none was
+    /// asked for or the item predates the check.
+    public var audioCheck: AudioCheck?
+    /// Image only: `annotations.json`, the editable annotations and Background of the edited PNG
+    /// (version 3). Nil for an unedited capture and for edits saved before version 3.
+    public var annotationsURL: URL?
 
     public init(
         id: String,
@@ -50,7 +56,9 @@ public struct CaptureItem: Sendable, Hashable, Codable, Identifiable {
         posterURL: URL? = nil,
         codec: String? = nil,
         fps: Double? = nil,
-        audio: [AudioSource] = []
+        audio: [AudioSource] = [],
+        audioCheck: AudioCheck? = nil,
+        annotationsURL: URL? = nil
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -68,6 +76,8 @@ public struct CaptureItem: Sendable, Hashable, Codable, Identifiable {
         self.codec = codec
         self.fps = fps
         self.audio = audio
+        self.audioCheck = audioCheck
+        self.annotationsURL = annotationsURL
     }
 
     public init(from decoder: any Decoder) throws {
@@ -88,7 +98,9 @@ public struct CaptureItem: Sendable, Hashable, Codable, Identifiable {
             posterURL: try container.decodeIfPresent(URL.self, forKey: .posterURL),
             codec: try container.decodeIfPresent(String.self, forKey: .codec),
             fps: try container.decodeIfPresent(Double.self, forKey: .fps),
-            audio: try container.decodeIfPresent([AudioSource].self, forKey: .audio) ?? []
+            audio: try container.decodeIfPresent([AudioSource].self, forKey: .audio) ?? [],
+            audioCheck: try container.decodeIfPresent(AudioCheck.self, forKey: .audioCheck),
+            annotationsURL: try container.decodeIfPresent(URL.self, forKey: .annotationsURL)
         )
     }
 

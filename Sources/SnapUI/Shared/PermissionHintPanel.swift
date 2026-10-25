@@ -3,7 +3,7 @@ import Observation
 import SnapCore
 import SwiftUI
 
-/// "Snap needs Screen Recording permission" (design 13, 17.6): 500 pt wide, card material, a
+/// "Screen Recording needs your OK" (design 13, 17.6, 20.16): 500 pt wide, card material, a
 /// warning-tinted monitor icon and an "Open System Settings" button.
 public struct PermissionHintView: View {
     var onOpenSettings: () -> Void
@@ -21,15 +21,17 @@ public struct PermissionHintView: View {
     public var body: some View {
         HStack(spacing: Theme.Spacing.s) {
             Image(systemName: "display")
+                // Monochrome keeps the screen empty, as in the mockup; the default fills it.
+                .symbolRenderingMode(.monochrome)
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(Theme.Colors.warning.color)
                 .frame(width: 32, height: 32)
                 .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.Colors.warningBackground.color))
             VStack(alignment: .leading, spacing: 0) {
-                Text("Snap needs Screen Recording permission")
+                Text("Screen Recording needs your OK")
                     .font(Theme.Typography.headline.font)
                     .foregroundStyle(Theme.Colors.text.color)
-                Text("Capture will work as soon as it is on.")
+                Text("Turn on Snap in Screen & System Audio Recording.")
                     .font(Theme.Typography.caption.font)
                     .foregroundStyle(Theme.Colors.text2.color)
                     .padding(.top, 1)

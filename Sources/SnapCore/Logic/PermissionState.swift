@@ -1,5 +1,11 @@
 import Foundation
 
+/// Where the Screen Recording preflight comes from: `CGPreflightScreenCaptureAccess()` in the app
+/// (`PermissionProbe.Source`), `FakePermissionSource` in tests. Reading it never prompts.
+public protocol ScreenRecordingPermissionSource: Sendable {
+    func preflight() -> Bool
+}
+
 /// The Screen Recording permission as a pure state machine (design section 13). The preflight
 /// check is injected, so the rules are unit tests: `CGRequestScreenCaptureAccess` is requested at
 /// most once ever (the date is persisted in `state.json`), a hotkey while denied shows a hint
@@ -18,7 +24,7 @@ public struct PermissionState: Sendable {
     /// What the app does when the capture hotkey is pressed.
     public enum HotkeyOutcome: Sendable, Hashable {
         case capture
-        /// Show the small "Snap needs Screen Recording permission" panel. Never a request.
+        /// Show the small "Screen Recording needs your OK" panel. Never a request.
         case showHint
     }
 
@@ -47,6 +53,8 @@ public struct PermissionState: Sendable {
     private var hintShownForLapse = false
     private var activatedAfterRequestWithoutGrant = false
     private var failedAfterGrant = false
+    /// A capture was refused or failed for permission since the last capture that worked.
+    private var captureBlocked = false
 
     /// - Parameters:
     ///   - preflight: `CGPreflightScreenCaptureAccess()` in the app, a closure in tests.
@@ -54,6 +62,10 @@ public struct PermissionState: Sendable {
     public init(preflight: @escaping @Sendable () -> Bool, requestedAt: Date? = nil) {
         self.preflight = preflight
         self.requestedAt = requestedAt
+    }
+
+    public init(source: any ScreenRecordingPermissionSource, requestedAt: Date? = nil) {
+        self.init(preflight: { source.preflight() }, requestedAt: requestedAt)
     }
 
     public var hasRequested: Bool { requestedAt != nil }
@@ -69,8 +81,13 @@ public struct PermissionState: Sendable {
         !lapsed && !preflight() && !hasRequested
     }
 
-    /// The menu shows "Screen Recording permission needed" for anything but a clean grant.
+    /// The menu shows "Screen Recording needs your OK" for anything but a clean grant.
     public var needsAttention: Bool { status != .granted }
+
+    /// The badge on the menu bar symbol: a capture was refused or failed because permission is
+    /// missing or needs re-approval, and it is still not back. Cleared by a capture that works, or
+    /// by a preflight that says yes when no lapse is pending.
+    public var showsBadge: Bool { captureBlocked && needsAttention }
 
     /// The onboarding window offers "Relaunch Snap": the user came back from System Settings and
     /// the preflight still says no, or a capture failed although the preflight says yes.
@@ -81,7 +98,9 @@ public struct PermissionState: Sendable {
     // MARK: Events
 
     public mutating func hotkeyPressed() -> HotkeyOutcome {
-        status == .denied ? .showHint : .capture
+        guard status == .denied else { return .capture }
+        captureBlocked = true
+        return .showHint
     }
 
     /// The request button was clicked. At most one `.request` is ever returned: after
@@ -103,6 +122,7 @@ public struct PermissionState: Sendable {
         }
         if preflight() {
             activatedAfterRequestWithoutGrant = false
+            if !lapsed { captureBlocked = false }
         }
     }
 
@@ -111,11 +131,14 @@ public struct PermissionState: Sendable {
         let granted = preflight()
         if errorCode == PermissionState.userDeclinedErrorCode {
             lapsed = true
+            captureBlocked = true
             if granted { failedAfterGrant = true }
             return reportLapse()
         }
         // Permission is missing outright: the status is already .denied, so the hotkey shows the hint.
-        return granted ? .unrelated : .showHint
+        if granted { return .unrelated }
+        captureBlocked = true
+        return .showHint
     }
 
     /// A capture worked: any lapse is over.
@@ -123,6 +146,7 @@ public struct PermissionState: Sendable {
         lapsed = false
         hintShownForLapse = false
         failedAfterGrant = false
+        captureBlocked = false
     }
 
     private mutating func reportLapse() -> CaptureFailureOutcome {

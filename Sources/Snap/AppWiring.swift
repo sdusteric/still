@@ -30,6 +30,12 @@ final class AppWiring: CaptureResultPresenter {
         /// The Background or editor render, once made.
         var edited: CapturedImage?
         var showingEdited = false
+        /// The editable annotations and Background of the edit (`annotations.json`, design 20.4),
+        /// nil until the capture is edited.
+        var annotations: AnnotationFile?
+        /// False for a capture edited before `item.json` version 3: its edited PNG has no
+        /// annotation file, so the annotate editor opens on that PNG and no file is written.
+        var editsAreReproducible = true
 
         init(
             cardID: String, trace: CaptureTrace?, original: CapturedImage, createdAt: Date, sourceApp: String?,
@@ -45,6 +51,12 @@ final class AppWiring: CaptureResultPresenter {
         }
 
         var current: CapturedImage { showingEdited ? (edited ?? original) : original }
+
+        /// The card's Background button shows the applied state.
+        var backgroundApplied: Bool { showingEdited && (annotations.map { $0.background != nil } ?? true) }
+
+        /// The annotation file to keep with the next edited PNG, nil when edits are not reproducible.
+        var annotationsToStore: AnnotationFile? { editsAreReproducible ? annotations : nil }
 
         var currentURL: URL? {
             guard let item else { return nil }
@@ -150,7 +162,7 @@ final class AppWiring: CaptureResultPresenter {
             makeSurface: { PermissionHintPanel.makeSurface(controller: $0) }
         )
         permission = PermissionState(
-            preflight: PermissionProbe.preflightCheck,
+            source: PermissionProbe.Source(),
             requestedAt: stateStore.state.screenRecordingRequested
         )
         microphone = MicrophoneAuthorization(stateStore: stateStore, log: log)
@@ -499,36 +511,66 @@ final class AppWiring: CaptureResultPresenter {
         }.value
     }
 
-    /// One click on Background: renders the default preset, or restores the original when it is
-    /// applied (design 10.4).
+    /// One click on Background: renders the default preset around the capture (with its
+    /// annotations, when it has any), or removes it again (design 10.4). The edit and its
+    /// annotation file go to history, so the next reopen shows the same state.
     private func toggleBackground(_ id: String) async -> QuickAccessThumbnail? {
         guard let record = records[id] else { return nil }
-        if record.showingEdited {
-            record.showingEdited = false
-            return QuickAccessThumbnail(
-                image: record.original.cgImage, pointSize: record.original.pointSize, backgroundApplied: false
-            )
+        let annotated = record.editsAreReproducible && record.annotations?.hasAnnotations == true
+        if record.backgroundApplied {
+            record.annotations?.background = nil
+            guard annotated, let base = await annotatedBase(record) else {
+                record.showingEdited = false
+                return QuickAccessThumbnail(
+                    image: record.original.cgImage, pointSize: record.original.pointSize, backgroundApplied: false
+                )
+            }
+            record.edited = base
+            record.showingEdited = true
+            await storeEdited(base, for: record)
+            return QuickAccessThumbnail(image: base.cgImage, pointSize: base.pointSize, backgroundApplied: false)
         }
-        if record.edited == nil {
-            let source = record.original
-            let preset = defaultPreset
-            let log = log
-            let rendered = await Task.detached(priority: .userInitiated) { () -> CapturedImage? in
-                do {
-                    let output = try BeautifyRenderer.render(source.cgImage, scale: source.scale, preset: preset)
-                    return CapturedImage(cgImage: output.image, scale: output.geometry.outputScale)
-                } catch {
-                    log.error("background: \(error)")
-                    return nil
-                }
-            }.value
-            guard let rendered else { return nil }
-            record.edited = rendered
-            await storeEdited(rendered, for: record)
+        guard let source = await annotatedBase(record) else { return nil }
+        let preset = defaultPreset
+        let log = log
+        let rendered = await Task.detached(priority: .userInitiated) { () -> CapturedImage? in
+            do {
+                let output = try BeautifyRenderer.render(source.cgImage, scale: source.scale, preset: preset)
+                return CapturedImage(cgImage: output.image, scale: output.geometry.outputScale)
+            } catch {
+                log.error("background: \(error)")
+                return nil
+            }
+        }.value
+        guard let rendered else { return nil }
+        if record.editsAreReproducible {
+            var file = record.annotations ?? AnnotationFile()
+            file.background = preset
+            record.annotations = file
         }
-        guard let edited = record.edited else { return nil }
+        record.edited = rendered
         record.showingEdited = true
-        return QuickAccessThumbnail(image: edited.cgImage, pointSize: edited.pointSize, backgroundApplied: true)
+        await storeEdited(rendered, for: record)
+        return QuickAccessThumbnail(image: rendered.cgImage, pointSize: rendered.pointSize, backgroundApplied: true)
+    }
+
+    /// The capture with its annotations burned in and no Background: what Background is drawn
+    /// around. The original when there are no annotations (or they cannot be reproduced).
+    private func annotatedBase(_ record: CaptureRecord) async -> CapturedImage? {
+        guard record.editsAreReproducible, let file = record.annotations, file.hasAnnotations else { return record.original }
+        var plain = file
+        plain.background = nil
+        let original = record.original
+        let log = log
+        return await Task.detached(priority: .userInitiated) { () -> CapturedImage? in
+            do {
+                let output = try plain.render(original: original.cgImage, scale: original.scale)
+                return CapturedImage(cgImage: output.image, scale: output.scale)
+            } catch {
+                log.error("annotate: cannot flatten the annotations: \(error)")
+                return nil
+            }
+        }.value
     }
 
     /// The preset one-click Background uses: the one chosen in settings, else the starred one.
@@ -548,9 +590,12 @@ final class AppWiring: CaptureResultPresenter {
         }
         let history = history
         let log = log
+        let annotations = record.annotationsToStore
         let updated = await Task.detached(priority: .userInitiated) { () -> CaptureItem? in
             do {
-                return try history.saveEdited(id: id, pngData: PNGWriter.data(for: image.cgImage, scale: image.scale))
+                return try history.saveEdited(
+                    id: id, pngData: PNGWriter.data(for: image.cgImage, scale: image.scale), annotations: annotations
+                )
             } catch {
                 log.error("history: edited write for \(id) failed: \(error)")
                 return nil
@@ -566,7 +611,10 @@ final class AppWiring: CaptureResultPresenter {
 
     func openBackgroundEditor(cardID: String) {
         guard let record = records[cardID] else { return }
-        openBackgroundEditor(source: record.original, record: record, preset: defaultPreset)
+        Task {
+            guard let base = await annotatedBase(record) else { return }
+            openBackgroundEditor(source: base, record: record, preset: record.annotations?.background ?? defaultPreset)
+        }
     }
 
     /// "Edit..." next to the default preset in settings: the editor on the last capture, or on the
@@ -582,8 +630,8 @@ final class AppWiring: CaptureResultPresenter {
 
     private func openBackgroundEditor(source: CapturedImage, record: CaptureRecord?, preset: BackgroundPreset) {
         let actions = BackgroundEditorActions(
-            copy: { [weak self] output, _ in self?.editorRendered(output, record: record, copy: true) },
-            save: { [weak self] output, _ in self?.editorRendered(output, record: record, copy: false) },
+            copy: { [weak self] output, preset in self?.editorRendered(output, preset: preset, record: record, copy: true) },
+            save: { [weak self] output, preset in self?.editorRendered(output, preset: preset, record: record, copy: false) },
             savePreset: { [weak self] preset in self?.withPresets { try $0.save(preset) } },
             setDefault: { [weak self] id in self?.withPresets { _ = try $0.setStarred(id: id) } },
             deletePreset: { [weak self] id in self?.withPresets { try $0.delete(id: id) } },
@@ -612,8 +660,11 @@ final class AppWiring: CaptureResultPresenter {
         }
     }
 
-    /// Copy or Save in the Background editor: the render becomes the card's edited image.
-    private func editorRendered(_ output: BeautifyRenderer.Output, record: CaptureRecord?, copy: Bool) {
+    /// Copy or Save in the Background editor: the render becomes the card's edited image, and
+    /// its preset the Background of the annotation file.
+    private func editorRendered(
+        _ output: BeautifyRenderer.Output, preset: BackgroundPreset, record: CaptureRecord?, copy: Bool
+    ) {
         let image = CapturedImage(cgImage: output.image, scale: output.geometry.outputScale)
         let createdAt = record?.createdAt ?? clock.date()
         let app = record?.sourceApp
@@ -632,6 +683,11 @@ final class AppWiring: CaptureResultPresenter {
                 }
             }
             guard let record else { return }
+            if record.editsAreReproducible {
+                var file = record.annotations ?? AnnotationFile()
+                file.background = preset
+                record.annotations = file
+            }
             record.edited = image
             record.showingEdited = true
             quickAccess.updateThumbnail(
@@ -641,10 +697,21 @@ final class AppWiring: CaptureResultPresenter {
         }
     }
 
+    /// The annotate editor (design 11, 20.4). A capture with an annotation file opens on its
+    /// original with every annotation editable; Copy and Save flatten them, add the Background
+    /// when one is applied, and keep the file next to the history item.
     func annotate(_ cardID: String) {
         guard let record = records[cardID] else { return }
-        let image = record.current
-        let document = AnnotationDocument(image: image.cgImage, scale: image.scale)
+        let document: AnnotationDocument
+        if record.editsAreReproducible {
+            let original = record.original
+            document = record.annotations?.document(image: original.cgImage, scale: original.scale)
+                ?? AnnotationDocument(image: original.cgImage, scale: original.scale)
+        } else {
+            // Edited before version 3: there is nothing to rebuild, so the edit opens flattened.
+            let image = record.current
+            document = AnnotationDocument(image: image.cgImage, scale: image.scale)
+        }
         let actions = AnnotateActions(
             copy: { [weak self] flattened, scale in
                 self?.annotateExported(CapturedImage(cgImage: flattened, scale: scale), record: record, copy: true)
@@ -652,15 +719,24 @@ final class AppWiring: CaptureResultPresenter {
             save: { [weak self] flattened, scale in
                 self?.annotateSaved(CapturedImage(cgImage: flattened, scale: scale), record: record)
             },
-            saveAs: { flattened, scale in AppWiring.saveAs(CapturedImage(cgImage: flattened, scale: scale)) },
+            saveAs: { [weak self] flattened, scale in
+                AppWiring.saveAs(self?.withBackground(CapturedImage(cgImage: flattened, scale: scale), record: record)
+                    ?? CapturedImage(cgImage: flattened, scale: scale))
+            },
             background: { [weak self] flattened, scale in
                 guard let self else { return }
                 openBackgroundEditor(
-                    source: CapturedImage(cgImage: flattened, scale: scale), record: record, preset: defaultPreset
+                    source: CapturedImage(cgImage: flattened, scale: scale), record: record,
+                    preset: record.annotations?.background ?? defaultPreset
                 )
             },
             reveal: { url in AppWiring.reveal(url) },
-            saveFolderName: paths.saveFolder(for: settings).lastPathComponent
+            saveFolderName: paths.saveFolder(for: settings).lastPathComponent,
+            keep: { document in
+                guard record.editsAreReproducible else { return }
+                record.annotations = AnnotationFile(document: document, background: record.annotations?.background)
+            },
+            backgroundApplied: record.editsAreReproducible && record.annotations?.background != nil
         )
         let controller = AnnotateWindowController(document: document, actions: actions)
         let key = ObjectIdentifier(controller)
@@ -673,20 +749,42 @@ final class AppWiring: CaptureResultPresenter {
         controller.present()
     }
 
-    private func annotateExported(_ image: CapturedImage, record: CaptureRecord, copy: Bool) {
+    /// The annotated image with the record's Background drawn around it, when one is applied.
+    private func withBackground(_ image: CapturedImage, record: CaptureRecord) -> CapturedImage {
+        guard record.editsAreReproducible, let preset = record.annotations?.background else { return image }
+        do {
+            let output = try BeautifyRenderer.render(image.cgImage, scale: image.scale, preset: preset)
+            return CapturedImage(cgImage: output.image, scale: output.geometry.outputScale)
+        } catch {
+            log.error("annotate: background: \(error)")
+            return image
+        }
+    }
+
+    private func annotateExported(_ annotated: CapturedImage, record: CaptureRecord, copy: Bool) {
+        let image = withBackground(annotated, record: record)
+        record.edited = image
+        record.showingEdited = true
+        // The card shows what its Copy, Save and drag now use.
+        if quickAccess.card(record.cardID) != nil {
+            quickAccess.updateThumbnail(record.cardID, with: QuickAccessThumbnail(
+                image: image.cgImage, pointSize: image.pointSize, backgroundApplied: record.backgroundApplied
+            ))
+        }
         Task {
             if copy { _ = await copyToClipboard(image) }
             await storeEdited(image, for: record)
         }
     }
 
-    private func annotateSaved(_ image: CapturedImage, record: CaptureRecord) -> URL? {
+    private func annotateSaved(_ annotated: CapturedImage, record: CaptureRecord) -> URL? {
+        let image = withBackground(annotated, record: record)
         do {
             let url = try AppWiring.write(
                 image, toFolder: paths.saveFolder(for: settings), pattern: settings.general.fileNamePattern,
                 date: record.createdAt, app: record.sourceApp
             )
-            annotateExported(image, record: record, copy: false)
+            annotateExported(annotated, record: record, copy: false)
             return url
         } catch {
             log.error("annotate save: \(error)")
@@ -810,6 +908,13 @@ final class AppWiring: CaptureResultPresenter {
             if let edited = item.editedURL {
                 record.edited = try PNGReader.read(edited)
                 record.showingEdited = true
+                do {
+                    record.annotations = try history.annotations(id: id)
+                } catch {
+                    log.warning("history: cannot read the annotations of \(id): \(error)")
+                }
+                // An edit from before version 3 has no annotation file to rebuild it from.
+                record.editsAreReproducible = record.annotations != nil
             }
             insert(record)
             if showCard {
@@ -817,7 +922,7 @@ final class AppWiring: CaptureResultPresenter {
                 quickAccess.show(QuickAccessItem(
                     id: record.cardID, thumbnail: image.cgImage, pointSize: image.pointSize, copied: false
                 ))
-                quickAccess.card(record.cardID)?.backgroundApplied = record.showingEdited
+                quickAccess.card(record.cardID)?.backgroundApplied = record.backgroundApplied
             }
             return record.cardID
         } catch {

@@ -212,6 +212,38 @@ public enum AnnotateDemo {
         return view
     }
 
+    // MARK: Reopened from history (design 20.4, `annotations.json`)
+
+    /// The M1 sample's annotations as History keeps them: written to `annotations.json` and read
+    /// back, with the Background on, so the shot shows the same path the app takes.
+    public static func makeReopenedDocument(dark: Bool = false) -> (AnnotationDocument, AnnotationFile)? {
+        guard let capture = DemoCapture.notesWindow(dark: dark), let sample = makeDocument(dark: dark) else { return nil }
+        var preset = BackgroundPreset.factoryDefault
+        preset.name = "Default"
+        let stored = AnnotationFile(document: sample, background: preset)
+        do {
+            let file = try JSONDecoder().decode(AnnotationFile.self, from: JSONEncoder().encode(stored))
+            return (file.document(image: capture, scale: 2), file)
+        } catch {
+            return nil
+        }
+    }
+
+    /// The editor reopened from History: Select active, the arrow selected with its handles, and
+    /// the toolbar saying the Background is on.
+    public static func makeReopenedView(dark: Bool = false) -> NSView {
+        guard let (document, file) = makeReopenedDocument(dark: dark) else {
+            return NSView(frame: CGRect(origin: .zero, size: size))
+        }
+        let model = AnnotateEditorModel(actions: AnnotateActions(backgroundApplied: file.background != nil))
+        model.tool = .select
+        let view = AnnotateEditorView(document: document, model: model, inlineToolbar: true)
+        view.canvas.setSelection(document.items.first { $0.kind == .arrow }?.id)
+        view.frame = CGRect(origin: .zero, size: size)
+        view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        return view
+    }
+
     // MARK: Tools (mockup 12)
 
     /// The sample capture with a blurred sidebar row, a black-out over the token, a highlight, a

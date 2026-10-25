@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SnapCore
 
 /// The Screen Recording permission calls (design section 13). `preflight()` never prompts and is
 /// safe at launch and whenever the menu or settings open. `requestOnce()` shows the system dialog:
@@ -18,6 +19,16 @@ public enum PermissionProbe {
 
     /// The closure `PermissionState` takes.
     public static let preflightCheck: @Sendable () -> Bool = { CGPreflightScreenCaptureAccess() }
+
+    /// The live preflight as a `ScreenRecordingPermissionSource`: `CGPreflightScreenCaptureAccess()`
+    /// only, which never prompts.
+    public struct Source: ScreenRecordingPermissionSource {
+        public init() {}
+
+        public func preflight() -> Bool {
+            CGPreflightScreenCaptureAccess()
+        }
+    }
 
     /// `CGRequestScreenCaptureAccess()`: shows the system prompt the first time. The caller records
     /// the date in `state.json` right after, so it is never called again.

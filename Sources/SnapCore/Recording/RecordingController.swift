@@ -40,6 +40,10 @@ public struct RecordingEvent: Sendable, Hashable, Codable {
         case stopRequested
         case finished
         case audioMixed
+        /// The heartbeat found a track that stopped; the detail is the message.
+        case stalled
+        /// Samples arrive again after a stall.
+        case resumed
         case posterWritten
         case complete
         case interrupted
@@ -66,9 +70,13 @@ public struct RecordingResult: Sendable, Hashable {
     /// The microphone was requested but access is off: the card shows "No microphone" for 4 s.
     public var noMicrophone: Bool
     public var probe: VideoProbeResult
+    /// The stall the recording ended in, nil when every track was still delivering at the stop.
+    public var stall: RecordingStall?
+    /// Whether the asked-for audio is in the file (design 20.6, audio check); nil when none was asked for.
+    public var audioCheck: AudioCheck?
 
-    /// "Stopped: the window closed" and the like, nil for a normal stop.
-    public var note: String? { stopReason.cardNote }
+    /// "Stopped: the window closed", then "Frames stopped at 0:42", nil for a normal stop.
+    public var note: String? { stopReason.cardNote ?? stall?.cardNote }
     public var isComplete: Bool { item.state == .complete }
 }
 
@@ -126,6 +134,15 @@ public final class RecordingController {
     public private(set) var activeItem: CaptureItem?
     /// The plan of the current recording, with the microphone removed when access is off.
     public private(set) var activePlan: RecordingPlan?
+    /// What stopped arriving while recording, nil while every watched track delivers (heartbeat).
+    public private(set) var stall: RecordingStall? {
+        didSet {
+            guard stall != oldValue else { return }
+            onStallChange?(stall)
+        }
+    }
+    /// Called when a stall starts, its seconds grow, or it ends; on the main actor.
+    public var onStallChange: ((RecordingStall?) -> Void)?
 
     private let clock: any Clock
     private let history: HistoryStore
@@ -143,6 +160,7 @@ public final class RecordingController {
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
     private var eventsTask: Task<Void, Never>?
     private var diskTask: Task<Void, Never>?
+    private var heartbeatTask: Task<Void, Never>?
     private var finishTask: Task<RecordingResult?, Never>?
 
     public init(
@@ -291,6 +309,7 @@ public final class RecordingController {
         log?.info("recording start id=\(item.id) \(plan.logSummary)")
         watch(session)
         watchDisk()
+        watchHeartbeat(session, start: started, audio: plan.audioSources)
         return .recording(item)
     }
 
@@ -356,6 +375,7 @@ public final class RecordingController {
     ) async -> RecordingResult? {
         state = .finishing
         record(.stopRequested, detail: reason.rawValue)
+        let endedStall = stall
         stopWatching()
 
         var url = item.originalURL
@@ -368,18 +388,22 @@ public final class RecordingController {
             log?.warning("recording: stop failed id=\(item.id): \(error)")
         }
 
-        var probe = await VideoProbe.probe(url, countFrames: false)
+        let measureAudio = !plan.audioSources.isEmpty
+        var probe = await VideoProbe.probe(url, countFrames: false, measureAudio: measureAudio)
         if probe.playable, probe.audioTrackCount >= 2 {
             do {
                 if try await AudioMixExport.mixAudioIfNeeded(at: url) {
                     record(.audioMixed)
-                    probe = await VideoProbe.probe(url, countFrames: false)
+                    probe = await VideoProbe.probe(url, countFrames: false, measureAudio: measureAudio)
                 }
             } catch {
                 log?.warning("recording: audio mix failed id=\(item.id), keeping both tracks: \(error)")
             }
         }
 
+        let audioCheck = probe.playable
+            ? AudioCheck.evaluate(requested: plan.audioSources, audioTrackCount: probe.audioTrackCount, peakDBFS: probe.audioPeakDBFS)
+            : nil
         var finished = FinishedVideo(durationSeconds: probe.durationSeconds, state: .interrupted)
         if probe.playable {
             var poster: Data?
@@ -391,7 +415,7 @@ public final class RecordingController {
             finished = FinishedVideo(
                 durationSeconds: probe.durationSeconds, pixelSize: probe.pixelSize ?? plan.pixelSize,
                 codec: probe.codec ?? plan.codec.fourCC, fps: Double(plan.fps), audio: plan.audioSources,
-                posterPNGData: poster, state: .complete
+                posterPNGData: poster, state: .complete, audioCheck: audioCheck
             )
         }
 
@@ -411,7 +435,12 @@ public final class RecordingController {
             "recording stop id=\(stored.id) duration=\(String(format: "%.1f", probe.durationSeconds)) "
                 + "bytes=\(VideoProbe.fileSize(url)) reason=\(reason.rawValue) state=\(stored.state.rawValue)"
         )
-        let result = RecordingResult(item: stored, stopReason: reason, noMicrophone: noMicrophone, probe: probe)
+        if let audioCheck, let warning = audioCheck.warning {
+            log?.warning("recording \(stored.id): \(warning), peak \(probe.audioPeakDBFS.map { String(format: "%.1f", $0) } ?? "-") dBFS")
+        }
+        let result = RecordingResult(
+            item: stored, stopReason: reason, noMicrophone: noMicrophone, probe: probe, stall: endedStall, audioCheck: audioCheck
+        )
         reset()
         state = .done(result)
         return result
@@ -493,7 +522,40 @@ public final class RecordingController {
         }
     }
 
+    /// Reads the session's sample counts once a second (design 20.6, heartbeat). A stall only
+    /// warns: the status item and the menu say so, and stopping keeps whatever was written.
+    private func watchHeartbeat(_ session: any RecordingSession, start: TimeInterval, audio: [AudioSource]) {
+        var heartbeat = RecordingHeartbeat(start: start, audio: audio)
+        heartbeatTask = Task { [weak self, clock] in
+            while !Task.isCancelled {
+                do {
+                    try await clock.sleep(seconds: RecordingHeartbeat.pollInterval)
+                } catch {
+                    return
+                }
+                guard let self, case .recording = self.state else { return }
+                let found = heartbeat.observe(session.sampleCounts, at: clock.now())
+                self.updateStall(found)
+            }
+        }
+    }
+
+    private func updateStall(_ found: RecordingStall?) {
+        let previous = stall
+        if let found, previous?.track != found.track {
+            record(.stalled, detail: found.message)
+            log?.warning("recording: \(found.message)")
+        } else if found == nil, let previous {
+            record(.resumed, detail: previous.track.rawValue)
+            log?.info("recording: samples resumed after a stall of \(previous.track.rawValue)")
+        }
+        stall = found
+    }
+
     private func stopWatching() {
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
+        stall = nil
         diskTask?.cancel()
         diskTask = nil
         eventsTask?.cancel()

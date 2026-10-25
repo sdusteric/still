@@ -85,7 +85,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             now: { [weak recorder] in recorder?.now() ?? SystemClock().now() }
         )
         recorder.onIndicatorChange = { [weak controller] indicator in controller?.setRecording(indicator) }
+        recorder.onStallChange = { [weak controller] stall in controller?.setStall(stall) }
         controller.install()
+        controller.setBadge(wiring.permission.showsBadge)
         menu = controller
     }
 
@@ -362,7 +364,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func permissionChanged() {
-        guard let wiring, let model = onboardingModel else { return }
+        guard let wiring else { return }
+        // The badge and the menu row say a capture failed for permission (design 13).
+        menu?.setBadge(wiring.permission.showsBadge)
+        guard let model = onboardingModel else { return }
         model.permissionGranted = wiring.permission.status == .granted
         model.offersRelaunch = wiring.permission.offersRelaunch
         model.cleanShotRunning = conflictingApps.isCleanShotRunning
