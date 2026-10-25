@@ -50,7 +50,7 @@ These are failures, not missing features. Each has a guard in the design.
 - **A capture that misses the moment because the app is slow to respond to the hotkey.** Overlay panels are created at launch and only ordered front on the hotkey; the dim layer shows before the capture finishes; the capture never waits on PNG encoding, the clipboard or disk. Latency is logged on every capture and measured headless with a fake capture source (sections 6.6 and 14).
 - **Stealing focus from the app being captured.** No `NSApp.activate` outside the onboarding and settings windows and the annotate editor. Overlays are `.nonactivatingPanel` panels. Background screenshots and acceptance check that the frontmost app is unchanged.
 - **Losing a capture.** The PNG is written to `SNAP_HOME/history` (atomic write, temp file then rename) right after the capture is cropped, before the clipboard, the save folder or the overlay timer. Auto close never deletes the history copy. Retention is 3 days.
-- **Anything that phones home.** No network code at all. A lint rule rejects `URLSession`, `NWConnection` and `import Network` in `Sources/`. No updater, no analytics, no crash reporter.
+- **Anything that phones home.** No network code at all. A lint rule rejects `URLSession`, `NWConnection` and `import Network` in `Sources/`. No analytics, no crash reporter. The one exception, added after M1, is Sparkle 2 auto-update in the app target only (app-updates `CONTRACT.md`); it never starts in tests, shots, tools or with `SNAP_NO_UPDATES=1`.
 - **Repeated permission nags.** `CGRequestScreenCaptureAccess` is called at most once per install, from a button the user presses. After that Snap only shows a small non-modal hint when a hotkey is pressed while permission is missing (section 13).
 
 ## 5. Architecture overview
@@ -411,7 +411,7 @@ The menu shot is a rendering of the menu model, not of `NSMenu` itself, which ca
 
 ## 17. Visual design
 
-Final spec from the design pass (the orchestrator ran it with impeccable, apple-design and find-animation-opportunities). Mockup: `docs/mockup/index.html` (static, light and dark side by side, 1 CSS px = 1 pt), renders in `docs/mockup/png/`. Where the mockup and this section disagree, this section wins.
+Final spec from the design pass (the orchestrator ran it with impeccable, apple-design and find-animation-opportunities). The M2 surfaces (pin, history, HUD, recording, video card, new annotate tools, mesh backgrounds, Recording settings) extend it in section 20.11 and 20.12. Mockup: `docs/mockup/index.html` (static, light and dark side by side, 1 CSS px = 1 pt), renders in `docs/mockup/png/`. Where the mockup and this section disagree, this section wins.
 
 ### 17.1 Direction
 
@@ -578,13 +578,7 @@ Acceptance criteria are in the brief returned with this design (AC01 to AC05) an
 
 ### M2: recording and the rest
 
-- Screen recording to mp4 (H.264, HEVC option) with `SCStream` and `SCRecordingOutput`: area (display filter with `sourceRect`) or window; system audio optional; microphone optional with its own permission and usage string (`mixesAudioWithMicrophone = false` to keep tracks separate); cursor and click highlights; a menu bar stop item and a stop hotkey; countdown; the result goes to the Quick Access Overlay with a video thumbnail and drag-out.
-- All-in-one HUD on Cmd+Shift+5: area, window, fullscreen, record, with the last area remembered.
-- Capture history window: 3 days, grid of thumbnails, search by app and date, restore to Quick Access.
-- Pin to screen: a floating, resizable, click-through-optional panel with the capture, opacity control.
-- Annotate additions: highlight, blur and black-out, numbered steps, freehand.
-- Background additions: blurred-screenshot background, mesh gradients, per-app default presets.
-- Maybe: GIF export for short recordings, `SCClipBufferingOutput` "save the last 15 seconds", self-timer captures.
+Designed in section 20, in this order: pin to screen, capture history window, all-in-one HUD on Cmd+Shift+5, screen recording to mp4, annotate additions (highlight, blur and black-out, numbered steps, freehand), Background additions (blurred capture, mesh gradients). GIF export, "save the last 15 seconds", self-timer and per-app presets are out of M2 (D74). Acceptance criteria AC-M2-1 to AC-M2-10 are in the M2 brief and the header of `scripts/accept.sh`.
 
 ## 19. Risks
 
@@ -596,6 +590,344 @@ Acceptance criteria are in the brief returned with this design (AC01 to AC05) an
 - The monthly re-approval prompt on macOS 27 is unverified; the lapse handling in section 13 is the mitigation.
 - CleanShot enum meanings (`afterScreenshotActions`, `historyCapacity`, `inset`, `cornerRadius`) are inferred. Snap defines its own meanings in this document.
 - Shots approximate materials; they check layout, type and appearance, not exact blur.
+
+## 20. Milestone 2
+
+Date: 2026-10-24. Status: design for M2, written by the planner while the user was away. Every call is marked **(my call)** where it appears and listed as D45 to D79 at the end of the document. Section 20 replaces the short M2 list that section 18 used to carry. Where section 20 and the mockup disagree, section 20 wins.
+
+### 20.1 Scope and order
+
+The usage numbers decide the order. Screenshots dominate (537 this year), Background is the main edit, recordings are rare (1 this year, 19 in 2024) and history held 3 days. So M2 is built in this order, each part behind its own tests and acceptance checks, so a late part can slip without holding back an earlier one **(my call, D45)**:
+
+1. Pin to screen (20.2).
+2. Capture history window (20.3, 20.4).
+3. All-in-one HUD on Cmd+Shift+5 (20.5).
+4. Screen recording to mp4 (20.6, 20.7).
+5. Annotate additions: highlight, blur and black-out, numbered steps, freehand (20.8).
+6. Background additions: blurred-capture background and mesh gradients (20.9).
+
+Out of M2: GIF export, "save the last 15 seconds" (`SCClipBufferingOutput`), self-timer screenshots, pause and resume, trimming, a scrubbing preview on the video card, and per-app default presets (moved out of the old M2 list because the user never asked for it and it adds a settings surface) **(my call, D74)**. GIF was used once ever and is not trivial (frame sampling, palette, size limits), so it stays out.
+
+Unchanged from M1: the overlay-first pipeline, the Quick Access card stack, "never lose a capture", one permission request per install, no network (Sparkle in the app target is the separate, documented exception in section 4), and the safety rules for agents.
+
+### 20.2 Pin to screen
+
+A pin is a capture floating above other windows, for reference while working: a value to copy by hand, a design to match, an error to read while fixing it.
+
+**Entry points** **(my call, D46).**
+- A Pin button on a hovered Quick Access card: a 22 pt circle chip at the top-right of the thumbnail, mirroring Close at the top-left (mockup 11c). Key `P` on a hovered card. Pinning closes the card, since the same image is now on screen; the file stays in history.
+- Menu bar: "Pin Last Capture". Settings > Shortcuts: "Pin Last Capture", unset by default.
+- History window: the Pin button in the footer, `P`, and the context menu.
+- Recordings cannot be pinned in M2.
+
+**Placement** **(my call, D47).** When the capture's own screen rect is known (area and window captures record it in `item.json`, 20.4) and it lies fully inside one current display's `visibleFrame`, the pin opens exactly there at 100% point size, so it lands on top of what it shows. Otherwise it opens centered on the display under the pointer, scaled down to fit 60% of that display's `visibleFrame` with the aspect kept. The frame is always clamped inside the `visibleFrame`.
+
+**Window** **(my call, D48).** One `NSPanel` per pin: `[.borderless, .nonactivatingPanel, .resizable]`, `level = .floating`, `collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]`, `hidesOnDeactivate = false`, `becomesKeyOnlyIfNeeded = true`, `isMovableByWindowBackground = true`, `contentAspectRatio` set to the image. Opaque captures (area, fullscreen) are clipped to a radius of 8 pt and get the floating-panel elevation from 17.5 (0.5 pt edge ring plus one soft shadow). Window captures keep their own alpha and their own captured shadow: no clip, no ring, `hasShadow = false`.
+
+**Moving, sizing, zoom.** Drag anywhere on the image to move (1:1, no easing). Drag an edge or corner to resize with the aspect locked. Pinch, or Cmd+= and Cmd+-, zoom by 10% steps around the pointer, from 10% to 400% of the point size, never smaller than 48 pt on the short side. Cmd+0 returns to 100%. During any resize or zoom a size chip sits 8 pt above the bottom edge, centered: `460 × 268 · 100%` (chip style from 17.2, tabular digits).
+
+**Opacity** **(my call, D49).** A slider in the hover chrome, 20% to 100% in 5% steps, updated live while dragging. Keys on a focused pin: `2` to `9` set 20% to 90%, `0` sets 100%. Scroll wheel or two-finger scroll over the pin changes it by 5%. The floor is 20% so a pin can never become invisible and get lost.
+
+**Click-through** **(my call, D50).** A toggle in the hover chrome (pointer with a slash). When on, the panel sets `ignoresMouseEvents = true`, the hover chrome can no longer appear, and an 18 pt lock badge (chip color at 0.72, 10 pt lock glyph) sits 6 pt inside the top-left corner so the user knows why clicks pass through. A click-through pin is unlocked from the menu bar: "Pinned Captures" submenu lists each pin (32 pt thumbnail, time) with Unlock, Close and a final "Close All Pins". Snap installs no global key or mouse monitor for this, so no Accessibility or Input Monitoring permission is ever needed.
+
+**Hover chrome** (mockup 8). Appears when the pointer enters an unlocked pin, with the M3 and M3b timings from 17.7. Close: 22 pt circle chip, 8 pt inside the top-left corner. Control bar: chip capsule, 30 pt high, 8 pt inside the top-right corner, holding a 14 pt drop glyph, the 72 pt opacity slider (white track at 0.28, white fill, 14 pt knob), the value (11 pt medium, tabular, 32 pt wide), a hairline divider, the click-through toggle and a More button. More is an `NSMenu`: Copy (Cmd+C), Save (Cmd+S), Open in Annotate (A), Show in Quick Access, Reveal in Finder, Reset Size (Cmd+0), Close (Esc). For pins narrower than 260 pt the slider hides and the value becomes a scrub control (drag left or right on it); below 120 pt only Close and More remain.
+
+**Keys** on a pin that is key (it becomes key on click, without activating Snap): Esc or Cmd+W close, Cmd+C copy the current image, Cmd+S save, A annotate, L toggle click-through, the opacity and zoom keys above.
+
+**Lifetime** **(my call, D51).** Pins live for the session only and are not restored after a relaunch; the image is in history for 3 days and can be pinned again from there. At most 8 pins: a ninth closes the oldest. Each pin holds one decoded image (a 5K capture is about 59 MB), so 8 is also the memory ceiling. A pin keeps its image in memory, so it survives the history sweep; its Reveal item is disabled once the file is gone.
+
+**Displays.** When a display disappears, its pins move to the center of the main display, clamped. Pins do not follow Spaces changes beyond `canJoinAllSpaces`.
+
+**Model.** `PinBoard` in `SnapCore/Logic` (pure, injected displays): add with placement and the cap, close, move, resize with the aspect lock, zoom around a point with the clamps, opacity step and floor, click-through flag, display removal, and the list the menu shows. `PinController` in `SnapUI/Pin` owns the panels and draws nothing that `PinBoard` did not decide.
+
+**Failure modes.** The item's PNG cannot be read: no pin, the log names the path, the card or history tile stays. The sweep removes a pinned item's folder: the pin stays, Reveal is disabled. A display layout change: relocation above.
+
+### 20.3 Capture history window
+
+**Purpose.** Find any capture from the last 3 days and put it back to work: show its card again, pin it, copy it, drag it out.
+
+**Opening** **(my call, D52, D55).** Menu bar "Capture History…" (replaces "Open History Folder", which moves into the window footer), Settings > Shortcuts "Open Capture History" (unset by default). "Recent Captures" in the menu stays at 3 rows and now includes recordings. It is a standard titled `NSWindow` (it activates Snap: the user opened it and it has a search field), one instance, 760 × 560 pt by default, minimum 560 × 400, frame autosaved in `state.json`.
+
+**Layout** (mockup 9). Unified 52 pt toolbar: title "History" (15 pt semibold) with the subtitle "Last 3 days" (11 pt, `text2`); trailing a segmented filter All | Screenshots | Recordings and a 190 × 28 pt search field, placeholder "Search by app or date". Body on `window`: sections per day, heading 13 pt semibold ("Today", "Yesterday", then "Thursday, Oct 22") with the count in `text2`, 16 pt above the grid and 10 below. Grid: tiles 164 pt wide, 16 pt column gap, 14 pt row gap, 28 pt side padding, so four columns at the default width; columns grow with the window. Tile: a 164 × 112 pt box on `thumbnailBacking`, radius 8, 0.5 pt inner stroke black 18%, the current image aspect-fit; caption 6 pt below: time (12 pt medium, tabular) and app name (12 pt, `text2`, truncated). Badges: a duration pill for recordings (bottom-left, 18 pt, black 0.58, play glyph and `0:42`), a 20 pt wand chip top-left for edited captures, an "Interrupted" pill (warning fill) for a recording that did not finish. Selected tile: a 2 pt accent ring at 4 pt outside the box (the swatch ring rule from 17.4). Footer, 48 pt with a hairline: left "12 captures · 41 MB · kept for 3 days" (12 pt, `text2`, tabular); right Pin, Copy and the default button "Show in Quick Access". With nothing selected the three buttons are disabled.
+
+**Interaction.** Click selects, Cmd-click and Shift-click extend. Arrow keys move the selection. Return or double-click shows the item's Quick Access card again with a fresh timer, without writing the clipboard (the user asked to see it, not to copy it). Space opens Quick Look (`QLPreviewPanel`). Cmd+C copies the image (a recording copies its file URL). `P` pins. Dragging a tile drags the file URL with `.copy`, as the card does. Cmd+F focuses search, Esc clears it. Context menu: Show in Quick Access, Copy, Pin to Screen, Open in Annotate, Reveal in Finder, Move to Trash. Cmd+Delete and Move to Trash move the item folder to the Trash with `FileManager.trashItem`, so a slip is recoverable from the Trash and needs no confirmation dialog.
+
+**Search and filter** **(my call).** The filter picks by kind. The search text is split into words; an item matches when every word matches its app name, its file name, or one of its date words: "today", "yesterday", the weekday ("thursday", "thu"), the month day ("oct 22", "22 oct"), or a time prefix ("14", "14:0"). Matching is case and diacritic insensitive. With at most a few hundred items it runs on every keystroke with no debounce. `HistoryQuery` in `SnapCore/Logic` does filtering, matching and grouping by local day with an injected clock and calendar.
+
+**Empty states** (mockup 9, right). No items: a 56 pt rounded square on `fill` with the history glyph, "No captures in the last 3 days" (14 pt semibold), and "Snap keeps every screenshot and recording here for 3 days. Press ⇧⌘4 to take one." with the shortcut shown as a key cap (the real current shortcut, or "Capture Area in the menu bar" when it is unset). Footer "0 captures · kept for 3 days" and "Open Folder". No search results: "No captures match “notes”" with a "Clear Search" button in the same place.
+
+**Thumbnails.** Generated off the main thread with `CGImageSourceCreateThumbnailAtIndex`, 328 px on the long side for 164 pt at 2x, from the current PNG (or the poster for a recording), cached in an `NSCache` keyed by path and modification date. A tile shows `thumbnailBacking` until its thumbnail is ready; there is no spinner.
+
+**Live updates.** The app posts an in-process notification when a capture is stored, edited, swept or trashed; the window reloads its list on it and on becoming key. No file system watcher.
+
+### 20.4 History data
+
+**The folder stays the database** **(my call, D53).** No index file. `HistoryStore.allItems()` reads each `history/<id>/item.json`; at a few hundred items this is well under the budget, and a test with 200 items enforces p95 under 50 ms for listing (AC-M2-5). There is nothing to get out of sync.
+
+**`item.json` version 2.** New fields, all optional when decoding so version 1 files read as completed screenshots:
+
+```
+{
+  "version": 2,
+  "id": "20261024-140322-3f9a1c2e",
+  "createdAt": "2026-10-24T14:03:22Z",
+  "kind": "image" | "video",
+  "mode": "area" | "window" | "fullscreen",
+  "scale": 2,
+  "originalName": "Snap 2026-10-24 at 14.03.22.png",
+  "editedName": "Snap 2026-10-24 at 14.03.22 (edited).png",
+  "sourceApp": "Notes",
+  "screenRect": [x, y, w, h],              global top-left points, area and window captures (pin placement)
+  "pixelSize": [w, h],
+  "state": "complete" | "recording" | "interrupted",    video only
+  "durationSeconds": 42.4,                 video only
+  "posterName": "Snap 2026-10-24 at 14.03.22 poster.png",   video only
+  "codec": "avc1" | "hvc1", "fps": 30, "audio": ["system", "microphone"]   video only
+}
+```
+
+**Retention and pruning** **(my call, D54).** Retention stays 3 days, swept at launch and hourly as in M1. The sweep now skips ids that are in use: an open card, a pin, an open annotate or Background editor, the history selection being shown in Quick Access, and a recording in progress. The app passes that set to `sweep(skipping:)`; a skipped item is swept on the next run after it stops being in use. There is no size cap: recordings are rare, and a cap would break "never lose a capture" within 3 days. The history footer shows the total size so a large recording is visible.
+
+**Recording files and temporary handling** **(my call, D61).** A recording is written straight into its own history folder; there is no separate temp folder to clean up or to lose.
+1. Before the stream starts, Snap creates `history/<id>/` and writes `item.json` with `kind: video` and `state: recording`. This is the "history first" rule of section 9 applied to video.
+2. `SCRecordingOutput` writes `history/<id>/<file name>.mp4` (same file name pattern as screenshots, extension `.mp4`).
+3. On a clean finish Snap probes the file (`AVURLAsset` duration and tracks), writes `<file name> poster.png` (the frame at 0.5 s or at half the duration when shorter, `AVAssetImageGenerator` with the track transform applied, PNG at the capture's DPI), then rewrites `item.json` with `state: complete`, duration, codec, fps, audio and pixel size.
+4. At launch, before the first sweep, any item still in `state: recording` becomes `state: interrupted` (the app or the Mac stopped mid-recording). It is kept and swept like any other item, shown in history with the "Interrupted" pill, Reveal and Move to Trash only, because an mp4 without its final index may not play.
+5. A recording that fails before its first frame (permission, stream start error) removes its own empty folder: this and the user's Move to Trash are the only removals outside retention.
+6. Cancel Recording moves the folder to the Trash.
+
+**Save.** Save copies the mp4 to the save folder with the same naming and collision rules as PNGs. Edited outputs do not exist for video.
+
+### 20.5 All-in-one HUD (Cmd+Shift+5)
+
+**Hotkey change** **(my call, D56).** Cmd+Shift+5 opens the HUD, as in CleanShot. Window capture keeps Tab and Space in the area overlay, a menu item, and a "Capture Window" shortcut that is unset by default. Settings migration (version 1 to 2): if Capture Window still holds the default Cmd+Shift+5, it moves to All-in-One and Capture Window becomes unset; a user-changed shortcut is left alone. The CleanShot hand-over from 12.3 covers the same key code.
+
+**What it is** **(my call, D57).** The HUD is the area overlay from section 7 with a toolbar, not a new window. The pre-built overlay panels order front exactly as for Cmd+Shift+4 (same latency budget, same flat drawing, nothing animates, M0), plus one pre-built toolbar view (mockup 10):
+- Toolbar: chip material (17.2, flat, no blur, rule 2 of 17.1), 44 pt high, radius 14, 6 pt padding, centered at the bottom of the display under the pointer, 28 pt above its `visibleFrame` bottom. If the restored area would sit under it, it moves to 28 pt below the `visibleFrame` top.
+- Contents, left to right: Close (30 pt, x), divider, a two-part mode switch Screenshot | Record (camera and record glyphs, 28 pt high, 12 pt medium labels; Record shows its dot in red), divider, three target buttons Area, Window, Fullscreen (36 × 32, 17 pt glyphs, tooltips with keys 1, 2, 3), divider, "Options" (an `NSMenu`), and the primary button: "Capture" in the accent, or "Record" in `record` red, 30 pt high, 13 pt semibold.
+- Options menu, screenshot mode: Hide Desktop Icons, Include Window Shadow, Show Magnifier. Record mode: Microphone (None, then each input device), Record System Audio, Show Cursor, Highlight Clicks, Countdown (Off, 3 seconds, 5 seconds). These are the same settings as the Settings window, written to `settings.json`.
+
+**Last area** **(my call, D58).** When an area is confirmed from the HUD or from Cmd+Shift+4, `state.json` stores `lastArea: {displayID, displayFrame, rect}`. The HUD restores it only when a display with the same id and frame is present; it shows with 8 handles (10 pt, white, 1.5 pt accent border), a size chip 8 pt below, and is editable: drag inside moves it, handles resize it, a drag outside draws a new one, arrows nudge as in section 7. Instant capture does not apply in the HUD; Return, a double-click inside, or the primary button confirms. With no usable last area the HUD shows the plain crosshair and the toolbar, and the first drag draws the area.
+
+**Targets.** Area: as above. Window: the window highlight of 17.6, a click confirms at once. Fullscreen: the display under the pointer gets the accent 14% fill and a label chip with its name and size, a click confirms.
+
+**Keys.** 1, 2, 3 pick the target; R toggles Screenshot and Record; Tab toggles Area and Window; Return confirms; Esc cancels; arrows nudge the area.
+
+**Frozen or live** **(my call, D59).** In Screenshot mode the HUD starts the frozen display capture exactly like area mode (6.2), so the confirm is an instant crop. In Record mode the frozen layer is hidden and the screen behind the dim is live, because a recording starts from what is on screen when the countdown ends; switching modes only toggles the frozen layer's visibility.
+
+**Latency.** Hotkey to HUD visible: the same p95 under 50 ms as the area overlay, measured headless with `snapbench latency --fake --mode hud` (AC-M2-8).
+
+### 20.6 Screen recording
+
+**Starting.** From the HUD in Record mode, from the menu "Record Screen…" (opens the HUD in Record mode), or the "Record Screen" shortcut (unset by default, opens the HUD in Record mode). Snap records one thing at a time; while recording, Cmd+Shift+5 means Stop.
+
+**Plan** (`RecordingPlan`, pure, in `SnapCore/Recording`) **(my call, D60).** Built from the target, the displays and the settings; it holds every value the live code passes to ScreenCaptureKit, so the live code only copies fields:
+- Area: `SCContentFilter(display:excludingWindows:)` with Snap's own panels and, when "Hide desktop icons" is on, Finder's icon window (6.3); `sourceRect` = the area in display-local points; output size = area × scale for Retina, or × 1 for the 1x setting.
+- Window: `SCContentFilter(desktopIndependentWindow:)`; output size from `contentRect × pointPixelScale`; the window shadow is not recorded (`ignoreShadowsSingleWindow = true`), since a shadow is static padding in a video **(my call)**.
+- Fullscreen: the display under the pointer, whole.
+- Output width and height are rounded down to even numbers (H.264 and HEVC need them) and must be at least 64 × 64 px; a smaller area is refused with the size chip turning to "Too small to record".
+- `minimumFrameInterval` 1/30 s (30 fps) or 1/60 s; `queueDepth` 6; `showsCursor` from Show Cursor (default on); `showMouseClicks` from Highlight Clicks (default on), so Snap draws no click overlay and installs no event monitor **(my call, D66)**; colour space sRGB and BT.709 for the file, unlike screenshots, because players and chat apps assume it **(my call)**.
+- Audio: `capturesAudio` from Record System Audio, `excludesCurrentProcessAudio = true`, 48 kHz stereo; `captureMicrophone` and `microphoneCaptureDeviceID` from Record Microphone and the chosen device.
+- `SCRecordingOutputConfiguration`: `outputURL` in the history folder (20.4), `outputFileType = .mp4`, `videoCodecType` `.h264` (default) or `.hevc`.
+- Exclusions **(my call, D62):** the overlay, countdown, outline, HUD, Quick Access and permission hint panels are excluded; pins are recorded, because the user placed them on screen as content.
+
+**Countdown** (mockup 11a). After Record is confirmed the toolbar hides; the dim stays outside the area with the selection border; an 88 pt disc (chip color, 0.5 pt ring white 18%, shadow 0 10 30 black 35%) sits at the center of the area, window or display, with the number in 44 pt semibold tabular white; a hint chip 12 pt below: "Recording in 3 s", `↩` Start now, `Esc` Cancel. Default 3 s; Off and 5 s in settings. Return starts at once, Esc cancels and nothing is written. The overlay panel is key during the countdown, so these keys reach Snap without a global monitor.
+
+**While recording** (mockup 11b) **(my call, D63).**
+- No dim. For an area, a click-through outline panel draws the selection border (1 pt white with 1 pt black 30% on both sides) 2 pt outside the area, so it is never in the frames; it is also excluded from the filter. Window and fullscreen targets have no outline.
+- The status item becomes a red timer: an 18 pt capsule in `record` red, a white 8 pt rounded stop square, and the elapsed time in 12 pt semibold tabular white (`0:42`, `1:02:05` after an hour), updated once a second. Tooltip "Stop Recording (⇧⌘5)".
+- A click on the timer stops at once. Option-click or right-click opens a menu: Stop Recording (⇧⌘5), Cancel Recording, then three information rows (target and size, fps and codec; microphone device or "Microphone off"; "System audio on" or off).
+- Stop also by Cmd+Shift+5 or the optional "Stop Recording" shortcut (unset by default).
+- No pause in M2: `SCRecordingOutput` writes one continuous file, and pause would mean stitching segments.
+- Screenshots still work during a recording; their overlay is excluded from the video like every Snap panel.
+- While finishing, the timer shows "Saving"; finishing normally takes well under a second.
+
+**Result** **(my call, D67).** On a clean stop the Quick Access stack gets a video card (mockup 11c): the poster as the thumbnail, a duration pill in place of the dimension pill (play glyph, `0:42`), and the Copied chip, because the after-capture actions apply to video too and Copy puts the mp4's file URL on the pasteboard (`public.file-url`, so pasting into Finder, Mail or a chat attaches the file). Hover: scrim, Close, and a control bar with the labeled main button "Open" (opens the file in the default player with `NSWorkspace`), then Save, Reveal in Finder and Copy. Keys: O open, S save, C copy, R reveal, Delete or Esc close. Drag-out drags the mp4 URL with `.copy`. Background, Annotate and Pin do not apply to video. Auto close, stacking and motion are as for screenshots.
+
+**Audio** **(my call, D64).** System audio and microphone are both off by default (recordings are rare and usually silent screen demos). When both are on, the file should carry one mixed AAC track, because most chat and browser players play only the first audio track. Whether `SCRecordingOutput` mixes the microphone into the system track or writes two tracks on macOS 27 is unverified. If it writes two tracks, Snap runs a post-stop export: an `AVMutableComposition` with the video track passed through and the two audio tracks mixed by an `AVAudioMix` into one AAC track, written next to the original and swapped in by rename, before the card appears. The export is tested offline with a fake two-track file (AC-M2-4).
+
+**Disk** **(my call, D68).** Snap refuses to start with less than 2 GB free on the volume holding `SNAP_HOME` (the size chip shows "Not enough disk space"). While recording it checks every 5 s and stops cleanly below 500 MB, keeping the file and noting it on the card ("Stopped: disk almost full").
+
+**Failure modes** **(my call, D69).**
+
+| Situation | What Snap does |
+|---|---|
+| Screen Recording denied or lapsed at start (`SCStreamErrorUserDeclined`, -3801) | Removes the empty item folder, shows the permission hint from section 13, marks permission unknown. |
+| Stream fails to start for another reason | Removes the empty folder, logs the error, shows a hint chip "Recording could not start" near the pointer for 4 s. |
+| Stream stops mid-recording (window closed, display removed, system error) | Finishes the file with what was recorded, shows the card with a note: "Stopped: the window closed" or "Stopped: the display was disconnected". |
+| Microphone access denied or the device disappears | Records without the microphone; the card shows "No microphone" for 4 s; Settings shows the warning row (20.10). |
+| Disk low | See Disk. |
+| Snap quits during a recording | `applicationShouldTerminate` returns `.terminateLater`, stops and finishes the file (up to 5 s), then quits. |
+| The Mac sleeps | Stops and finishes on `NSWorkspace.willSleepNotification`. |
+| Crash or power loss | The item stays `recording` and becomes `interrupted` at the next launch (20.4). |
+| The finished file does not probe as playable | `state: interrupted`, card with Reveal only. |
+| A second Record request while recording | Cmd+Shift+5 stops instead; the menu item reads "Stop Recording". |
+
+**Logging.** `snap.log` gets `recording start id=.. target=area size=2560x1600 fps=30 codec=avc1 audio=none` and `recording stop id=.. duration=42.4 bytes=.. reason=user`, never frame data.
+
+### 20.7 Permissions
+
+- Screen Recording: already granted for screenshots; the same grant ("Screen & System Audio Recording") covers video and system audio. No new request, no new onboarding step.
+- Microphone **(my call, D65, D79):** `NSMicrophoneUsageDescription` = "Snap records your microphone only during a screen recording you start with the microphone turned on." `AVCaptureDevice.authorizationStatus(for: .audio)` is the probe. `AVCaptureDevice.requestAccess(for: .audio)` is called at most once per install, and only from a user action that turns the microphone on (the Settings switch or the HUD Options menu); never at launch, never from a recording start. Denied or restricted: the switch stays on as the user's intent, recordings proceed without the microphone, and Settings shows a warning row "Microphone access is off for Snap. Recordings are saved without it." with "Open Privacy Settings" (deep link to Privacy & Security > Microphone).
+- Snap is not sandboxed and the app has no hardened runtime (section 13 and `bundle.sh`), so no audio-input entitlement is needed; the grant is keyed to the same designated requirement as Screen Recording and survives rebuilds.
+- Lint **(my call, D75):** the `screen_capture_only_in_system` rule grows to `SCStream`, `SCRecordingOutput`, `SCStreamConfiguration`, `SCContentFilter` and `AVCaptureDevice`, all allowed only under `Sources/SnapSystem/`. `check.sh`'s plist gate also requires `NSMicrophoneUsageDescription` with the exact text above.
+
+### 20.8 Annotate additions
+
+**Toolbar** (mockup 12) **(my call, D70).** Tools, left to right: Select (V), Crop (C), Rectangle (R), Arrow (A), Text (T), Highlight (H), Redact (P), Steps (N), Freehand (F), 34 × 26 each in the segmented group. Pixelate stops being its own tool and becomes the first style of Redact; documents from M1 keep their pixelate items. The slot after the group shows the active tool's options: the color well and stroke popup for Rectangle, Arrow, Text, Steps and Freehand; the highlight color for Highlight; a style popup for Redact.
+
+**Highlight (H).** A drag draws a rectangle filled with the highlight color at 38% opacity, radius 2, no stroke. It has its own remembered color, default #FFD60A, because the red stroke color makes an unreadable highlight. Shift constrains to the line height of a drag that is wider than 3 times its height (a horizontal band).
+
+**Redact (P), three styles.** Pressing P again cycles Pixelate, Blur, Black-out; the popup shows the current style with its icon and lists the three with their keys. A drag draws the region.
+- Pixelate: as in M1 (cell about 1/12 of the shorter side, minimum 8 px).
+- Blur: `CIGaussianBlur` with radius max(8 px, 1/8 of the region's shorter side), the input clamped to its extent and cropped back so edges do not fade.
+- Black-out: solid #000000, radius 0.
+- All three are flattened at export so the original pixels under the region are not in the file. Blur and pixelate can leak the shape of large text; the style menu says "Black-out is the only style that cannot be reversed." Default style: Pixelate (M1 behaviour).
+
+**Steps (N)** **(my call, D71).** A click places a numbered circle: diameter 24, 28 or 36 pt for stroke widths 2, 4 or 7, filled with the current color, the number in white semibold (15 pt at 28) with tabular digits. Numbers are not stored: each step's number is its order among step items, so deleting step 2 renumbers 3 to 2. Steps move but do not resize; selected, they show a 1.5 pt accent ring 2.5 pt outside the circle.
+
+**Freehand (F)** **(my call, D72).** A drag records points, dropping any closer than 1.5 pt to the last kept point; the path is drawn as a Catmull-Rom spline converted to cubic Béziers, with round caps and joins in the current color and width. Hit testing uses the path's distance within width/2 + 4 pt. Freehand items move and delete; they do not resize.
+
+**Model.** `AnnotationKind` gains `highlight`, `blur`, `blackout`, `step` and `freehand`; `AnnotationItem` gains `points` (freehand) and `highlightColor` is a document setting. `Flattener` draws the new kinds and applies blur and black-out to the base image before anything is drawn on top. Undo, hit-testing, move and delete follow the M1 rules.
+
+### 20.9 Background additions
+
+**Mesh gradients** **(my call, D73).** A fifth segment "Mesh" in the Background editor (Gradient | Mesh | Color | Image | None, mockup 13) with six original meshes: Haze, Bloom, Tide, Dune, Nebula, Orchard. Each is a 3 × 3 grid of colors interpolated bicubically across the canvas: computed in `SnapCore` at 64 × 64 samples, upscaled with high-quality interpolation and a 2 px blur so it never bands, deterministic (the same preset gives the same bytes). Core Graphics has no mesh gradient, and drawing it in code keeps it headless and testable. `BackgroundPreset.background` gains `.mesh(MeshID)`.
+
+**Blurred capture.** The Image segment gains a first tile, "Blurred capture": the capture itself, aspect-filled to the canvas, Gaussian blur with radius 6% of the canvas's long side, brightness -0.06 and saturation 1.15 so the card stands out. `BackgroundPreset.background` gains `.blurredCapture`. It renders at preview scale in the editor with the same coalescing as M1.
+
+`snapctl beautify --background mesh:<name>|blurred` exposes both (AC-M2-7).
+
+### 20.10 Menu, settings and shortcuts in M2
+
+**Menu bar menu** (mockup 15). Capture Area, Capture Window, Capture Fullscreen, All-in-One… (⇧⌘5), Record Screen…; separator; Apply Background to Last Capture, Open Last Capture in Annotate, Pin Last Capture; separator; Recent Captures (3 rows, recordings shown as "Recording HH.mm.ss · 0:42" with the poster), Capture History…, Pinned Captures (n) submenu (only when pins exist); the status line; Settings…, Quit Snap. While recording, the status item is the red timer (20.6) and a plain click stops.
+
+**Settings** gets a fifth tab, Recording (mockup 14), between Quick Access and Shortcuts:
+- Video: Format (H.264, HEVC; help "HEVC files are about half the size."), Frame rate (30 fps | 60 fps), Resolution (Retina | 1x).
+- While recording: Countdown (Off, 3 seconds, 5 seconds), Show cursor (on), Highlight clicks (on).
+- Audio: Record system audio (off), Record microphone (off; help "Asked once, when you turn this on."), a microphone device popup when on, and the warning row when access is off.
+
+**Shortcuts tab.** Capture: Capture Area ⇧⌘4, Capture Fullscreen ⇧⌘3, All-in-One ⇧⌘5, Capture Window (unset), Record Screen (unset), Stop Recording (unset; ⇧⌘5 always stops a recording). Last capture: Apply Background, Open in Annotate, Pin Last Capture (all unset). Other: Open Capture History (unset).
+
+**`settings.json` version 2.** Adds `recording {format, fps, scale, countdownSeconds, showCursor, highlightClicks, systemAudio, microphone, microphoneDeviceID}`, `annotate {highlightColor, redactStyle}` and the new shortcut slots; migration from version 1 is a pure function with tests (`SettingsMigrationTests`). `state.json` adds `lastArea`, `hudMode`, `hudTarget`, `historyWindowFrame` and `microphoneRequested`.
+
+### 20.11 Visual design for M2
+
+The direction and every token of section 17 carry over: the screenshot is the only colorful thing, chrome is neutral plus the accent, overlay-path surfaces are flat, and floating panels declare elevation once. Mockup sections 8 to 15 in `docs/mockup/index.html`; solo renders at 2x per surface and theme in `docs/mockup/png/m2/<scenario>-<theme>.png`; overview pairs in `docs/mockup/png/11-pin.png` to `20-menu-m2.png`; named comparison regions in `docs/mockup/m2/regions.tsv`.
+
+**New tokens** (`Theme`):
+
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `record` | #FF3B30 | #FF453A | Recording timer, Record button, record dot |
+| `highlightDefault` | #FFD60A at 38% | same | Highlight tool default |
+| `pinRadius` | 8 pt | same | Opaque pins |
+| `lockBadge` | chip color at 0.72, 18 pt | same | Click-through pin |
+| `hudBar` | chip, 44 pt high, radius 14 | same | All-in-one toolbar |
+| `countdownDisc` | chip, 88 pt, 44 pt semibold digits | same | Countdown |
+| `historyTile` | 164 × 112, radius 8, gaps 16 / 14 | same | History grid |
+
+**Surfaces and their shot scenarios** (point sizes; the shot is 2x; the solo mockup PNG is the same size):
+
+| Scenario | Size (pt) | Content |
+|---|---|---|
+| `pin` | 1280 × 800 | fake desktop, a hovered pin with chrome, a 60% pin, a click-through pin with its lock badge |
+| `history` | 760 × 560 | window content with toolbar, two day sections, one selected tile, a recording, an edited and an interrupted item |
+| `history-empty` | 760 × 560 | the empty state |
+| `hud` | 1280 × 800 | dim, restored area with handles and size chip, toolbar in Screenshot mode |
+| `recording-countdown` | 1280 × 800 | dim, area, disc with 3, hint chip |
+| `recording` | 1280 × 800 | live desktop, area outline, red timer status item, the Option-click menu |
+| `quick-access-video` | 600 × 760 | a hovered screenshot card with Pin, a hovered video card, a fresh video card with Copied |
+| `annotate-tools` | 1100 × 720 | toolbar with the new tools, Redact style menu open, highlight, black-out, blur, three steps, freehand |
+| `background-mesh` | 920 × 640 | editor on the Mesh segment with Haze |
+| `settings-recording` | 480 × 690 | Recording tab, microphone access denied |
+| `menu-m2` | 420 × 600 | `MenuPreviewView` of the M2 menu model |
+
+Shot scenes reproduce the mockup's scene layout (wallpaper gradient, window rects, card and pin positions, the same sample content drawn simply) so that the comparison in 20.14 measures the design, not a different composition.
+
+### 20.12 Motion for M2
+
+Rows continue the table in 17.7 **(my call, D78)**. Gates applied (find-animation-opportunities): keyboard-initiated and hotkey-path surfaces never animate; state changes get the shortest motion that makes them legible; Reduce Motion falls back to opacity.
+
+| # | Moment | What moves | Duration and curve | Reduce Motion |
+|---|---|---|---|---|
+| M16 | HUD appears, target switch, mode switch, Esc | Nothing (M0 rules: hotkey path, used daily) | 0 ms | Same |
+| M17 | Pin opens from a card | The image grows from the card thumbnail's frame to the pin frame; the card leaves with M6 | Spring 0.30 / 1.0 | Fade in 100 ms at the pin frame |
+| M18 | Pin opens from the menu or history | Fade in and scale .96 to 1 at the pin frame | 160 ms enter | Fade 100 ms |
+| M19 | Pin closes | Fade out, scale 1 to .96 | 120 ms exit | Fade 100 ms |
+| M20 | Pin hover chrome | Same as M3 and M3b | 120 ms in, 100 ms out | Opacity only |
+| M21 | Pin move, resize, zoom, opacity | 1:1 with the pointer or the key, no easing; the size chip appears and leaves with no fade | 0 ms | Same |
+| M22 | Countdown digit | The new digit cross-fades in from scale .9 | 120 ms enter | Cross-fade |
+| M23 | Recording starts | Dim, disc and hint leave at once; the outline appears at once | 0 ms | Same |
+| M24 | Timer status item | Digits change in place, no pulse, no blink | 0 ms | Same |
+| M25 | Video card, restored card | Same as M1, M2, M6 | As M1 | As M1 |
+| M26 | History window | Selection ring and tile states change instantly; no grid stagger; Quick Look uses the system zoom | 0 ms | Same |
+| M27 | Annotate new tools, Background mesh | None, as M11 and M12 | 0 ms | Same |
+
+Rejected: a pulsing record dot or outline (a looping animation during the whole recording is a distraction and reads as a nag); a fly-to-card animation after Stop (the card already enters with M1); a staggered history grid (a tool window opened to find something, decoration delays it); an animated countdown ring (the digit already carries the state; a ring adds motion at the moment the user is getting ready).
+
+### 20.13 Package and files
+
+```
+Sources/SnapCore/
+  Model/        CaptureItem (+kind, state, video fields), HistoryStore (v2, in-use sweep, trash), Settings (v2 + migration),
+                StateStore (+lastArea, hud, microphoneRequested)
+  Logic/        PinBoard, HistoryQuery, AllInOneState, MenuModel (+M2 items)
+  Recording/    RecordingTarget, RecordingPlan, RecordingSource (protocol), RecordingController, DiskSpaceProbe (protocol),
+                VideoProbe, PosterWriter, AudioMixExport
+  Annotate/     AnnotationItem (+highlight, blur, blackout, step, freehand), Flattener, FreehandPath
+  Beautify/     MeshGradients, BlurredCaptureBackground, BackgroundPreset (+mesh, blurredCapture)
+  Fakes/        FakeRecordingSource (AVAssetWriter, synthetic frames), FakeDiskSpace, FakeMicrophoneAuthorization,
+                HistoryFixture
+Sources/SnapSystem/
+  LiveRecordingSource (SCStream, SCRecordingOutput), MicrophoneAuthorization, LiveDiskSpace, InputDevices
+Sources/SnapUI/
+  Pin/          PinPanel, PinView, PinChromeView, PinController
+  History/      HistoryWindowController, HistoryView, HistoryTile, ThumbnailCache, HistoryDemo
+  Overlay/      AllInOneToolbar, CountdownView, RecordingOutlinePanel (+OverlayController HUD mode)
+  QuickAccess/  QuickAccessCardView (+Pin button, video card), QuickAccessController (+video)
+  Annotate/     AnnotateToolbar (+tools, Redact style popup), AnnotateCanvasView (+tools)
+  Background/   BackgroundEditorView (+Mesh segment, Blurred capture tile)
+  Settings/     SettingsView (+Recording tab, shortcut rows)
+  Menu/         StatusMenuController (+timer, pinned submenu), MenuPreviewView
+Sources/snapctl/  RecordCommand, ProbeCommand, HistoryCommand, AnnotateCommand (+ BeautifyCommand flags)
+Sources/snapbench/ LatencyBench (+ --mode hud)
+```
+
+`snapctl` gains an AVFoundation link (fake recorder, probe, poster, audio mix export) and still never links ScreenCaptureKit or Sparkle; `check.sh` keeps verifying both with `otool -L`.
+
+### 20.14 Testing offline with fakes
+
+No agent may call ScreenCaptureKit, record the screen, record or play audio, request microphone access, or show a window. Every M2 path is tested through fakes and headless tools **(my call, D76, D77)**:
+
+**Fakes.**
+- `FakeRecordingSource`: implements `RecordingSource` by writing a real mp4 with `AVAssetWriter` from synthetic frames (the gradient and grid of `SyntheticImages`, with a frame counter block so frames differ), at the plan's size, fps and codec, optionally with a silent AAC track per requested audio source (generated sample buffers, never a device, never played). It can fail on start, stop mid-way with a reason, or be "killed" after N frames without finishing the file (to test interrupted recovery).
+- `FakeDiskSpace`, `FakeMicrophoneAuthorization` (granted, denied, not determined; counts requests), `FakeClock` for countdowns and the timer, `HistoryFixture` (N items spread over D days, images and videos, some edited, some interrupted, v1 and v2 `item.json`).
+
+**Unit suites (required by AC-M2-3).** `PinBoardTests` (placement at the capture rect, fallback and 60% fit, clamps, aspect-locked resize, zoom limits, opacity steps and floor, ninth pin closes the oldest, display removal), `HistoryStoreV2Tests` (v1 decode, v2 round trip, in-use sweep skip, interrupted marking at launch, trash), `HistoryQueryTests` (kind filter, word matching on app, file and date words, grouping by local day across midnight and DST), `AllInOneStateTests` (last area restore and display fingerprint, keys, mode toggling hides the frozen layer, settings migration of ⇧⌘5), `RecordingPlanTests` (area sourceRect and even pixel sizes at 1x and 2x, window and fullscreen filters, minimum size, fps, codec, audio flags, exclusions), `RecordingControllerTests` (countdown with a fake clock, Return skips, Esc cancels and writes nothing, stop by status item and by ⇧⌘5, history-first `item.json`, finish writes poster and `complete`, start failure removes the folder, mid-stream stop keeps the file with a reason, disk refusal and low-disk stop, microphone denied records without it, quit and sleep finish the file), `VideoProbeTests` (duration, frame count, codec, poster size from fake files, audio mix export turns two tracks into one), `AnnotationM2Tests` (highlight alpha, blur and black-out flatten remove the original pixels, step numbering and renumbering, freehand decimation, smoothing and hit test), `MeshGradientTests` (corners match the grid colors within 3/255, determinism), `BlurredBackgroundTests`, `SettingsMigrationTests`, and in `SnapUITests`: `PinControllerTests`, `HistoryWindowModelTests`, `QuickAccessVideoCardTests` (controllers driven without panels, as M1's controller tests).
+
+**`snapctl` additions.**
+- `record --fake --target area|window|fullscreen --display WxH@S [--rect x,y,w,h] --frames N --fps F [--codec h264|hevc] [--audio system,microphone] [--kill-after-frames K] [--runs R] --json`: runs `RecordingController` with `FakeRecordingSource` and a fake clock into `SNAP_HOME/history`, prints the item, file path, probe results and timings (confirm to recording, stop to card ready).
+- `probe <file.mp4> --json`: duration, frame count, codec FourCC, pixel size, audio track count, playable flag (AVFoundation reading, independent of the writer).
+- `history gen --items N --days D [--seed S]`, `history list [--query q] [--kind image|video] --json [--runs R]`, `history sweep --now <ISO date> [--skip id,...] --json`, `history recover --json` (marks `recording` items `interrupted`).
+- `annotate --in <png> --doc <json> --out <png>`: flattens an `AnnotationDocument` (for the redact checks).
+- `beautify` accepts `--background mesh:<name>` and `--background blurred`.
+
+**`snapbench`.** `latency --fake --mode hud` drives the real overlay controller in HUD mode without panels and reports present, frozen and confirm stages; in Record mode it also asserts that no frozen capture was requested.
+
+**Shots.** `scripts/shots.sh m2` renders the eleven scenarios of 20.11 in light and dark through the existing shot mode (no window, `lsappinfo front` unchanged, `winlist` empty, `SNAP_NO_UPDATES=1`).
+
+**Comparison with the mockup.** `scripts/shot-stats.swift` gains `--compare <shot.png> <mockup.png> [--grid 32] [--regions docs/mockup/m2/regions.tsv --scenario <name>]`. Both images must have the same pixel size. It reports the mean and 90th percentile of the absolute difference of mean luminance over a 32-column grid of square cells, and the mean luminance difference in each named region. The acceptance thresholds are in AC-M2-10. This checks layout, light and dark, and the weight of each surface; it does not check text rendering or blur, which the user reviews by eye.
+
+### 20.15 M2 risks
+
+- Whether `SCRecordingOutput` mixes microphone and system audio into one track on macOS 27 is unverified; the post-stop mix export is the fallback and is tested offline.
+- `showMouseClicks` drawing and its look are the system's; if it is missing or looks wrong, a Snap-drawn click overlay would need a global mouse monitor, which this design avoids. Hands-on check by the user.
+- The time from countdown end to the first recorded frame is unmeasured; a fast click right after the countdown may be missed. The first-frame time is logged per recording.
+- Interrupted mp4 files are usually unplayable without the final index; Snap keeps them for 3 days but does not try to repair them.
+- A borderless resizable nonactivating panel's resize and pinch behaviour, the click-through lock, Quick Look from the history window, the HUD's key handling and the recording timer all need hands-on checks by the user, because no agent can show a window.
+- Eight 5K pins hold about 470 MB of decoded images; the cap is the guard.
+- The shot-to-mockup comparison thresholds are a first guess; if a threshold proves unreachable with a faithful scene, the run reports the measured numbers rather than loosening it, and the user decides.
 
 ## Decisions to review
 
@@ -651,3 +983,42 @@ Made on 2026-10-24 while the user was away, after the impeccable, apple-design a
 - D43. First run is one non-modal window with two steps and "Skip for now". Snap works without either step.
 - D44. All colors, type, radii and sizes in 17.2 to 17.4 are tokens for `Theme` in `SnapUI/Shared`. Controls that AppKit draws (menu, switches, popups, tabs) stay system-drawn.
 
+### M2 calls (mine, the planner's, for the user to review)
+
+Made on 2026-10-24 while the user was away, for section 20, after the impeccable, apple-design and find-animation-opportunities pass that produced mockup sections 8 to 15.
+
+- D45. M2 order follows use: pin, history window, all-in-one HUD, recording, annotate additions, Background additions; each part has its own tests and acceptance checks.
+- D46. Pin entry points: a Pin chip top-right on a hovered card (P), "Pin Last Capture" in the menu and as an unset shortcut, and the history window. Pinning closes the card. Recordings cannot be pinned.
+- D47. A pin opens at the capture's own screen rect at 100% when that rect is on a current display, else centered on the pointer's display within 60% of its visible frame.
+- D48. Pins are borderless nonactivating floating panels on all Spaces, radius 8 with the card elevation for opaque captures, raw alpha for window captures; aspect-locked resize, zoom 10% to 400%.
+- D49. Pin opacity 20% to 100% in 5% steps (slider, keys 2 to 9 and 0, scroll); the 20% floor keeps a pin findable.
+- D50. Click-through pins show a lock badge and are unlocked from the menu's Pinned Captures submenu; no global monitors, so no Accessibility permission.
+- D51. Pins are session only, at most 8; the ninth closes the oldest.
+- D52. History is a titled window (760 × 560) with a day-grouped grid, kind filter and word search over app, file name and date words; Return shows the card again without touching the clipboard; delete moves to the Trash without a dialog.
+- D53. The history folder stays the database: no index file; `item.json` version 2 adds kind, state, screen rect, pixel size and video fields, and version 1 still reads.
+- D54. Retention stays 3 days with no size cap; the sweep skips items in use (cards, pins, editors, recording).
+- D55. The menu keeps 3 Recent Captures (recordings included), adds Capture History…, and moves Open History Folder into the window footer.
+- D56. Cmd+Shift+5 becomes All-in-One; Capture Window becomes unset, migrated only when it still held the default.
+- D57. The HUD is the existing overlay plus a flat chip toolbar (no blur, no animation) with mode, target, Options and the primary action.
+- D58. The last area is stored per display with a frame fingerprint and restored editable only on the same layout.
+- D59. HUD Screenshot mode uses the frozen capture; Record mode shows the live screen.
+- D60. Recording uses SCStream with SCRecordingOutput to mp4: H.264 default, HEVC option, 30 fps default, Retina default, even pixel sizes, sRGB/BT.709, no window shadow.
+- D61. A recording is written straight into its history folder, `item.json` first in state recording; leftovers become interrupted at launch and are kept 3 days.
+- D62. Countdown 3 s by default (Off, 3, 5), Return skips, Esc cancels; Snap's panels are excluded from the video, pins are included.
+- D63. The status item becomes a red timer; a click stops, Option-click shows a menu with Cancel; Cmd+Shift+5 stops; no pause in M2.
+- D64. System audio and microphone are off by default; when both are on the file gets one mixed track, with a post-stop mix export if the system writes two.
+- D65. The microphone permission is requested once, only from turning the microphone on; denied means recording without it plus a warning row in Settings.
+- D66. Cursor and click highlights come from SCStreamConfiguration (`showsCursor`, `showMouseClicks`), both on; Snap draws no click overlay.
+- D67. A finished recording shows a video card (poster, duration pill, Copied with the file URL on the clipboard) with Open, Save, Reveal and Copy; drag-out drags the mp4.
+- D68. Recording needs 2 GB free to start and stops cleanly below 500 MB.
+- D69. Quit and sleep finish the file; a stream that stops early keeps what it has and says why on the card.
+- D70. Annotate adds Highlight (own color #FFD60A at 38%), Redact with Pixelate, Blur and Black-out styles (P cycles; Pixelate stays the default), Steps and Freehand.
+- D71. Steps are numbered circles sized by stroke width; numbers come from order and renumber on delete.
+- D72. Freehand decimates at 1.5 pt and smooths with Catmull-Rom; it moves and deletes but does not resize.
+- D73. Background adds a Mesh segment with six original 3 × 3 meshes rendered in code, and a Blurred capture background (6% blur, brightness -0.06, saturation 1.15).
+- D74. Out of M2: GIF export, last 15 seconds, self-timer, pause, trimming, card scrubbing and per-app default presets.
+- D75. The lint rule that keeps ScreenCaptureKit in SnapSystem also covers SCStream, SCRecordingOutput, SCStreamConfiguration, SCContentFilter and AVCaptureDevice; the plist gate requires the microphone usage string.
+- D76. Recording is tested offline with a fake source that writes real mp4 files from synthetic frames through AVAssetWriter, plus `snapctl record`, `probe`, `history` and `annotate`.
+- D77. Eleven new shot scenarios in light and dark are compared with solo mockup renders by a coarse luminance grid and named regions.
+- D78. M2 motion: nothing on the HUD or recording path, a spring from card to pin, a 120 ms countdown digit cross-fade, no pulsing record indicator, no grid stagger.
+- D79. Microphone usage string: "Snap records your microphone only during a screen recording you start with the microphone turned on."
