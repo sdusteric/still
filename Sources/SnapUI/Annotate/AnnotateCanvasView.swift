@@ -22,7 +22,9 @@ public final class AnnotateCanvasView: NSView {
 
     public private(set) var document: AnnotationDocument {
         didSet {
-            pixelCache = pixelCache.filter { id, entry in document.item(id)?.box == entry.box }
+            pixelCache = pixelCache.filter { id, entry in
+                document.item(id).map { $0.box == entry.box && $0.kind == entry.kind } ?? false
+            }
             needsDisplay = true
         }
     }
@@ -44,7 +46,9 @@ public final class AnnotateCanvasView: NSView {
     private var pan = CGPoint.zero
     private var drag: Drag = .none
     private var textOverlay: TextEditingOverlay?
-    private var pixelCache: [UUID: (box: CGRect, image: CGImage)] = [:]
+    private var pixelCache: [UUID: (box: CGRect, kind: AnnotationKind, image: CGImage)] = [:]
+    /// Where the current highlight drag started: Shift reshapes it around this point.
+    private var dragPress = CGPoint.zero
     private let toastHost: NSHostingView<ToastView>
 
     private enum Drag {
@@ -67,6 +71,8 @@ public final class AnnotateCanvasView: NSView {
         model.canvas = self
         model.onToolChange = { [weak self] previous in self?.toolChanged(from: previous) }
         model.onStyleChange = { [weak self] in self?.applyStyleToSelection() }
+        model.onHighlightChange = { [weak self] in self?.applyHighlightColorToSelection() }
+        model.onRedactStyleChange = { [weak self] in self?.applyRedactStyleToSelection() }
         model.zoomLabel = zoomLabel
         toast.onReveal = { [weak self] url in self?.model.actions.reveal(url) }
         addSubview(toastHost)
@@ -190,15 +196,20 @@ public final class AnnotateCanvasView: NSView {
         context.translateBy(x: frame.minX - visible.minX * scale, y: frame.minY - visible.minY * scale)
         context.scaleBy(x: scale, y: scale)
         drawImage(in: context, scale: scale)
-        for item in document.items where item.id != textOverlay?.itemID {
-            if item.kind == .pixelate {
-                drawPixelate(item, in: context)
-            } else {
-                AnnotationPainter.draw(item, in: context)
-            }
+        // Redactions sit on the base image and everything else above them, as in the export.
+        for item in document.items where item.kind.isRedact {
+            drawRedact(item, in: context)
+        }
+        let numbers = document.stepNumbers
+        for item in document.items where !item.kind.isRedact && item.id != textOverlay?.itemID {
+            AnnotationPainter.draw(item, number: numbers[item.id] ?? 1, in: context)
         }
         if case .creating(let item) = drag {
-            if item.kind == .pixelate { drawPixelate(item, in: context) } else { AnnotationPainter.draw(item, in: context) }
+            if item.kind.isRedact {
+                drawRedactPreview(item, in: context, scale: scale)
+            } else {
+                AnnotationPainter.draw(item, number: numbers.count + 1, in: context)
+            }
         }
         context.restoreGState()
 
@@ -220,20 +231,30 @@ public final class AnnotateCanvasView: NSView {
         context.restoreGState()
     }
 
-    private func drawPixelate(_ item: AnnotationItem, in context: CGContext) {
+    private func drawRedact(_ item: AnnotationItem, in context: CGContext) {
         let box = item.box.intersection(document.imageBounds)
         guard !box.isNull, box.width > 0, box.height > 0 else { return }
+        if item.kind == .blackout {
+            context.saveGState()
+            context.setFillColor(Theme.Colors.blackout.cgColor(dark: false))
+            context.fill(box)
+            context.restoreGState()
+            return
+        }
         let mosaic: CGImage
-        if let cached = pixelCache[item.id], cached.box == item.box {
+        if let cached = pixelCache[item.id], cached.box == item.box, cached.kind == item.kind {
             mosaic = cached.image
         } else {
             let pixels = CGRect(
                 x: box.minX * document.scale, y: box.minY * document.scale,
                 width: box.width * document.scale, height: box.height * document.scale
             )
-            guard let image = Flattener.pixelated(document.image, region: pixels) else { return }
+            let made = item.kind == .blur
+                ? Flattener.blurred(document.image, region: pixels)
+                : Flattener.pixelated(document.image, region: pixels)
+            guard let image = made else { return }
             mosaic = image
-            if document.item(item.id) != nil { pixelCache[item.id] = (item.box, image) }
+            if document.item(item.id) != nil { pixelCache[item.id] = (item.box, item.kind, image) }
         }
         context.saveGState()
         context.interpolationQuality = .none
@@ -243,13 +264,36 @@ public final class AnnotateCanvasView: NSView {
         context.restoreGState()
     }
 
+    /// While a redact region is being dragged: the pixelate mosaic live, a veil for blur and
+    /// black-out (the effect appears when the region is committed).
+    private func drawRedactPreview(_ item: AnnotationItem, in context: CGContext, scale: Double) {
+        switch item.kind {
+        case .pixelate:
+            drawRedact(item, in: context)
+        default:
+            let box = item.box
+            context.saveGState()
+            context.setFillColor(CGColor(gray: item.kind == .blackout ? 0 : 1, alpha: item.kind == .blackout ? 0.55 : 0.3))
+            context.fill(box)
+            context.setStrokeColor(NSColor.controlAccentColor.cgColor)
+            context.setLineWidth(1 / max(scale, 0.01))
+            context.stroke(box)
+            context.restoreGState()
+        }
+    }
+
     private func drawSelection(_ item: AnnotationItem, in context: CGContext) {
         let accent = NSColor.controlAccentColor.cgColor
+        if item.kind == .step {
+            drawStepRing(item, in: context, accent: accent)
+            return
+        }
         context.saveGState()
         context.setStrokeColor(accent)
         context.setLineWidth(Theme.Annotate.selectionBorderWidth)
         let outset = selectionOutset(item)
-        let outline = viewRect(item.kind == .text ? item.bounds : item.box).insetBy(dx: -outset, dy: -outset)
+        let outline = viewRect(item.kind == .text || item.kind == .freehand ? item.bounds : item.box)
+            .insetBy(dx: -outset, dy: -outset)
         if item.kind != .arrow {
             context.stroke(outline)
         }
@@ -257,6 +301,18 @@ public final class AnnotateCanvasView: NSView {
             let point = item.kind == .arrow ? viewPoint(item.handlePoint(handle)) : handle.point(on: outline)
             drawHandle(at: point, in: context, accent: accent)
         }
+        context.restoreGState()
+    }
+
+    /// A selected step shows a 1.5 pt accent ring 2.5 pt outside its circle (design 20.8).
+    private func drawStepRing(_ item: AnnotationItem, in context: CGContext, accent: CGColor) {
+        let circle = viewRect(item.box)
+        let width = Theme.AnnotateM2.stepSelectionRingWidth
+        let inset = -(Theme.AnnotateM2.stepSelectionRingOffset + width / 2)
+        context.saveGState()
+        context.setStrokeColor(accent)
+        context.setLineWidth(width)
+        context.strokeEllipse(in: circle.insetBy(dx: inset, dy: inset))
         context.restoreGState()
     }
 
@@ -346,13 +402,37 @@ public final class AnnotateCanvasView: NSView {
     }
 
     private func applyStyleToSelection() {
-        guard let id = selection, var item = document.item(id), item.kind != .pixelate else { return }
+        guard let id = selection, var item = document.item(id) else { return }
+        switch item.kind {
+        case .rectangle, .arrow, .text, .step, .freehand: break
+        case .pixelate, .blur, .blackout, .highlight: return
+        }
         let before = document
         item.color = model.color
         if item.kind != .text { item.width = model.strokeWidth }
         var next = document
         next.update(item)
         apply(next, undoFrom: before, name: "Change Style")
+    }
+
+    private func applyHighlightColorToSelection() {
+        guard let id = selection, var item = document.item(id), item.kind == .highlight else { return }
+        let before = document
+        item.color = model.highlightColor
+        var next = document
+        next.update(item)
+        apply(next, undoFrom: before, name: "Change Highlight")
+    }
+
+    /// A selected redact region takes the new style (its kind changes, its box stays).
+    private func applyRedactStyleToSelection() {
+        guard let id = selection, var item = document.item(id), item.kind.isRedact,
+              item.kind != model.redactStyle.kind else { return }
+        let before = document
+        item.kind = model.redactStyle.kind
+        var next = document
+        next.update(item)
+        apply(next, undoFrom: before, name: "Change Redact Style")
     }
 
     // MARK: Undo
@@ -523,7 +603,7 @@ public final class AnnotateCanvasView: NSView {
             }
             return
         }
-        if let id = document.hitTest(point, tolerance: radius), let item = document.item(id) {
+        if let id = hitTestForTool(point, tolerance: radius), let item = document.item(id) {
             selection = id
             if event.clickCount >= 2, item.kind == .text {
                 beginTextEditing(existing: id)
@@ -543,11 +623,29 @@ public final class AnnotateCanvasView: NSView {
             ))
         case .arrow:
             drag = .creating(.arrow(from: point, to: point, color: model.color, width: model.strokeWidth))
-        case .pixelate:
-            drag = .creating(.pixelate(CGRect(origin: point, size: .zero)))
+        case .redact:
+            drag = .creating(.redact(CGRect(origin: point, size: .zero), style: model.redactStyle))
+        case .highlight:
+            dragPress = point
+            drag = .creating(.highlight(CGRect(origin: point, size: .zero), color: model.highlightColor))
+        case .step:
+            addItem(.step(at: point, color: model.color, width: model.strokeWidth))
+        case .freehand:
+            drag = .creating(.freehand([point], color: model.color, width: model.strokeWidth))
         case .text:
             beginTextEditing(newAt: point)
         }
+    }
+
+    /// The item a press selects. Highlights and redact regions are areas: with a drawing tool
+    /// active they would swallow every press inside them, so only the Select tool (or an item
+    /// that is already selected) takes them.
+    private func hitTestForTool(_ point: CGPoint, tolerance: Double) -> UUID? {
+        guard model.tool != .select else { return document.hitTest(point, tolerance: tolerance) }
+        return document.items.last { item in
+            let isArea = item.kind == .highlight || item.kind.isRedact
+            return item.contains(point, tolerance: tolerance) && (!isArea || item.id == selection)
+        }?.id
     }
 
     override public func mouseDragged(with event: NSEvent) {
@@ -559,6 +657,11 @@ public final class AnnotateCanvasView: NSView {
         case .creating(var item):
             if item.kind == .arrow {
                 item.end = shift ? AnnotationItem.snap45(point, from: item.start) : point
+            } else if item.kind == .freehand {
+                item.points = FreehandPath.appending(point, to: item.points)
+                item.end = item.points.last ?? point
+            } else if item.kind == .highlight {
+                (item.start, item.end) = AnnotationItem.highlightCorners(press: dragPress, to: point, constrain: shift)
             } else {
                 item.end = shift ? Self.square(from: item.start, to: point) : point
                 if item.kind == .rectangle { item.filled = event.modifierFlags.contains(.option) }
@@ -601,7 +704,11 @@ public final class AnnotateCanvasView: NSView {
     override public func mouseUp(with event: NSEvent) {
         defer { drag = .none }
         switch drag {
-        case .creating(let item):
+        case .creating(var item):
+            if item.kind == .freehand {
+                item.points = FreehandPath.appending(imagePoint(convert(event.locationInWindow, from: nil)), to: item.points)
+                item.end = item.points.last ?? item.end
+            }
             if item.isMeaningful {
                 addItem(item)
             } else {
@@ -752,7 +859,7 @@ public final class AnnotateCanvasView: NSView {
             break
         }
         if modifiers.isEmpty, let characters = event.charactersIgnoringModifiers, let tool = AnnotateTool(key: characters) {
-            model.tool = tool
+            model.pick(tool)
             return
         }
         super.keyDown(with: event)

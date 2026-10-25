@@ -5,9 +5,10 @@ import SnapSystem
 import SnapUI
 import SwiftUI
 
-/// The app lifecycle (design 5, 12, 13): menu bar only (`.accessory`), the status menu, settings,
-/// global hotkeys with the CleanShot X hand-over, and the first-run window. The capture graph
-/// lives in `AppWiring`. Only the installed app runs this; tests, tools and the shot mode never do.
+/// The app lifecycle (design 5, 12, 13 and 20): menu bar only (`.accessory`), the status menu with
+/// the recording timer, settings, global hotkeys with the CleanShot X hand-over, the first-run
+/// window, and finishing a recording on quit and sleep. The capture graph lives in `AppWiring`.
+/// Only the installed app runs this; tests, tools and the shot mode never do.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let sweepInterval: TimeInterval = 60 * 60
 
@@ -24,7 +25,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboardingModel: OnboardingModel?
     private var onboardingWindow: NSWindow?
     private var observers: [any NSObjectProtocol] = []
+    private var workspaceObservers: [any NSObjectProtocol] = []
     private var sweepTimer: Timer?
+    /// Quit waits this long for a recording to finish its file (design 20.6).
+    private static let quitFinishTimeout: TimeInterval = 5
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menu bar only: no Dock icon, and launching never takes focus.
@@ -49,8 +53,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let center = NotificationCenter.default
         for token in observers { center.removeObserver(token) }
         observers.removeAll()
+        let workspace = NSWorkspace.shared.notificationCenter
+        for token in workspaceObservers { workspace.removeObserver(token) }
+        workspaceObservers.removeAll()
         menu?.uninstall()
         wiring?.stop()
+    }
+
+    /// Quitting during a recording finishes the file first, for up to 5 s (design D69).
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let recorder = wiring?.recorder, recorder.isBusy else { return .terminateNow }
+        wiring?.log.info("quit: finishing the recording first")
+        recorder.finishForQuit(reason: .quit, timeout: Self.quitFinishTimeout) {
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -58,12 +75,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Menu
 
     private func installMenu(_ wiring: AppWiring) {
+        let recorder = wiring.recorder
         let controller = StatusMenuController(
             modelProvider: { [weak self] in self?.menuModel() ?? MenuModel(MenuInput()) },
+            recordingMenuProvider: { [weak recorder] in recorder?.recordingMenuModel },
             thumbnail: { [weak wiring] id in wiring?.menuThumbnail(for: id) },
             onSelect: { [weak self] id in self?.menuSelected(id) },
-            onWillOpen: { [weak wiring] in wiring?.recheckPermission() }
+            onWillOpen: { [weak wiring] in wiring?.recheckPermission() },
+            now: { [weak recorder] in recorder?.now() ?? SystemClock().now() }
         )
+        recorder.onIndicatorChange = { [weak controller] indicator in controller?.setRecording(indicator) }
         controller.install()
         menu = controller
     }
@@ -76,7 +97,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hasLastCapture: wiring.hasLastCapture,
             permissionNeeded: wiring.permission.needsAttention,
             plan: plan,
-            offersUpdates: updater != nil
+            offersUpdates: updater != nil,
+            canPinLastCapture: wiring.canPinLastCapture,
+            pins: wiring.pins.menuEntries.map(PinnedCaptureEntry.init),
+            isRecording: wiring.recorder.isBusy
         ))
     }
 
@@ -99,7 +123,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .checkForUpdates: updater?.checkForUpdates()
         case .settings: openSettings(tab: nil)
         case .quit: NSApp.terminate(nil)
-        case .recentCapturesHeader, .noRecentCaptures, .separator: break
+        case .allInOne: allInOne(eventTime: nil)
+        case .recordScreen: recordScreen(eventTime: nil)
+        case .pinLastCapture: wiring.pinLastCapture()
+        case .captureHistory: wiring.openHistoryWindow()
+        // A pin's row unlocks a click-through pin, like its Unlock item.
+        case .pinnedCapture(let pinID), .unlockPin(let pinID): wiring.pins.unlock(pinID)
+        case .closePin(let pinID): wiring.pins.close(pinID)
+        case .closeAllPins: wiring.pins.closeAll()
+        case .stopRecording: wiring.recorder.stop(reason: .user)
+        case .cancelRecording: wiring.recorder.cancel()
+        case .recentCapturesHeader, .noRecentCaptures, .separator, .pinnedCaptures, .recordingInfo: break
+        }
+    }
+
+    /// Cmd+Shift+5 and "All-in-One...": the HUD, or Stop while a recording runs (design 20.5).
+    private func allInOne(eventTime: TimeInterval?) {
+        guard let wiring else { return }
+        if wiring.recorder.isBusy {
+            wiring.recorder.stop(reason: eventTime == nil ? .user : .hotkey)
+        } else {
+            wiring.openHUD(eventTime: eventTime)
+        }
+    }
+
+    /// "Record Screen..." and its shortcut: the HUD in Record mode, or Stop while recording.
+    private func recordScreen(eventTime: TimeInterval?) {
+        guard let wiring else { return }
+        if wiring.recorder.isBusy {
+            wiring.recorder.stop(reason: eventTime == nil ? .user : .hotkey)
+        } else {
+            wiring.openHUD(mode: .record, eventTime: eventTime)
         }
     }
 
@@ -125,6 +179,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .captureFullscreen: wiring.capture(.fullscreen, eventTime: eventTime)
         case .applyBackground: wiring.applyBackgroundToLastCapture()
         case .openInAnnotate: wiring.openLastCaptureInAnnotate()
+        case .allInOne: allInOne(eventTime: eventTime)
+        case .recordScreen: recordScreen(eventTime: eventTime)
+        case .stopRecording:
+            if wiring.recorder.isBusy { wiring.recorder.stop(reason: .hotkey) }
+        case .pinLastCapture: wiring.pinLastCapture()
+        case .openHistory: wiring.openHistoryWindow()
         }
     }
 
@@ -180,11 +240,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 evaluateShortcuts: { [weak self] shortcuts in self?.evaluate(shortcuts) },
                 editPreset: { [weak wiring] id in wiring?.editPreset(id: id) },
                 recordingChanged: { [weak self] recording in self?.recordingChanged(recording) },
-                now: { Date() }
+                now: { Date() },
+                // The Settings switch is one of the two places allowed to ask (design D65).
+                requestMicrophoneAccess: { [weak wiring] in
+                    guard let microphone = wiring?.microphone else { return .notDetermined }
+                    _ = await microphone.requestAccess()
+                    return microphone.status()
+                },
+                openMicrophonePrivacySettings: {
+                    if let url = MicrophoneAuthorization.privacySettingsURL { NSWorkspace.shared.open(url) }
+                }
             )
             let model = SettingsModel(
                 settings: wiring.settings, tab: tab ?? .general, plan: plan, registrationErrors: registrationErrors,
-                presets: wiring.presetStore.presets, starredPresetID: wiring.presetStore.starredID, actions: actions
+                presets: wiring.presetStore.presets, starredPresetID: wiring.presetStore.starredID,
+                microphoneAccess: wiring.microphone.status(), microphones: wiring.microphoneDevices(), actions: actions
             )
             let controller = SettingsWindowController(model: model)
             model.updates = updater.map { UpdateSettingsModel(updater: $0) }
@@ -202,6 +272,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsModel?.presets = wiring.presetStore.presets
         settingsModel?.starredPresetID = wiring.presetStore.starredID
         settingsModel?.settings = wiring.settings
+        settingsModel?.microphoneAccess = wiring.microphone.status()
+        settingsModel?.microphones = wiring.microphoneDevices()
         wiring.recheckPermission()
         applyHotkeys()
     }
@@ -318,6 +390,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak wiring] _ in
             MainActor.assumeIsolated { wiring?.recheckPermission() }
+        })
+        // The Mac going to sleep finishes a running recording (design D69).
+        workspaceObservers.append(NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
+        ) { [weak wiring] _ in
+            MainActor.assumeIsolated {
+                guard let recorder = wiring?.recorder, recorder.isBusy else { return }
+                recorder.stop(reason: .sleep)
+            }
         })
         sweepTimer = Timer.scheduledTimer(withTimeInterval: Self.sweepInterval, repeats: true) { [weak wiring] _ in
             MainActor.assumeIsolated { wiring?.sweepHistory() }

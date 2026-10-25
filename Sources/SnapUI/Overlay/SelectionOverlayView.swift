@@ -12,6 +12,46 @@ public enum OverlayPhase: Sendable, Hashable {
     case adjusting
 }
 
+/// What the all-in-one HUD adds to one display's overlay (design 20.5, 20.6). Points are global
+/// top-left, as in `SelectionOverlayState`.
+public struct HUDOverlayDrawing: Sendable, Hashable {
+    public var mode: HUDMode
+    public var target: CaptureMode
+    /// The toolbar's top-left corner when the toolbar is on this display.
+    public var toolbarOrigin: CGPoint?
+    /// Replaces the size chip's text: "Too small to record", "Not enough disk space".
+    public var notice: String?
+    /// The Fullscreen target is this display: accent 14% fill and a label chip.
+    public var highlightsDisplay: Bool
+    /// The display's name for the Fullscreen label chip, when known.
+    public var displayName: String?
+    /// After Record is confirmed: the area, window or display being recorded. The toolbar and the
+    /// handles are gone; the dim stays outside it with the selection border (20.6).
+    public var recordTarget: CGRect?
+    /// Seconds left in the countdown, drawn in the disc over `recordTarget`.
+    public var countdown: Int?
+
+    public init(
+        mode: HUDMode = .screenshot,
+        target: CaptureMode = .area,
+        toolbarOrigin: CGPoint? = nil,
+        notice: String? = nil,
+        highlightsDisplay: Bool = false,
+        displayName: String? = nil,
+        recordTarget: CGRect? = nil,
+        countdown: Int? = nil
+    ) {
+        self.mode = mode
+        self.target = target
+        self.toolbarOrigin = toolbarOrigin
+        self.notice = notice
+        self.highlightsDisplay = highlightsDisplay
+        self.displayName = displayName
+        self.recordTarget = recordTarget
+        self.countdown = countdown
+    }
+}
+
 /// Everything one display's overlay draws. A plain value, so the shot mode and tests render the
 /// view with `cacheDisplay` and no panel. Points are global top-left, as the pipeline uses them.
 public struct SelectionOverlayState: Sendable, Equatable {
@@ -28,6 +68,8 @@ public struct SelectionOverlayState: Sendable, Equatable {
     public var showsMagnifier: Bool
     public var showsCrosshair: Bool
     public var showsKeyHints: Bool
+    /// The HUD's toolbar, target and countdown; nil for the plain Cmd+Shift+4 overlay.
+    public var hud: HUDOverlayDrawing?
 
     public init(
         display: DisplayInfo,
@@ -39,7 +81,8 @@ public struct SelectionOverlayState: Sendable, Equatable {
         hoveredWindow: WindowInfo? = nil,
         showsMagnifier: Bool = true,
         showsCrosshair: Bool = true,
-        showsKeyHints: Bool = true
+        showsKeyHints: Bool = true,
+        hud: HUDOverlayDrawing? = nil
     ) {
         self.display = display
         self.frozenImage = frozenImage
@@ -51,6 +94,7 @@ public struct SelectionOverlayState: Sendable, Equatable {
         self.showsMagnifier = showsMagnifier
         self.showsCrosshair = showsCrosshair
         self.showsKeyHints = showsKeyHints
+        self.hud = hud
     }
 
     public static func == (lhs: SelectionOverlayState, rhs: SelectionOverlayState) -> Bool {
@@ -58,6 +102,7 @@ public struct SelectionOverlayState: Sendable, Equatable {
             && lhs.phase == rhs.phase && lhs.pointer == rhs.pointer && lhs.selection == rhs.selection
             && lhs.hoveredWindow == rhs.hoveredWindow && lhs.showsMagnifier == rhs.showsMagnifier
             && lhs.showsCrosshair == rhs.showsCrosshair && lhs.showsKeyHints == rhs.showsKeyHints
+            && lhs.hud == rhs.hud
     }
 
     /// The display's bounds in view coordinates (display-local, top-left origin).
@@ -72,7 +117,7 @@ public struct SelectionOverlayState: Sendable, Equatable {
 
     /// The selection when it lies on this display.
     var localSelection: CGRect? {
-        guard let selection, mode == .area, phase != .idle else { return nil }
+        guard let selection, mode == .area, phase != .idle, hud?.recordTarget == nil else { return nil }
         let rect = local(selection)
         return rect.intersects(bounds) ? rect : nil
     }
@@ -89,9 +134,32 @@ public struct SelectionOverlayState: Sendable, Equatable {
         return bounds.insetBy(dx: -0.5, dy: -0.5).contains(point) ? point : nil
     }
 
-    var drawsCrosshair: Bool { mode == .area && phase == .idle && showsCrosshair && localPointer != nil }
-    var drawsMagnifier: Bool { mode == .area && phase != .adjusting && showsMagnifier && localPointer != nil }
-    var drawsHints: Bool { showsKeyHints && (mode == .window || phase == .idle) }
+    var drawsCrosshair: Bool {
+        mode == .area && phase == .idle && showsCrosshair && localPointer != nil && hud?.recordTarget == nil
+    }
+    /// Record mode shows the live screen, so there is nothing to magnify.
+    var drawsMagnifier: Bool {
+        mode == .area && phase != .adjusting && showsMagnifier && localPointer != nil && showsFrozenImage
+            && hud?.recordTarget == nil
+    }
+    /// The HUD's toolbar replaces the hint bar.
+    var drawsHints: Bool { showsKeyHints && hud == nil && (mode == .window || phase == .idle) }
+
+    /// HUD Record mode hides the frozen layer and shows the live screen (D59).
+    public var showsFrozenImage: Bool { hud?.mode != .record }
+
+    /// The HUD's record target in this display's coordinates.
+    var localRecordTarget: CGRect? {
+        guard let target = hud?.recordTarget else { return nil }
+        let rect = local(target).intersection(bounds)
+        return rect.isNull || rect.isEmpty ? nil : rect
+    }
+
+    /// The toolbar's frame in this display's coordinates.
+    var localToolbar: CGRect? {
+        guard let hud, hud.recordTarget == nil, let origin = hud.toolbarOrigin else { return nil }
+        return CGRect(origin: local(origin), size: AllInOneToolbarLayout.layout(for: hud.mode).size)
+    }
 }
 
 /// The 8 handles of an editable selection (instant capture off).
@@ -220,24 +288,29 @@ enum OverlayHintBar {
         }
     }
 
-    static func frame(for mode: CaptureMode, in bounds: CGRect) -> CGRect {
-        let list = items(for: mode)
+    static func size(for list: [Item]) -> CGSize {
         let content = list.reduce(0) { $0 + itemWidth($1) } + Double(max(list.count - 1, 0)) * (2 * dividerMargin + 1)
-        let width = content + 2 * padding
-        let height = Theme.Overlay.hintBarHeight
+        return CGSize(width: content + 2 * padding, height: Theme.Overlay.hintBarHeight)
+    }
+
+    static func frame(for mode: CaptureMode, in bounds: CGRect) -> CGRect {
+        let size = size(for: items(for: mode))
         return CGRect(
-            x: (bounds.midX - width / 2).rounded(),
-            y: bounds.maxY - Theme.Overlay.hintBarBottomInset - height,
-            width: width,
-            height: height
+            x: (bounds.midX - size.width / 2).rounded(),
+            y: bounds.maxY - Theme.Overlay.hintBarBottomInset - size.height,
+            width: size.width,
+            height: size.height
         )
     }
 
     static func draw(mode: CaptureMode, in bounds: CGRect, context: CGContext) {
-        let bar = frame(for: mode, in: bounds)
+        draw(items: items(for: mode), in: frame(for: mode, in: bounds), context: context)
+    }
+
+    /// A chip bar of `list` in `bar` (the countdown hint uses it too).
+    static func draw(items list: [Item], in bar: CGRect, context: CGContext) {
         OverlayDrawing.drawChip(bar, radius: Theme.Overlay.hintBarRadius, context: context)
         var x = bar.minX + padding
-        let list = items(for: mode)
         for (index, item) in list.enumerated() {
             switch item {
             case .text(let label):
@@ -280,12 +353,19 @@ public final class SelectionOverlayView: NSView {
         didSet { if drawsFrozenImage != oldValue { needsDisplay = true } }
     }
 
+    /// The live panel animates the countdown digit in a `CountdownView` above this view (M22);
+    /// shots and tests draw it here.
+    public var drawsCountdownDigit: Bool {
+        didSet { if drawsCountdownDigit != oldValue { needsDisplay = true } }
+    }
+
     /// Receives mouse and key events, already in global top-left points.
     public weak var eventSink: (any OverlayEventSink)?
 
-    public init(state: SelectionOverlayState, drawsFrozenImage: Bool = true) {
+    public init(state: SelectionOverlayState, drawsFrozenImage: Bool = true, drawsCountdownDigit: Bool = true) {
         self.state = state
         self.drawsFrozenImage = drawsFrozenImage
+        self.drawsCountdownDigit = drawsCountdownDigit
         super.init(frame: state.bounds)
         wantsLayer = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
@@ -309,9 +389,14 @@ public final class SelectionOverlayView: NSView {
         context.saveGState()
         defer { context.restoreGState() }
 
-        if drawsFrozenImage, let image = state.frozenImage {
+        if drawsFrozenImage, state.showsFrozenImage, let image = state.frozenImage {
             context.interpolationQuality = .none
             OverlayDrawing.drawImage(image, in: bounds, context: context)
+        }
+
+        if let hud = state.hud, hud.recordTarget != nil {
+            drawRecordHold(hud, context: context, bounds: bounds)
+            return
         }
 
         drawDim(context: context, bounds: bounds)
@@ -320,9 +405,19 @@ public final class SelectionOverlayView: NSView {
             drawSelectionBorder(selection, context: context)
             if state.phase == .adjusting {
                 drawHandles(selection, accent: accent, context: context)
-                let text = OverlayDrawing.sizeText(selection.size)
+                let text = sizeChipText(for: selection)
                 OverlayDrawing.drawTextChip(text, in: sizeChipFrame(for: selection, text: text, bounds: bounds), context: context)
             }
+        }
+
+        if let hud = state.hud, hud.highlightsDisplay {
+            drawDisplayHighlight(bounds, accent: accent, context: context)
+            let text = displayLabel(hud)
+            let size = OverlayDrawing.chipSize(text)
+            OverlayDrawing.drawTextChip(text, in: CGRect(
+                x: (bounds.midX - size.width / 2).rounded(), y: (bounds.midY - size.height / 2).rounded(),
+                width: size.width, height: size.height
+            ), context: context)
         }
 
         if let window = state.localWindow, let info = state.hoveredWindow {
@@ -352,6 +447,51 @@ public final class SelectionOverlayView: NSView {
         if state.drawsHints {
             OverlayHintBar.draw(mode: state.mode, in: bounds, context: context)
         }
+
+        if let hud = state.hud, let toolbar = state.localToolbar {
+            AllInOneToolbar.draw(
+                mode: hud.mode, target: hud.target, origin: toolbar.origin, context: context, accent: accent,
+                record: Theme.Colors.record.cgColor(for: effectiveAppearance)
+            )
+        }
+    }
+
+    /// After Record: the dim outside the target, the selection border around an area or window,
+    /// and the countdown disc and hint. A fullscreen target is left undimmed (20.6).
+    private func drawRecordHold(_ hud: HUDOverlayDrawing, context: CGContext, bounds: CGRect) {
+        let target = state.localRecordTarget
+        let path = CGMutablePath()
+        path.addRect(bounds)
+        if let target { path.addRect(target) }
+        context.addPath(path)
+        context.setFillColor(Theme.Colors.dim.cgColor(dark: false))
+        context.fillPath(using: .evenOdd)
+        guard let target else { return }
+        if target != bounds { drawSelectionBorder(target, context: context) }
+        if let seconds = hud.countdown {
+            CountdownLayout.draw(seconds: seconds, target: target, bounds: bounds, withDigit: drawsCountdownDigit, context: context)
+        }
+    }
+
+    /// The size chip text, or the HUD's notice ("Too small to record").
+    func sizeChipText(for selection: CGRect) -> String {
+        state.hud?.notice ?? OverlayDrawing.sizeText(selection.size)
+    }
+
+    /// The Fullscreen target's label: `Studio Display | 2560 × 1440`, or the size alone.
+    func displayLabel(_ hud: HUDOverlayDrawing) -> String {
+        let size = OverlayDrawing.sizeText(state.display.frameTopLeft.size)
+        guard let name = hud.displayName, !name.isEmpty else { return size }
+        return "\(name)  |  \(size)"
+    }
+
+    private func drawDisplayHighlight(_ rect: CGRect, accent: CGColor, context: CGContext) {
+        context.setFillColor(accent.copy(alpha: 0.14) ?? accent)
+        context.fill(rect)
+        let border = Theme.Overlay.windowHighlightBorder
+        context.setStrokeColor(accent)
+        context.setLineWidth(border)
+        context.stroke(rect.insetBy(dx: border / 2, dy: border / 2))
     }
 
     private func drawDim(context: CGContext, bounds: CGRect) {
@@ -378,8 +518,9 @@ public final class SelectionOverlayView: NSView {
     }
 
     private func drawHandles(_ rect: CGRect, accent: CGColor, context: CGContext) {
-        let size = Theme.Overlay.handleSize
-        let border = Theme.Overlay.handleBorderWidth
+        // The HUD's restored area has 10 pt handles (20.5), the plain overlay 8 pt (17.6).
+        let size = state.hud == nil ? Theme.Overlay.handleSize : Theme.HUD.handleSize
+        let border = state.hud == nil ? Theme.Overlay.handleBorderWidth : Theme.HUD.handleBorderWidth
         for handle in SelectionHandle.allCases {
             let center = handle.point(in: rect)
             let circle = CGRect(x: center.x - size / 2, y: center.y - size / 2, width: size, height: size)
@@ -474,7 +615,7 @@ public final class SelectionOverlayView: NSView {
     func changedRegions(from old: SelectionOverlayState, to new: SelectionOverlayState) -> [CGRect]? {
         if old.display != new.display || old.frozenImage !== new.frozenImage || old.mode != new.mode
             || old.phase != new.phase || old.showsCrosshair != new.showsCrosshair
-            || old.showsMagnifier != new.showsMagnifier || old.showsKeyHints != new.showsKeyHints {
+            || old.showsMagnifier != new.showsMagnifier || old.showsKeyHints != new.showsKeyHints || old.hud != new.hud {
             return nil
         }
         return chromeRegions(old) + chromeRegions(new)
@@ -497,7 +638,7 @@ public final class SelectionOverlayView: NSView {
         if let selection = state.localSelection {
             regions.append(selection.insetBy(dx: -8, dy: -8))
             if state.phase == .adjusting {
-                let text = OverlayDrawing.sizeText(selection.size)
+                let text = state.hud?.notice ?? OverlayDrawing.sizeText(selection.size)
                 regions.append(sizeChipFrame(for: selection, text: text, bounds: bounds).insetBy(dx: -2, dy: -2))
             }
         }

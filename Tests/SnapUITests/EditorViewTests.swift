@@ -71,6 +71,15 @@ private func luminance(_ image: CGImage, in rect: CGRect? = nil) throws -> Lumin
         try checkDemo("annotate", size: AnnotateDemo.size) { AnnotateDemo.makeView(dark: $0) }
     }
 
+    @Test func annotateToolsDemoRendersInLightAndDark() throws {
+        try checkDemo("annotate-tools", size: AnnotateDemo.size) { AnnotateDemo.makeToolsView(dark: $0) }
+        // The style menu hangs under the toolbar: its black-out row is the accent color.
+        let light = try render(AnnotateDemo.makeToolsView(dark: false))
+        let menu = try luminance(light, in: CGRect(x: 450 * 2, y: 100 * 2, width: 200 * 2, height: 22 * 2))
+        let canvas = try luminance(light, in: CGRect(x: 300 * 2, y: 400 * 2, width: 200 * 2, height: 22 * 2))
+        #expect(menu.mean < canvas.mean, "the highlighted row is darker than the page: \(menu.mean) vs \(canvas.mean)")
+    }
+
     @Test func settingsDemoRendersEveryTabInLightAndDark() throws {
         for tab in SettingsTab.allCases {
             try checkDemo("settings-\(tab.rawValue)", size: SettingsDemo.size) { SettingsDemo.makeView(tab: tab, dark: $0) }
@@ -95,6 +104,28 @@ private func luminance(_ image: CGImage, in rect: CGRect? = nil) throws -> Lumin
         let light = try luminance(try render(BackgroundEditorDemo.makeView(dark: false)), in: sidebar)
         let dark = try luminance(try render(BackgroundEditorDemo.makeView(dark: true)), in: sidebar)
         #expect(light.mean - dark.mean >= 40, "light \(light.mean), dark \(dark.mean)")
+    }
+
+    /// Mockups 3 and 13: the sample capture gets the inset card, so the caption matches the
+    /// mockup's, and the mesh shot's window frame carries the 52 pt title bar above the editor.
+    /// The gradient stands in for the mesh here: same geometry and frame, and a mesh render takes
+    /// about 20 s in a debug build.
+    @Test func editorDemoMatchesTheMockupGeometryAndTitleBar() throws {
+        let model = try #require(BackgroundEditorDemo.makeModel())
+        #expect(model.caption == "914 \u{00D7} 588 pt  \u{2022}  1828 \u{00D7} 1176 px")
+        for dark in [false, true] {
+            let image = try render(BackgroundEditorDemo.makeWindowView(dark: dark))
+            #expect(image.width == 1840 && image.height == 1280)
+            // The title bar is the window color, opaque, and its hairline sits at 51 pt.
+            let bar = try luminance(image, in: CGRect(x: 400 * 2, y: 10 * 2, width: 200 * 2, height: 8 * 2))
+            let line = try luminance(image, in: CGRect(x: 400 * 2, y: 51 * 2, width: 200 * 2, height: 2))
+            #expect(bar.deviation < 1, "flat title bar")
+            #expect(abs(line.mean - bar.mean) < 40, "hairline is subtle, not white: \(line.mean) vs \(bar.mean)")
+            #expect(dark ? bar.mean < 60 : bar.mean > 200)
+            let bytes = try #require(SyntheticImages.rgbaBytes(of: image))
+            let lineAlpha = bytes[(51 * 2 * image.width + 800) * 4 + 3]
+            #expect(lineAlpha == 255, "the hairline sits on the opaque bar")
+        }
     }
 
     // MARK: Background editor model
@@ -205,14 +236,79 @@ private func luminance(_ image: CGImage, in rect: CGRect? = nil) throws -> Lumin
         let document = try #require(AnnotateDemo.makeDocument())
         let canvas = AnnotateCanvasView(document: document)
         #expect(AnnotateTool(key: "V") == .select)
-        #expect(AnnotateTool(key: "p") == .pixelate)
-        #expect(AnnotateTool.allCases.map(\.key).joined() == "vcratp")
+        #expect(AnnotateTool(key: "p") == .redact)
+        #expect(AnnotateTool.allCases.map(\.key).joined() == "vcrathpnf")
+        #expect(AnnotateTool.allCases.map(\.title) == [
+            "Select", "Crop", "Rectangle", "Arrow", "Text", "Highlight", "Redact", "Steps", "Freehand",
+        ])
         let rectangle = try #require(canvas.document.items.first)
         canvas.setSelection(rectangle.id)
         canvas.model.strokeWidth = 7
         canvas.model.color = .black
         #expect(canvas.document.item(rectangle.id)?.width == 7)
         #expect(canvas.document.item(rectangle.id)?.color == .black)
+    }
+
+    @Test func pressingPAgainCyclesThePixelateBlurBlackoutStyles() throws {
+        let document = try #require(AnnotateDemo.makeDocument())
+        let canvas = AnnotateCanvasView(document: document)
+        var saved: [AnnotateSettings] = []
+        canvas.model.actions = AnnotateActions(settingsChanged: { saved.append($0) })
+        #expect(canvas.model.redactStyle == .pixelate)
+        canvas.model.pick(.redact)
+        #expect(canvas.model.tool == .redact && canvas.model.redactStyle == .pixelate)
+        canvas.model.pick(.redact)
+        #expect(canvas.model.redactStyle == .blur)
+        canvas.model.pick(.redact)
+        #expect(canvas.model.redactStyle == .blackout)
+        canvas.model.pick(.redact)
+        #expect(canvas.model.redactStyle == .pixelate)
+        #expect(saved.map(\.redactStyle) == [.blur, .blackout, .pixelate])
+        canvas.model.pick(.rectangle)
+        canvas.model.pick(.redact)
+        #expect(canvas.model.redactStyle == .pixelate, "switching tools does not cycle")
+    }
+
+    @Test func highlightColorAndRedactStyleStartFromTheSavedSettings() {
+        let settings = AnnotateSettings(highlightColor: RGBAColor(hex: "#30D158") ?? .black, redactStyle: .blur)
+        let model = AnnotateEditorModel(actions: AnnotateActions(settings: settings))
+        #expect(model.redactStyle == .blur)
+        #expect(model.highlightColor.hex == "#30D158")
+        #expect(AnnotateEditorModel().highlightColor.hex == "#FFD60A")
+    }
+
+    @Test func styleControlsChangeOnlyTheMatchingSelectedItem() throws {
+        let document = try #require(AnnotateDemo.makeDocument())
+        let canvas = AnnotateCanvasView(document: document)
+        canvas.addItem(.highlight(CGRect(x: 10, y: 10, width: 80, height: 20)))
+        let highlight = try #require(canvas.document.items.last)
+        canvas.model.color = .black
+        #expect(canvas.document.item(highlight.id)?.color.hex == "#FFD60A", "the stroke color leaves a highlight alone")
+        canvas.model.highlightColor = RGBAColor(hex: "#30D158") ?? .black
+        #expect(canvas.document.item(highlight.id)?.color.hex == "#30D158")
+
+        canvas.addItem(.redact(CGRect(x: 100, y: 100, width: 60, height: 30), style: .pixelate))
+        let region = try #require(canvas.document.items.last)
+        canvas.model.redactStyle = .blackout
+        #expect(canvas.document.item(region.id)?.kind == .blackout)
+        #expect(canvas.document.item(region.id)?.box == region.box)
+        canvas.undo()
+        #expect(canvas.document.item(region.id)?.kind == .pixelate)
+    }
+
+    @Test func stepToolPlacesNumberedCirclesAndFreehandKeepsItsPoints() throws {
+        let document = try #require(AnnotateDemo.makeDocument())
+        let canvas = AnnotateCanvasView(document: document)
+        canvas.addItem(.step(at: CGPoint(x: 40, y: 400)))
+        canvas.addItem(.step(at: CGPoint(x: 80, y: 400)))
+        #expect(canvas.document.stepNumbers.values.sorted() == [1, 2])
+        canvas.setSelection(canvas.document.items[canvas.document.items.count - 2].id)
+        canvas.deleteSelection()
+        #expect(canvas.document.stepNumbers.values.sorted() == [1])
+        canvas.addItem(.freehand([CGPoint(x: 5, y: 5), CGPoint(x: 30, y: 20), CGPoint(x: 60, y: 8)]))
+        canvas.nudgeSelection(dx: 1, dy: 0, large: true)
+        #expect(canvas.document.items.last?.points.first == CGPoint(x: 15, y: 5))
+        #expect(try Flattener.flatten(canvas.document).width == document.image.width)
     }
 
     @Test func annotateCropAndExport() throws {
@@ -280,7 +376,7 @@ private func luminance(_ image: CGImage, in rect: CGRect? = nil) throws -> Lumin
         #expect(loginRequests == [true])
         #expect(model.settings.general.launchAtLogin)
 
-        model.settings.shortcuts.applyBackground = model.settings.shortcuts.captureWindow
+        model.settings.shortcuts.applyBackground = model.settings.shortcuts.captureFullscreen
         #expect(model.messages(for: .applyBackground).first?.contains("already used") == true)
     }
 

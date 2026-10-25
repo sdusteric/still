@@ -8,6 +8,18 @@ public enum TextLayout {
     /// `NSFont.Weight.semibold`.
     static let semiboldWeight = 0.3
 
+    /// The same font with tabular (monospaced) digits, for step numbers.
+    public static func tabularFont(size: Double) -> CTFont {
+        let base = font(size: size)
+        let feature = [
+            kCTFontFeatureTypeIdentifierKey: kNumberSpacingType,
+            kCTFontFeatureSelectorIdentifierKey: kMonospacedNumbersSelector,
+        ] as CFDictionary
+        let attributes = [kCTFontFeatureSettingsAttribute: [feature] as CFArray] as CFDictionary
+        let descriptor = CTFontDescriptorCreateCopyWithAttributes(CTFontCopyFontDescriptor(base), attributes)
+        return CTFontCreateWithFontDescriptor(descriptor, size, nil)
+    }
+
     public static func font(size: Double) -> CTFont {
         let base = CTFontCreateUIFontForLanguage(.system, size, nil) ?? CTFontCreateWithName("Helvetica" as CFString, size, nil)
         let traits = [kCTFontWeightTrait: semiboldWeight] as CFDictionary
@@ -54,16 +66,67 @@ public enum TextLayout {
 }
 
 /// Draws annotations with Core Graphics. The context's coordinate space must be image points
-/// with a top-left origin (y down). Pixelate items are not drawn here: they need the pixels
-/// beneath them (see `Flattener.pixelated`).
+/// with a top-left origin (y down). Pixelate and blur items are not drawn here: they need the
+/// pixels beneath them (see `Flattener.pixelated` and `Flattener.blurred`). `number` is the
+/// step's number, from `AnnotationDocument.stepNumber(of:)`.
 public enum AnnotationPainter {
-    public static func draw(_ item: AnnotationItem, in context: CGContext) {
+    public static func draw(_ item: AnnotationItem, number: Int = 1, in context: CGContext) {
         switch item.kind {
         case .rectangle: drawRectangle(item, in: context)
         case .arrow: drawArrow(item, in: context)
         case .text: drawText(item, in: context)
-        case .pixelate: break
+        case .highlight: drawHighlight(item, in: context)
+        case .blackout: drawBlackout(item, in: context)
+        case .step: drawStep(item, number: number, in: context)
+        case .freehand: drawFreehand(item, in: context)
+        case .pixelate, .blur: break
         }
+    }
+
+    static func drawHighlight(_ item: AnnotationItem, in context: CGContext) {
+        let rect = item.box
+        let radius = min(AnnotationItem.highlightRadius, min(rect.width, rect.height) / 2)
+        var fill = item.color
+        fill.alpha *= AnnotationItem.highlightOpacity
+        context.saveGState()
+        context.setFillColor(fill.cgColor)
+        context.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
+        context.fillPath()
+        context.restoreGState()
+    }
+
+    static func drawBlackout(_ item: AnnotationItem, in context: CGContext) {
+        context.saveGState()
+        context.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1))
+        context.fill(item.box)
+        context.restoreGState()
+    }
+
+    static func drawStep(_ item: AnnotationItem, number: Int, in context: CGContext) {
+        let circle = item.box
+        context.saveGState()
+        context.setFillColor(item.color.cgColor)
+        context.fillEllipse(in: circle)
+        let font = TextLayout.tabularFont(size: AnnotationItem.stepNumberFontSize(forDiameter: circle.width))
+        let line = TextLayout.line(String(number), font: font, color: CGColor(gray: 1, alpha: 1))
+        let width = CTLineGetTypographicBounds(line, nil, nil, nil)
+        context.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
+        // Digits sit on the baseline at cap height, so center the cap height on the circle.
+        context.textPosition = CGPoint(x: circle.midX - width / 2, y: circle.midY + CTFontGetCapHeight(font) / 2)
+        CTLineDraw(line, context)
+        context.restoreGState()
+    }
+
+    static func drawFreehand(_ item: AnnotationItem, in context: CGContext) {
+        guard !item.points.isEmpty else { return }
+        context.saveGState()
+        context.setStrokeColor(item.color.cgColor)
+        context.setLineWidth(item.width)
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+        context.addPath(FreehandPath.cgPath(for: item.points))
+        context.strokePath()
+        context.restoreGState()
     }
 
     static func drawRectangle(_ item: AnnotationItem, in context: CGContext) {
@@ -153,8 +216,9 @@ public enum AnnotationPainter {
 }
 
 /// Export of an `AnnotationDocument`: the crop applied and every item burned in, in order.
-/// Pixelate regions are replaced by a `CIPixellate` mosaic of what is under them, so the
-/// original pixels there are not in the file (design section 11).
+/// Redact regions (pixelate, blur, black-out) are applied to the base image first, in item order,
+/// so the original pixels there are not in the file and every other annotation is drawn crisp
+/// above them (design sections 11 and 20.8).
 public enum Flattener {
     public enum FlattenError: Error, CustomStringConvertible {
         case contextFailed
@@ -165,6 +229,11 @@ public enum Flattener {
     /// Pixelate cell size in pixels: about a twelfth of the region's shorter side, at least 8.
     public static func cellSize(forPixelWidth width: Int, height: Int) -> Int {
         max(8, Int((Double(min(width, height)) / 12).rounded()))
+    }
+
+    /// Gaussian blur radius in pixels: an eighth of the region's shorter side, at least 8.
+    public static func blurRadius(forPixelWidth width: Int, height: Int) -> Double {
+        max(8, Double(min(width, height)) / 8)
     }
 
     public static func flatten(_ document: AnnotationDocument) throws -> CGImage {
@@ -186,25 +255,26 @@ public enum Flattener {
         )
         context.draw(document.image, in: imageRect)
 
+        for item in document.items where item.kind.isRedact {
+            redactInPlace(item, context: context, document: document, size: size)
+        }
+
         // Image points, top-left origin.
         context.interpolationQuality = .high
         context.translateBy(x: 0, y: Double(size.height))
         context.scaleBy(x: scale, y: -scale)
         context.translateBy(x: -output.minX, y: -output.minY)
 
-        for item in document.items {
-            if item.kind == .pixelate {
-                pixelateInPlace(item, context: context, document: document, size: size)
-            } else {
-                AnnotationPainter.draw(item, in: context)
-            }
+        let numbers = document.stepNumbers
+        for item in document.items where !item.kind.isRedact {
+            AnnotationPainter.draw(item, number: numbers[item.id] ?? 1, in: context)
         }
         guard let image = context.makeImage() else { throw FlattenError.contextFailed }
         return image
     }
 
     /// The item's region in output pixels (top-left origin), clipped to the output.
-    static func pixelRegion(_ item: AnnotationItem, document: AnnotationDocument, size: (width: Int, height: Int)) -> CGRect {
+    public static func pixelRegion(_ item: AnnotationItem, document: AnnotationDocument, size: (width: Int, height: Int)) -> CGRect {
         let output = document.outputRect
         let box = item.box
         let rect = CGRect(
@@ -214,20 +284,24 @@ public enum Flattener {
         return rect.intersection(CGRect(x: 0, y: 0, width: size.width, height: size.height))
     }
 
-    private static func pixelateInPlace(
+    /// Replaces the item's region with its mosaic, blurred copy or solid black. The context must
+    /// still be in device pixels (identity transform, bottom-left origin).
+    private static func redactInPlace(
         _ item: AnnotationItem, context: CGContext, document: AnnotationDocument, size: (width: Int, height: Int)
     ) {
         let region = pixelRegion(item, document: document, size: size)
-        guard !region.isNull, region.width >= 1, region.height >= 1,
-              let current = context.makeImage(), let mosaic = pixelated(current, region: region) else { return }
+        guard !region.isNull, region.width >= 1, region.height >= 1 else { return }
+        let target = CGRect(x: region.minX, y: Double(size.height) - region.maxY, width: region.width, height: region.height)
         context.saveGState()
-        // Back to device pixels with a bottom-left origin.
-        context.concatenate(context.ctm.inverted())
         context.setBlendMode(.copy)
         context.interpolationQuality = .none
-        context.draw(mosaic, in: CGRect(
-            x: region.minX, y: Double(size.height) - region.maxY, width: region.width, height: region.height
-        ))
+        if item.kind == .blackout {
+            context.setFillColor(CGColor(gray: 0, alpha: 1))
+            context.fill(target)
+        } else if let current = context.makeImage(),
+                  let replacement = item.kind == .blur ? blurred(current, region: region) : pixelated(current, region: region) {
+            context.draw(replacement, in: target)
+        }
         context.restoreGState()
     }
 
@@ -247,6 +321,23 @@ public enum Flattener {
         filter.setValue(Double(cell), forKey: kCIInputScaleKey)
         // The center is a cell corner. Core Image is y-up, so (0, height) is the region's top-left.
         filter.setValue(CIVector(x: 0, y: Double(height)), forKey: kCIInputCenterKey)
+        guard let output = filter.outputImage?.cropped(to: input.extent) else { return nil }
+        let space = cropped.colorSpace ?? (CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB())
+        let ciContext = CIContext(options: [.workingColorSpace: NSNull(), .cacheIntermediates: false])
+        return ciContext.createCGImage(output, from: input.extent, format: .RGBA8, colorSpace: space)
+    }
+
+    /// `region` (pixels, top-left origin) of `source` Gaussian-blurred, the size of the region. The
+    /// input is clamped to its extent and the result cropped back, so the edges do not fade.
+    public static func blurred(_ source: CGImage, region: CGRect) -> CGImage? {
+        let bounds = CGRect(x: 0, y: 0, width: source.width, height: source.height)
+        let clipped = region.integral.intersection(bounds)
+        guard !clipped.isNull, clipped.width >= 1, clipped.height >= 1,
+              let cropped = source.cropping(to: clipped) else { return nil }
+        let input = CIImage(cgImage: cropped)
+        guard let filter = CIFilter(name: "CIGaussianBlur") else { return nil }
+        filter.setValue(input.clampedToExtent(), forKey: kCIInputImageKey)
+        filter.setValue(blurRadius(forPixelWidth: cropped.width, height: cropped.height), forKey: kCIInputRadiusKey)
         guard let output = filter.outputImage?.cropped(to: input.extent) else { return nil }
         let space = cropped.colorSpace ?? (CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB())
         let ciContext = CIContext(options: [.workingColorSpace: NSNull(), .cacheIntermediates: false])

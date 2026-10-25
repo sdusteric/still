@@ -3,15 +3,16 @@ import Observation
 import SnapCore
 import SwiftUI
 
-/// The four Background tabs (design 10.4).
+/// The five Background tabs (design 10.4, 20.9).
 public enum BackgroundTab: String, CaseIterable, Identifiable, Sendable {
-    case gradient, color, image, none
+    case gradient, mesh, color, image, none
 
     public var id: String { rawValue }
 
     public var title: String {
         switch self {
         case .gradient: "Gradient"
+        case .mesh: "Mesh"
         case .color: "Color"
         case .image: "Image"
         case .none: "None"
@@ -21,8 +22,9 @@ public enum BackgroundTab: String, CaseIterable, Identifiable, Sendable {
     init(_ fill: BackgroundFill) {
         switch fill {
         case .gradient: self = .gradient
+        case .mesh: self = .mesh
         case .solid: self = .color
-        case .image: self = .image
+        case .blurredCapture, .image: self = .image
         case .none: self = .none
         }
     }
@@ -109,6 +111,7 @@ public final class BackgroundEditorModel {
     @ObservationIgnored public var actions: BackgroundEditorActions
     @ObservationIgnored private var previewScheduled = false
     @ObservationIgnored private var lastGradient: GradientID
+    @ObservationIgnored private var lastMesh: MeshID
     @ObservationIgnored private var lastSolid: RGBAColor
     @ObservationIgnored private var lastImage: BackgroundFill?
 
@@ -129,14 +132,17 @@ public final class BackgroundEditorModel {
         self.tab = BackgroundTab(preset.background)
         self.actions = actions
         var gradient = BackgroundFill.defaultGradient
+        var mesh = MeshID.haze
         var solid = SolidSwatch.all.first { $0.name == "Snow" }?.color ?? .white
         switch preset.background {
         case .gradient(let id): gradient = id
+        case .mesh(let id): mesh = id
         case .solid(let color): solid = color
-        case .image: lastImage = preset.background
+        case .image, .blurredCapture: lastImage = preset.background
         case .none: break
         }
         lastGradient = gradient
+        lastMesh = mesh
         lastSolid = solid
         customColor = solid
         renderPreview()
@@ -153,12 +159,12 @@ public final class BackgroundEditorModel {
 
     public var isModified: Bool { preset != storedPreset }
 
-    /// `914 × 588 pt · 1828 × 1176 px`.
+    /// `914 × 588 pt  •  1828 × 1176 px` (mockup 3 and 13).
     public var caption: String {
         guard let geometry else { return "" }
         let points = "\(Int(geometry.canvasPoints.width.rounded())) \u{00D7} \(Int(geometry.canvasPoints.height.rounded())) pt"
         let pixels = "\(geometry.canvasSize.width) \u{00D7} \(geometry.canvasSize.height) px"
-        return "\(points) \u{00B7} \(pixels)"
+        return "\(points)  \u{2022}  \(pixels)"
     }
 
     // MARK: Editing
@@ -166,10 +172,11 @@ public final class BackgroundEditorModel {
     public func select(_ fill: BackgroundFill) {
         switch fill {
         case .gradient(let id): lastGradient = id
+        case .mesh(let id): lastMesh = id
         case .solid(let color):
             lastSolid = color
             if !SolidSwatch.all.contains(where: { $0.color == color }) { customColor = color }
-        case .image: lastImage = fill
+        case .image, .blurredCapture: lastImage = fill
         case .none: break
         }
         tab = BackgroundTab(fill)
@@ -181,6 +188,7 @@ public final class BackgroundEditorModel {
         tab = newTab
         switch newTab {
         case .gradient: preset.background = .gradient(lastGradient)
+        case .mesh: preset.background = .mesh(lastMesh)
         case .color: preset.background = .solid(lastSolid)
         case .image: if let lastImage { preset.background = lastImage }
         case .none: preset.background = .none
@@ -196,6 +204,9 @@ public final class BackgroundEditorModel {
         if case .image(_, let blur) = preset.background { return blur }
         return 0
     }
+
+    /// True while the Image tab uses the blurred capture instead of a file.
+    public var usesBlurredCapture: Bool { preset.background == .blurredCapture }
 
     public var imagePath: String? {
         if case .image(let path, _) = preset.background { return path }
@@ -352,7 +363,8 @@ public struct BackgroundEditorView: View {
         .background(Theme.Colors.sidebar.color)
         .frame(
             minWidth: Theme.BackgroundEditor.windowSize.width, maxWidth: .infinity,
-            minHeight: Theme.BackgroundEditor.windowSize.height, maxHeight: .infinity
+            minHeight: Theme.BackgroundEditor.windowSize.height - Theme.BackgroundEditor.titleBarHeight,
+            maxHeight: .infinity
         )
         .alert("Save Preset", isPresented: $naming) {
             TextField("Name", text: $newName)
@@ -409,19 +421,18 @@ public struct BackgroundEditorView: View {
 
     private var backgroundSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Picker("Background", selection: Binding(get: { model.tab }, set: { model.selectTab($0) })) {
-                ForEach(BackgroundTab.allCases) { tab in
-                    Text(tab.title).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .controlSize(.small)
-            .frame(maxWidth: .infinity)
+            BackgroundTabControl(selection: model.tab) { model.selectTab($0) }
 
             switch model.tab {
             case .gradient:
                 SwatchGrid(swatches: Swatch.gradients, selection: model.preset.background) { model.select($0) }
+            case .mesh:
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    SwatchGrid(swatches: Swatch.meshes, selection: model.preset.background) { model.select($0) }
+                    Text(selectedMeshName)
+                        .font(Theme.Typography.captionSmall.font)
+                        .foregroundStyle(Theme.Colors.text2.color)
+                }
             case .color:
                 SwatchGrid(
                     swatches: Swatch.solids, selection: model.preset.background,
@@ -442,8 +453,16 @@ public struct BackgroundEditorView: View {
         }
     }
 
+    private var selectedMeshName: String {
+        if case .mesh(let id) = model.preset.background { return id.displayName }
+        return ""
+    }
+
     private var imageControls: some View {
         VStack(alignment: .leading, spacing: 10) {
+            BlurredCaptureTile(
+                capture: model.source, isSelected: model.usesBlurredCapture
+            ) { model.select(.blurredCapture) }
             HStack {
                 Text(model.imagePath.map { URL(filePath: $0).lastPathComponent } ?? "No image chosen")
                     .font(Theme.Typography.body.font)
@@ -634,6 +653,7 @@ private struct PresetPopup: View {
     private var presetTitle: String {
         let name = model.preset.name
         if name == "Default", case .gradient(let id) = model.preset.background { return id.displayName }
+        if name == "Default", case .mesh(let id) = model.preset.background { return id.displayName }
         return model.isModified ? "\(name) (edited)" : name
     }
 }
@@ -796,7 +816,10 @@ private struct Checkerboard: View {
 public enum DemoCapture {
     public static let pointSize = CGSize(width: 842, height: 516)
 
-    public static func notesWindow(dark: Bool, scale: Double = 2) -> CGImage? {
+    /// With `uniformEdge`, the sidebar stops half a point short of the left and bottom edges so
+    /// every edge pixel outside the transparent corners is the window background. The Background
+    /// editor then finds a uniform border and adds the inset card the mockup draws (914 x 588 pt).
+    public static func notesWindow(dark: Bool, scale: Double = 2, uniformEdge: Bool = false) -> CGImage? {
         let width = Int(pointSize.width * scale)
         let height = Int(pointSize.height * scale)
         guard let context = SyntheticImages.makeContext(width: width, height: height) else { return nil }
@@ -813,7 +836,8 @@ public enum DemoCapture {
         context.setFillColor(background.cgColor)
         context.fill(bounds)
         context.setFillColor(sidebar.cgColor)
-        context.fill(CGRect(x: 0, y: 34, width: 190, height: pointSize.height - 34))
+        let edge = uniformEdge ? 0.5 : 0
+        context.fill(CGRect(x: edge, y: 34, width: 190 - edge, height: pointSize.height - 34 - edge))
         context.setFillColor((dark ? NSColor(white: 1, alpha: 0.08) : NSColor(white: 0, alpha: 0.08)).cgColor)
         context.fill(CGRect(x: 0, y: 33.5, width: pointSize.width, height: 0.5))
         for (index, color) in [NSColor.systemRed, .systemYellow, .systemGreen].enumerated() {
@@ -874,15 +898,22 @@ public enum DemoCapture {
 public enum BackgroundEditorDemo {
     public static let size = Theme.BackgroundEditor.windowSize
 
-    public static func makeModel(dark: Bool = false) -> BackgroundEditorModel? {
-        guard let capture = DemoCapture.notesWindow(dark: dark) else { return nil }
-        return BackgroundEditorModel(source: capture, scale: 2, preset: .factoryDefault)
+    /// The default preset, or the default preset with `background` when one is given.
+    public static func makeModel(dark: Bool = false, background: BackgroundFill? = nil) -> BackgroundEditorModel? {
+        guard let capture = DemoCapture.notesWindow(dark: dark, uniformEdge: true) else { return nil }
+        var preset = BackgroundPreset.factoryDefault
+        if let background {
+            // Stored as the default under the mockup's popup name, so the popup reads "Dusk" and not "(edited)".
+            preset.background = background
+            preset.name = "Dusk"
+        }
+        return BackgroundEditorModel(source: capture, scale: 2, preset: preset, presets: [preset])
     }
 
     /// The editor content in a hosting view of the window size, with the appearance set.
-    public static func makeView(dark: Bool = false) -> NSView {
+    public static func makeView(dark: Bool = false, background: BackgroundFill? = nil) -> NSView {
         let view: NSView
-        if let model = makeModel(dark: dark) {
+        if let model = makeModel(dark: dark, background: background) {
             view = NSHostingView(rootView: BackgroundEditorView(model: model))
         } else {
             view = NSView()
@@ -890,5 +921,56 @@ public enum BackgroundEditorDemo {
         view.frame = CGRect(origin: .zero, size: size)
         view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         return view
+    }
+
+    /// The Mesh segment with Haze selected (the `background-mesh` shot): the whole 920 x 640 window
+    /// as mockup 13 draws it, a 52 pt title bar over 588 pt of editor content.
+    public static func makeMeshView(dark: Bool = false) -> NSView {
+        makeWindowView(dark: dark, background: .mesh(.haze))
+    }
+
+    /// The editor inside a drawn window frame of `size`: title bar, hairline, then the content.
+    public static func makeWindowView(dark: Bool = false, background: BackgroundFill? = nil) -> NSView {
+        let view: NSView
+        if let model = makeModel(dark: dark, background: background) {
+            view = NSHostingView(rootView: WindowFrame(title: "Background") {
+                BackgroundEditorView(model: model)
+            })
+        } else {
+            view = NSView()
+        }
+        view.frame = CGRect(origin: .zero, size: size)
+        view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        return view
+    }
+}
+
+/// A demo window's title bar (traffic lights, centered title, hairline) over its content, for
+/// shots of surfaces whose mockup includes the window chrome. The real window draws its own.
+struct WindowFrame<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                Theme.Colors.window.color
+                HStack(spacing: 8) {
+                    ForEach([UInt32(0xFF5F57), 0xFEBC2E, 0x28C840], id: \.self) { hex in
+                        Circle().fill(ThemeRGBA(hex: hex).color).frame(width: 12, height: 12)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 18)
+                Text(title)
+                    .font(Theme.Typography.groupHeading.font)
+                    .foregroundStyle(Theme.Colors.text.color)
+            }
+            .frame(height: Theme.BackgroundEditor.titleBarHeight - 1)
+            Rectangle().fill(Theme.Colors.separator.color).frame(height: 1)
+            content
+        }
+        // The hairline is translucent, so the bar's color sits under it too.
+        .background(Theme.Colors.window.color)
     }
 }

@@ -44,6 +44,7 @@ final class ActionLog {
     var copySucceeds = true
     var savedURL: URL? = URL(filePath: "/tmp/snap-test/Snap shot.png")
     var thumbnail: QuickAccessThumbnail?
+    var pinSucceeds = true
 
     func actions() -> QuickAccessActions {
         QuickAccessActions(
@@ -67,6 +68,11 @@ final class ActionLog {
             annotate: { id in self.calls.append("annotate \(id)") },
             reveal: { url in self.calls.append("reveal \(url.lastPathComponent)") },
             dragURL: { id in URL(filePath: "/tmp/snap-test/\(id).png") },
+            pin: { id in
+                self.calls.append("pin \(id)")
+                return self.pinSucceeds
+            },
+            open: { id in self.calls.append("open \(id)") },
             closed: { id, reason in self.closed.append((id, reason)) }
         )
     }
@@ -88,7 +94,8 @@ final class ActionLog {
     }
 
     func makeController(
-        settings: QuickAccessSettings = QuickAccessSettings(), box: SurfaceBox? = nil, option: OptionKey = OptionKey()
+        settings: QuickAccessSettings = QuickAccessSettings(), box: SurfaceBox? = nil, option: OptionKey = OptionKey(),
+        reduceMotion: Bool = false
     ) -> QuickAccessController {
         let visible = visible
         var factory: QuickAccessController.SurfaceFactory?
@@ -105,6 +112,7 @@ final class ActionLog {
             settings: settings,
             actions: log.actions(),
             visibleFrame: { visible },
+            reduceMotion: { reduceMotion },
             optionHeld: { option.held },
             makeSurface: factory
         )
@@ -418,6 +426,33 @@ final class ActionLog {
         #expect(controller.cards.isEmpty)
     }
 
+    @Test func aSwipeDismissCarriesTheCardTowardTheEdgeAndOnlyFades() throws {
+        let controller = makeController()
+        controller.show(item("a"))
+        let card = try #require(controller.card("a"))
+        controller.swipeChanged("a", translation: -60)
+        #expect(controller.swipeEnded("a", translation: -60, velocity: -900))
+        #expect(card.swipeDismissed)
+        #expect(card.swipeOffset == -60 + Theme.Motion.cardDismissOffsetX)
+        #expect(controller.cards.isEmpty)
+
+        let reduced = makeController(reduceMotion: true)
+        reduced.show(item("b"))
+        let still = try #require(reduced.card("b"))
+        reduced.swipeChanged("b", translation: -90)
+        #expect(reduced.swipeEnded("b", translation: -90, velocity: 0))
+        #expect(!still.swipeDismissed)
+        #expect(still.swipeOffset == -90)
+    }
+
+    @Test func stackMotionUsesTheSpringForReflowAndTheExitCurveForRemoval() {
+        #expect(QuickAccessMotion.reflow(reduceMotion: false) == Theme.Motion.spring)
+        #expect(QuickAccessMotion.reflow(reduceMotion: true) == nil)
+        #expect(QuickAccessMotion.removal(reduceMotion: false) == Theme.Motion.exit(Theme.Motion.dismiss))
+        #expect(QuickAccessMotion.removal(reduceMotion: true) == .easeOut(duration: Theme.Motion.reducedMotionFade))
+        #expect(QuickAccessMotion.swipeRelease(velocity: 400) != QuickAccessMotion.swipeRelease(velocity: 0))
+    }
+
     @Test func layoutMatchesTheDesignSizes() {
         #expect(QuickAccessLayout.cardWidth(.medium) == 256)
         #expect(QuickAccessLayout.thumbnailHeight(pointSize: CGSize(width: 842, height: 516), size: .medium) == 147)
@@ -584,6 +619,28 @@ final class ActionLog {
         controller.openSettings()
         #expect(opened == 1)
         #expect(!controller.isVisible)
+    }
+
+    @Test func aMessageChipShowsForFourSecondsAndThePermissionCardClearsIt() {
+        let clock = FakeClock()
+        let surface = FakeHintSurface()
+        let controller = PermissionHintController(clock: clock, makeSurface: { _ in surface })
+        let visible = CGRect(x: 0, y: 0, width: 1280, height: 775)
+        controller.show(message: "Recording could not start", near: CGPoint(x: 640, y: 400), visibleFrame: visible)
+        #expect(controller.isVisible)
+        #expect(controller.message == "Recording could not start")
+        #expect(surface.frames.count == 1)
+        clock.advance(by: 3.9)
+        controller.processTimers()
+        #expect(controller.isVisible)
+        clock.advance(by: 0.1)
+        controller.processTimers()
+        #expect(!controller.isVisible)
+        #expect(controller.message == nil)
+        // The permission hint afterwards is the card again, not the old message.
+        controller.show(near: CGPoint(x: 640, y: 400), visibleFrame: visible)
+        #expect(controller.isVisible)
+        #expect(controller.message == nil)
     }
 
     @Test func thePanelStaysInsideTheVisibleFrame() {

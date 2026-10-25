@@ -49,27 +49,33 @@ enum ShotError: Error, CustomStringConvertible {
     case usage(String)
     case renderFailed(String)
     case wrongSize(expected: String, actual: String)
+    case foregroundApp
 
     var description: String {
         switch self {
         case .usage(let message): "\(message)\n\(ShotOptions.usage)"
         case .renderFailed(let scenario): "\(scenario) rendered no image"
         case .wrongSize(let expected, let actual): "rendered \(actual) px, expected \(expected) px"
+        case .foregroundApp: "the process became a regular (foreground) app while rendering; LSUIElement is not in effect"
         }
     }
 }
 
 /// The headless shot mode (design 16, D27). It never calls `NSApplication.run`, never creates an
-/// `NSWindow` or `NSPanel`, never touches `NSApp` and never uses a SnapSystem live type: the
-/// scenario is drawn from fakes and demo builders, AppKit trees through `cacheDisplay(in:to:)`
-/// and SwiftUI through `ImageRenderer`, with the appearance set on the root view. A bare
-/// `RunLoop.main` serves the main queue so SwiftUI can finish its layout between passes. It runs
-/// only from the bundle (see `isUIElement`), never as a bare `.build` binary.
+/// `NSWindow` or `NSPanel` and never uses a SnapSystem live type: the scenario is drawn from fakes
+/// and demo builders, AppKit trees through `cacheDisplay(in:to:)` and SwiftUI through
+/// `ImageRenderer`, with the appearance set on the root view. A bare `RunLoop.main` serves the
+/// main queue so SwiftUI can finish its layout between passes.
+///
+/// Rendering an AppKit or SwiftUI view does instantiate `NSApplication.shared` (`NSApp` is set
+/// after the first `.view` scenario), which registers the process with the window server. The
+/// bundle's `LSUIElement` is what keeps that registration a UIElement, so shot mode runs only from
+/// the bundle (see `isUIElement`), and it checks the activation policy again before writing.
 enum ShotMode {
     /// Exit status when the binary is not running from a bundle whose Info.plist sets `LSUIElement`.
     static let notInBundleStatus: Int32 = 78
 
-    /// Shot mode draws through AppKit, which registers the process with LaunchServices. Only the
+    /// Shot mode draws through AppKit, which creates `NSApp` and registers the process. Only the
     /// bundle's `LSUIElement` keeps that registration a UIElement (no Dock icon, no activation); a
     /// bare `.build/release/Snap` would register as a foreground app. So the mode refuses to run
     /// unless the Info.plist it was launched with sets `LSUIElement` to true.
@@ -92,6 +98,10 @@ enum ShotMode {
             let status: Int32
             do {
                 let image = try await render(options)
+                // Rendering created NSApp; it must still be a UIElement, never a foreground app.
+                guard NSRunningApplication.current.activationPolicy != .regular else {
+                    throw ShotError.foregroundApp
+                }
                 try write(image, scale: options.scale, to: options.output)
                 print("wrote \(options.output.path(percentEncoded: false)) (\(image.width)x\(image.height))")
                 status = 0

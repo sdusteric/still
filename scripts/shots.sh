@@ -2,8 +2,10 @@
 # Background screenshots (design section 16): renders Snap's own surfaces from fakes and demo
 # builders in a process that has no window and no NSApplication run loop.
 #
-# Usage: scripts/shots.sh [scenario ...]
+# Usage: scripts/shots.sh [scenario ... | m2]
 #        default: overlay-area quick-access background-editor annotate menu settings
+#        m2: pin history history-empty hud recording-countdown recording quick-access-video
+#            annotate-tools background-mesh settings-recording menu-m2 (design 20.11)
 #        each scenario in light and dark -> build/shots/<scenario>-<light|dark>.png (2x points)
 #        other scenarios: overlay-before overlay-window settings-shortcuts onboarding
 #                         onboarding-granted permission-hint
@@ -31,7 +33,16 @@ TOOLS="$REPO/build/shots/bin"
 TMP_ROOT="${TMPDIR:-/tmp}"
 TMP_ROOT="${TMP_ROOT%/}"
 TIMEOUT_SECONDS=60
-SCENARIOS=("$@")
+M2_SCENARIOS=(pin history history-empty hud recording-countdown recording quick-access-video annotate-tools
+  background-mesh settings-recording menu-m2)
+SCENARIOS=()
+for arg in "$@"; do
+  if [ "$arg" = m2 ]; then
+    SCENARIOS+=("${M2_SCENARIOS[@]}")
+  else
+    SCENARIOS+=("$arg")
+  fi
+done
 [ ${#SCENARIOS[@]} -gt 0 ] || SCENARIOS=(overlay-area quick-access background-editor annotate menu settings)
 
 [ -x "$BIN" ] || { echo "no binary at $BIN (run scripts/bundle.sh --release)" >&2; exit 1; }

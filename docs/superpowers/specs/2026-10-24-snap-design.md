@@ -359,7 +359,7 @@ Tests/SnapCoreTests/, Tests/SnapSystemTests/, Tests/SnapUITests/
 `snapctl` commands:
 
 - `gen-fixture <name> --out <png>`: writes the synthetic test inputs (noise, white with red block, transparent-corner window, 1x and 2x variants).
-- `beautify <in.png> --out <out.png> [--preset default|<json>] [--background solid:#RRGGBB|gradient:<name>|none] [--ratio W:H] [--no-autobalance] [--report]`: renders with the same `BeautifyRenderer` and, with `--report`, prints JSON geometry (unit, padding, inset, card rect, radius, canvas size, uniform border flag).
+- `beautify <in.png> --out <out.png> [--preset default|<json>] [--background solid:#RRGGBB|gradient:<name>|mesh:<name>|blurred|none] [--ratio W:H] [--no-autobalance] [--report]`: renders with the same `BeautifyRenderer` and, with `--report`, prints JSON geometry (unit, padding, inset, card rect, radius, canvas size, uniform border flag).
 - `preset --default --json`: prints the first-run default preset.
 - `latency --fake --runs N --display WxH@S [--capture-delay-ms D] --json`: runs `CaptureCoordinator` with fakes and a recording presenter; prints p50, p95 and max for each stage and the event order of every run.
 
@@ -857,12 +857,13 @@ Rows continue the table in 17.7 **(my call, D78)**. Gates applied (find-animatio
 | M19 | Pin closes | Fade out, scale 1 to .96 | 120 ms exit | Fade 100 ms |
 | M20 | Pin hover chrome | Same as M3 and M3b | 120 ms in, 100 ms out | Opacity only |
 | M21 | Pin move, resize, zoom, opacity | 1:1 with the pointer or the key, no easing; the size chip appears and leaves with no fade | 0 ms | Same |
-| M22 | Countdown digit | The new digit cross-fades in from scale .9 | 120 ms enter | Cross-fade |
+| M22 | Countdown digit | The new digit cross-fades in place, no scale (the user reads it while getting ready) | 120 ms enter | Cross-fade |
 | M23 | Recording starts | Dim, disc and hint leave at once; the outline appears at once | 0 ms | Same |
 | M24 | Timer status item | Digits change in place, no pulse, no blink | 0 ms | Same |
 | M25 | Video card, restored card | Same as M1, M2, M6 | As M1 | As M1 |
 | M26 | History window | Selection ring and tile states change instantly; no grid stagger; Quick Look uses the system zoom | 0 ms | Same |
 | M27 | Annotate new tools, Background mesh | None, as M11 and M12 | 0 ms | Same |
+| M28 | History tile moved to the Trash | The tile fades out and scales 1 to .96; the remaining tiles move to their new slots on the spring | 120 ms exit; spring 0.30 / 1.0 | The tile fades 100 ms, the others jump |
 
 Rejected: a pulsing record dot or outline (a looping animation during the whole recording is a distraction and reads as a nag); a fly-to-card animation after Stop (the card already enters with M1); a staggered history grid (a tool window opened to find something, decoration delays it); an animated countdown ring (the digit already carries the state; a ring adds motion at the moment the user is getting ready).
 
@@ -918,6 +919,8 @@ No agent may call ScreenCaptureKit, record the screen, record or play audio, req
 **Shots.** `scripts/shots.sh m2` renders the eleven scenarios of 20.11 in light and dark through the existing shot mode (no window, `lsappinfo front` unchanged, `winlist` empty, `SNAP_NO_UPDATES=1`).
 
 **Comparison with the mockup.** `scripts/shot-stats.swift` gains `--compare <shot.png> <mockup.png> [--grid 32] [--regions docs/mockup/m2/regions.tsv --scenario <name>]`. Both images must have the same pixel size. It reports the mean and 90th percentile of the absolute difference of mean luminance over a 32-column grid of square cells, and the mean luminance difference in each named region. The acceptance thresholds are in AC-M2-10. This checks layout, light and dark, and the weight of each surface; it does not check text rendering or blur, which the user reviews by eye.
+
+**Acceptance notes.** AC-M2-6 samples each step circle at its fill point clear of the digit (0.38 of the diameter right of the center, printed by `snapctl annotate --report`), not at the exact center, because D71 puts the white number there (orchestrator's ruling, 2026-10-25).
 
 ### 20.15 M2 risks
 

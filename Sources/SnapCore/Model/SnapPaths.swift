@@ -98,8 +98,19 @@ public struct SnapPaths: Sendable, Hashable {
     }
 
     private static func trimmed(_ url: URL) -> String {
-        var path = url.standardizedFileURL.path(percentEncoded: false)
+        var path = normalizedPath(url)
         while path.count > 1 && path.hasSuffix("/") { path.removeLast() }
+        return path
+    }
+
+    /// The standardized path with the `/private` prefix of /tmp, /var and /etc removed.
+    /// `standardizedFileURL` drops that prefix only for paths that already exist, so a folder that
+    /// is not created yet would otherwise never compare equal to its existing parent.
+    package static func normalizedPath(_ url: URL) -> String {
+        let path = url.standardizedFileURL.path(percentEncoded: false)
+        for alias in ["/private/tmp", "/private/var", "/private/etc"] where path == alias || path.hasPrefix(alias + "/") {
+            return String(path.dropFirst("/private".count))
+        }
         return path
     }
 }

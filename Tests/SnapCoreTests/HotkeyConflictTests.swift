@@ -26,7 +26,7 @@ import Testing
     @Test func allDefaultCombosRegisterWhenNothingConflicts() {
         let plan = evaluate()
         #expect(plan.register[.captureArea] == HotkeyCombo(.commandShift4))
-        #expect(plan.register[.captureWindow] == HotkeyCombo(.commandShift5))
+        #expect(plan.register[.allInOne] == HotkeyCombo(.commandShift5))
         #expect(plan.register[.captureFullscreen] == HotkeyCombo(.commandShift3))
         #expect(plan.register.count == 3)
         #expect(plan.deferred.isEmpty)
@@ -36,9 +36,10 @@ import Testing
 
     @Test func unsetShortcutsAreNotRegistered() {
         var shortcuts = ShortcutSettings()
-        shortcuts.captureWindow = nil
+        shortcuts.allInOne = nil
         let plan = evaluate(shortcuts: shortcuts)
-        #expect(plan.register[.captureWindow] == nil)
+        #expect(plan.register[.allInOne] == nil)
+        #expect(plan.register[.captureWindow] == nil, "Capture Window is unset by default in M2")
         #expect(plan.register.count == 2)
     }
 

@@ -76,6 +76,34 @@ public protocol PermissionHintSurface: AnyObject {
 @Observable
 final class PermissionHintModel {
     var visible = false
+    /// A one-line message chip shown in place of the permission card, nil for the card.
+    var message: String?
+}
+
+/// A one-line hint chip near the pointer, such as "Recording could not start" (design D69).
+struct HintMessageChip: View {
+    let message: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.Colors.warningDot.color)
+            Text(message)
+                .font(Theme.Typography.captionSemibold.font)
+                .foregroundStyle(Theme.Colors.chipText.color)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 28)
+        .background(
+            Capsule()
+                .fill(Theme.Colors.chip.color)
+                .overlay(Capsule().strokeBorder(Theme.Colors.chipRing.color, lineWidth: Theme.Overlay.chipRingWidth))
+        )
+        .environment(\.colorScheme, .dark)
+        .accessibilityElement(children: .combine)
+    }
 }
 
 /// Shows the hint near the pointer for 6 s when a capture hotkey is pressed without permission
@@ -124,14 +152,28 @@ public final class PermissionHintController {
         return CGRect(x: x, y: y, width: width, height: height)
     }
 
+    /// The message chip on screen, nil while the permission card (or nothing) is shown.
+    public var message: String? { isVisible ? model.message : nil }
+
     /// Shows the hint near `pointer` (`NSScreen` coordinates); a second call restarts the 6 s.
     public func show(near pointer: CGPoint, visibleFrame: CGRect) {
+        present(message: nil, seconds: Theme.HintPanel.visibleSeconds, near: pointer, visibleFrame: visibleFrame)
+    }
+
+    /// Shows a one-line chip near `pointer` for 4 s in place of the permission card, such as
+    /// "Recording could not start" (design D69).
+    public func show(message: String, near pointer: CGPoint, visibleFrame: CGRect) {
+        present(message: message, seconds: Theme.HintPanel.messageSeconds, near: pointer, visibleFrame: visibleFrame)
+    }
+
+    private func present(message: String?, seconds: Double, near pointer: CGPoint, visibleFrame: CGRect) {
         if surface == nil, let makeSurface { surface = makeSurface(self) }
         surface?.show(frame: Self.panelFrame(pointer: pointer, visibleFrame: visibleFrame))
+        model.message = message
         isVisible = true
         isPanelOnScreen = surface != nil
         orderOutAt = nil
-        hideAt = clock.now() + Theme.HintPanel.visibleSeconds
+        hideAt = clock.now() + seconds
         withAnimation(reduceMotion() ? .easeOut(duration: Theme.Motion.hintIn) : Theme.Motion.enter(Theme.Motion.hintIn)) {
             model.visible = true
         }
@@ -191,10 +233,16 @@ struct PermissionHintPanelContent: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        PermissionHintView { controller.openSettings() }
-            .opacity(controller.model.visible ? 1 : 0)
-            .offset(y: controller.model.visible || reduceMotion ? 0 : Theme.HintPanel.rise)
-            .padding(PermissionHintController.margin)
+        Group {
+            if let message = controller.model.message {
+                HintMessageChip(message: message)
+            } else {
+                PermissionHintView { controller.openSettings() }
+            }
+        }
+        .opacity(controller.model.visible ? 1 : 0)
+        .offset(y: controller.model.visible || reduceMotion ? 0 : Theme.HintPanel.rise)
+        .padding(PermissionHintController.margin)
     }
 }
 

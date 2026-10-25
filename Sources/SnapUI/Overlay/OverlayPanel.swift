@@ -13,6 +13,9 @@ public protocol OverlaySurface: AnyObject {
     func update(_ state: SelectionOverlayState)
     /// Orders out with no fade.
     func hide()
+    /// Pops up the HUD's Options menu with its top-left corner at `point` (display-local,
+    /// top-left points). Tracks the menu until it closes.
+    func popUpMenu(_ menu: NSMenu, at point: CGPoint)
 }
 
 /// One borderless, non-activating panel per screen at the screen saver level (design 7). It is
@@ -20,13 +23,15 @@ public protocol OverlaySurface: AnyObject {
 public final class OverlayPanel: NSPanel, OverlaySurface {
     let overlayView: SelectionOverlayView
     private let frozenView: FrozenImageView
+    private let countdownView: CountdownView
 
     /// `screenFrame` is the screen's `NSScreen.frame` (bottom-left origin).
     public init(state: SelectionOverlayState, screenFrame: CGRect, eventSink: any OverlayEventSink) {
         let size = screenFrame.size
         frozenView = FrozenImageView(frame: CGRect(origin: .zero, size: size))
-        overlayView = SelectionOverlayView(state: state, drawsFrozenImage: false)
+        overlayView = SelectionOverlayView(state: state, drawsFrozenImage: false, drawsCountdownDigit: false)
         overlayView.eventSink = eventSink
+        countdownView = CountdownView(frame: CGRect(origin: .zero, size: size))
         super.init(contentRect: screenFrame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         level = .screenSaver
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
@@ -46,8 +51,10 @@ public final class OverlayPanel: NSPanel, OverlaySurface {
         frozenView.autoresizingMask = [.width, .height]
         overlayView.frame = container.bounds
         overlayView.autoresizingMask = [.width, .height]
+        countdownView.autoresizingMask = [.width, .height]
         container.addSubview(frozenView)
         container.addSubview(overlayView)
+        container.addSubview(countdownView)
         contentView = container
         setFrame(screenFrame, display: false)
         apply(state)
@@ -81,9 +88,19 @@ public final class OverlayPanel: NSPanel, OverlaySurface {
         orderOut(nil)
     }
 
+    public func popUpMenu(_ menu: NSMenu, at point: CGPoint) {
+        menu.popUp(positioning: nil, at: point, in: overlayView)
+    }
+
     private func apply(_ state: SelectionOverlayState) {
-        frozenView.image = state.frozenImage
+        // HUD Record mode shows the live screen: the frozen layer is hidden, not dropped (D59).
+        frozenView.image = state.showsFrozenImage ? state.frozenImage : nil
         overlayView.state = state
+        if let seconds = state.hud?.countdown, let target = state.localRecordTarget {
+            countdownView.show(seconds, disc: CountdownLayout.discFrame(target: target, bounds: state.bounds))
+        } else {
+            countdownView.show(nil, disc: .zero)
+        }
     }
 
     /// The factory `OverlayController` takes in the app: one panel per display.

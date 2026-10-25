@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import SnapCore
 import Testing
@@ -23,24 +24,124 @@ import Testing
 
     let now = MenuModelTests.date(hour: 14, minute: 5)
 
+    static func recording(_ name: String, at date: Date, duration: Double?) -> CaptureItem {
+        CaptureItem(
+            id: name, createdAt: date, mode: .area, scale: 2,
+            originalURL: URL(filePath: "/tmp/history/\(name)/Snap \(name).mp4"), kind: .video, durationSeconds: duration
+        )
+    }
+
     private func model(
         recent: [CaptureItem] = [], permissionNeeded: Bool = false, plan: HotkeyPlan? = nil,
-        shortcuts: ShortcutSettings = ShortcutSettings()
+        shortcuts: ShortcutSettings = ShortcutSettings(), pins: [PinnedCaptureEntry] = [], isRecording: Bool = false
     ) -> MenuModel {
         MenuModel(MenuInput(
             shortcuts: shortcuts, recentCaptures: recent, permissionNeeded: permissionNeeded, plan: plan,
-            now: now, timeZone: Self.zone
+            pins: pins, isRecording: isRecording, now: now, timeZone: Self.zone
         ))
     }
 
     @Test func itemsFollowTheDesignOrder() {
+        // Design 20.10: the capture group with All-in-One and Record Screen, the last-capture group
+        // with Pin, then Recent Captures and Capture History.
         let ids = model().items.map(\.id)
         #expect(ids == [
-            .captureArea, .captureWindow, .captureFullscreen, .separator(1),
-            .applyBackground, .openInAnnotate, .separator(2),
-            .recentCapturesHeader, .noRecentCaptures, .openHistoryFolder, .separator(3),
+            .captureArea, .captureWindow, .captureFullscreen, .allInOne, .recordScreen, .separator(1),
+            .applyBackground, .openInAnnotate, .pinLastCapture, .separator(2),
+            .recentCapturesHeader, .noRecentCaptures, .captureHistory, .separator(3),
             .settings, .quit,
         ])
+        #expect(model().item(.openHistoryFolder) == nil)
+    }
+
+    @Test func m2TitlesAndShortcuts() {
+        let menu = model()
+        #expect(menu.item(.allInOne)?.title == "All-in-One\u{2026}")
+        #expect(menu.item(.allInOne)?.shortcutText == "\u{21E7}\u{2318}5")
+        #expect(menu.item(.allInOne)?.keyEquivalent == MenuKeyEquivalent(key: "5", command: true, shift: true))
+        #expect(menu.item(.recordScreen)?.title == "Record Screen\u{2026}")
+        #expect(menu.item(.recordScreen)?.keyEquivalent == nil)
+        #expect(menu.item(.pinLastCapture)?.title == "Pin Last Capture")
+        #expect(menu.item(.captureHistory)?.title == "Capture History\u{2026}")
+        #expect(menu.item(.captureHistory)?.isEnabled == true)
+    }
+
+    @Test func recordScreenReadsStopRecordingWhileRecording() {
+        let menu = model(isRecording: true)
+        #expect(menu.item(.recordScreen)?.title == "Stop Recording")
+        #expect(menu.item(.recordScreen)?.shortcutText == "\u{21E7}\u{2318}5")
+        var shortcuts = ShortcutSettings()
+        shortcuts.stopRecording = KeyShortcut(keyCode: 1, modifiers: KeyShortcut.Modifier.control | KeyShortcut.Modifier.option)
+        #expect(model(shortcuts: shortcuts, isRecording: true).item(.recordScreen)?.shortcutText == "\u{2303}\u{2325}S")
+    }
+
+    @Test func recordingsInRecentCapturesShowTheirDuration() {
+        let captures = [
+            Self.capture("a", at: Self.date(hour: 14, minute: 3).addingTimeInterval(22)),
+            Self.recording("b", at: Self.date(hour: 11, minute: 48).addingTimeInterval(9), duration: 42.4),
+            Self.recording("c", at: Self.date(hour: 9, minute: 15).addingTimeInterval(40), duration: nil),
+        ]
+        let menu = model(recent: captures)
+        #expect(menu.item(.recentCapture("a"))?.title == "Screenshot 14.03.22")
+        #expect(menu.item(.recentCapture("b"))?.title == "Recording 11.48.09 \u{00B7} 0:42")
+        #expect(menu.item(.recentCapture("b"))?.subtitle == "Today, 11:48")
+        #expect(menu.item(.recentCapture("c"))?.title == "Recording 09.15.40")
+        let long = Self.recording("d", at: now, duration: 3725)
+        #expect(MenuModel.recentTitle(long, timeZone: Self.zone).hasSuffix("\u{00B7} 1:02:05"))
+    }
+
+    @Test func pinLastCaptureNeedsAScreenshot() {
+        #expect(model().item(.pinLastCapture)?.isEnabled == false)
+        #expect(model(recent: [Self.capture("a", at: now)]).item(.pinLastCapture)?.isEnabled == true)
+        // Recordings cannot be pinned in M2 (design 20.2).
+        #expect(model(recent: [Self.recording("v", at: now, duration: 4)]).item(.pinLastCapture)?.isEnabled == false)
+    }
+
+    @Test func pinnedCapturesSubmenuListsEachPinWithUnlockAndClose() throws {
+        #expect(model().item(.pinnedCaptures) == nil)
+        let pins = [
+            PinnedCaptureEntry(id: 1, itemID: "a", createdAt: Self.date(hour: 13, minute: 0), clickThrough: false),
+            PinnedCaptureEntry(id: 2, itemID: "b", createdAt: Self.date(hour: 13, minute: 30), clickThrough: true),
+        ]
+        let menu = model(pins: pins)
+        let ids = menu.items.map(\.id)
+        let history = try #require(ids.firstIndex(of: .captureHistory))
+        #expect(ids[history + 1] == .pinnedCaptures)
+        let pinned = try #require(menu.item(.pinnedCaptures))
+        #expect(pinned.title == "Pinned Captures (2)")
+        let children = pinned.children.filter { $0.kind != .separator }
+        #expect(children.map(\.id) == [
+            .pinnedCapture(1), .unlockPin(1), .closePin(1), .pinnedCapture(2), .unlockPin(2), .closePin(2), .closeAllPins,
+        ])
+        #expect(children[0].captureID == "a")
+        #expect(children[0].title == "Pinned 13.00.00")
+        // Unlock applies only to a click-through pin.
+        #expect(children[1].isEnabled == false)
+        #expect(children[4].isEnabled == true)
+        #expect(children[1].indented && children[2].indented)
+        #expect(children.last?.title == "Close All Pins")
+    }
+
+    @Test func recordingMenuHasStopCancelAndThreeInformationRows() {
+        let menu = RecordingMenuModel(RecordingMenuInput(
+            target: .area, size: CGSize(width: 640, height: 400), fps: 30, format: .h264,
+            microphoneName: "MacBook Pro Microphone", systemAudio: false
+        ))
+        #expect(menu.items.map(\.id) == [
+            .stopRecording, .cancelRecording, .separator(1), .recordingInfo(0), .recordingInfo(1), .recordingInfo(2),
+        ])
+        #expect(menu.item(.stopRecording)?.shortcutText == "\u{21E7}\u{2318}5")
+        #expect(menu.item(.recordingInfo(0))?.title == "Area 640 \u{00D7} 400, 30 fps, H.264")
+        #expect(menu.item(.recordingInfo(1))?.title == "MacBook Pro Microphone")
+        #expect(menu.item(.recordingInfo(2))?.title == "System audio off")
+        #expect(menu.items.filter { $0.kind == .info }.allSatisfy { !$0.isEnabled && $0.symbolName != nil })
+
+        let quiet = RecordingMenuModel(RecordingMenuInput(
+            target: .window, size: CGSize(width: 842, height: 516), fps: 60, format: .hevc, systemAudio: true
+        ))
+        #expect(quiet.item(.recordingInfo(0))?.title == "Window 842 \u{00D7} 516, 60 fps, HEVC")
+        #expect(quiet.item(.recordingInfo(1))?.title == "Microphone off")
+        #expect(quiet.item(.recordingInfo(2))?.title == "System audio on")
     }
 
     @Test func checkForUpdatesSitsAboveSettingsOnlyWithAnUpdater() {
@@ -56,7 +157,8 @@ import Testing
         let menu = model()
         #expect(menu.item(.captureArea)?.title == "Capture Area")
         #expect(menu.item(.captureArea)?.keyEquivalent == MenuKeyEquivalent(key: "4", command: true, shift: true))
-        #expect(menu.item(.captureWindow)?.shortcutText == "\u{21E7}\u{2318}5")
+        // M2: Cmd+Shift+5 belongs to All-in-One and Capture Window is unset by default (design D56).
+        #expect(menu.item(.captureWindow)?.shortcutText == nil)
         #expect(menu.item(.captureFullscreen)?.shortcutText == "\u{21E7}\u{2318}3")
         #expect(menu.item(.applyBackground)?.title == "Apply Background to Last Capture")
         #expect(menu.item(.applyBackground)?.keyEquivalent == nil)
@@ -95,7 +197,7 @@ import Testing
         let recents = menu.items.filter { if case .recentCapture = $0.id { true } else { false } }
         #expect(recents.map(\.captureID) == ["c0", "c1", "c2"])
         #expect(menu.item(.noRecentCaptures) == nil)
-        #expect(recents[0].title == "Snap c0")
+        #expect(recents[0].title == "Screenshot 14.05.00")
     }
 
     @Test func recentCapturesHaveRelativeSubtitles() {
@@ -118,7 +220,7 @@ import Testing
     @Test func emptyHistoryShowsADisabledPlaceholder() {
         let menu = model()
         #expect(menu.item(.noRecentCaptures)?.isEnabled == false)
-        #expect(menu.item(.openHistoryFolder)?.isEnabled == true)
+        #expect(menu.item(.captureHistory)?.isEnabled == true)
     }
 
     @Test func statusLineAppearsOnlyWhenSomethingNeedsAttention() {
@@ -140,7 +242,7 @@ import Testing
 
     @Test func statusLineSitsBetweenHistoryAndSettings() {
         let ids = model(permissionNeeded: true).items.map(\.id)
-        let history = ids.firstIndex(of: .openHistoryFolder)
+        let history = ids.firstIndex(of: .captureHistory)
         let status = ids.firstIndex(of: .status)
         let settings = ids.firstIndex(of: .settings)
         #expect(history != nil && status != nil && settings != nil)

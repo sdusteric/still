@@ -2,7 +2,8 @@
 # All gates (design section 16). Exits 0 only when every gate passes.
 #   swift build -c release -> swift test -> swiftlint --strict -> snapctl and snapbench do not
 #   link ScreenCaptureKit -> snapctl and snapbench do not link Sparkle -> scripts/bundle.sh
-#   --release -> codesign --verify --deep --strict -> plutil -lint, bundle id and LSUIElement ->
+#   --release -> codesign --verify --deep --strict -> plutil -lint, bundle id, LSUIElement and the
+#   microphone usage string ->
 #   Sparkle in the bundle (framework, feed, key, @rpath link) -> designated requirement -> no em
 #   or en dashes
 #
@@ -26,6 +27,8 @@ export SNAP_HOME="$TMP_HOME"
 export SNAP_NO_UPDATES=1
 
 BUNDLE_ID="dev.sdusteric.snap"
+# Design D79.
+MIC_USAGE="Snap records your microphone only during a screen recording you start with the microphone turned on."
 APP="$ROOT/build/bundle/Snap.app"
 # app-updates CONTRACT.md
 FEED_URL="https://sdusteric.github.io/app-updates/snap/appcast.xml"
@@ -98,13 +101,15 @@ codesign_check() {
 }
 
 plist_check() {
-  local plist="$APP/Contents/Info.plist" id ui
+  local plist="$APP/Contents/Info.plist" id ui mic
   plutil -lint "$plist" || return 1
   id="$(plutil -extract CFBundleIdentifier raw -o - "$plist")"
   [ "$id" = "$BUNDLE_ID" ] || { echo "bundle id is $id"; return 1; }
   ui="$(plutil -extract LSUIElement raw -o - "$plist")"
   [ "$ui" = true ] || { echo "LSUIElement is $ui"; return 1; }
-  echo "CFBundleIdentifier $id, LSUIElement $ui"
+  mic="$(plutil -extract NSMicrophoneUsageDescription raw -o - "$plist" 2>/dev/null || true)"
+  [ "$mic" = "$MIC_USAGE" ] || { echo "NSMicrophoneUsageDescription is '$mic', expected '$MIC_USAGE'"; return 1; }
+  echo "CFBundleIdentifier $id, LSUIElement $ui, NSMicrophoneUsageDescription matches"
 }
 
 sparkle_check() {

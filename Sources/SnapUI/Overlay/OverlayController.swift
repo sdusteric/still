@@ -48,6 +48,14 @@ public enum OverlayKey: Sendable, Hashable {
     }
 }
 
+/// A key pressed while the HUD holds the overlay for the recording countdown (design 20.6).
+public enum CountdownKey: Sendable, Hashable {
+    /// Return: start recording now.
+    case startNow
+    /// Esc: cancel, nothing is written.
+    case cancel
+}
+
 /// One input event in global top-left points, as `SelectionOverlayView` reports it.
 public enum OverlayInputEvent: Sendable, Hashable {
     case mouseMoved(CGPoint)
@@ -91,19 +99,29 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
         public var showCrosshair: Bool
         public var showKeyHints: Bool
         public var includeWindowShadow: Bool
+        /// Recordings at the display's scale (Retina) or at 1x, for the HUD's "Too small to
+        /// record" check (design 20.6).
+        public var recordsAtRetina: Bool
 
         public init(
             instantCapture: Bool = true,
             showMagnifier: Bool = true,
             showCrosshair: Bool = true,
             showKeyHints: Bool = true,
-            includeWindowShadow: Bool = true
+            includeWindowShadow: Bool = true,
+            recordsAtRetina: Bool = true
         ) {
             self.instantCapture = instantCapture
             self.showMagnifier = showMagnifier
             self.showCrosshair = showCrosshair
             self.showKeyHints = showKeyHints
             self.includeWindowShadow = includeWindowShadow
+            self.recordsAtRetina = recordsAtRetina
+        }
+
+        public init(settings: SnapCore.Settings) {
+            self.init(settings: settings.capture)
+            recordsAtRetina = settings.recording.scale == .retina
         }
 
         public init(settings: CaptureSettings) {
@@ -127,12 +145,22 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
     }
 
     public var options: Options
-    /// Called once per capture with the result, after the panels are ordered out.
+    /// Called once per capture with the result, after the panels are ordered out (for a HUD
+    /// Record result, while they stay up for the countdown).
     public var onFinish: ((OverlaySelection) -> Void)?
+    /// The HUD's Options menu rows for a mode (the app reads its settings and input devices).
+    public var hudOptionItems: (HUDMode) -> [AllInOneOptionItem] = { _ in [] }
+    /// A row of the HUD's Options menu was chosen.
+    public var onHUDOption: ((AllInOneOption) -> Void)?
+    /// Return or Esc during the recording countdown.
+    public var onCountdownKey: ((CountdownKey) -> Void)?
+    /// A display's name for the HUD's Fullscreen label chip.
+    public var displayName: (DisplayID) -> String? = { _ in nil }
 
     private let makeSurface: SurfaceFactory?
     private let cursor: any OverlayCursor
     private let pointerLocation: @MainActor () -> CGPoint?
+    private let visibleDisplays: @MainActor ([DisplayInfo]) -> [VisibleDisplay]
     private let hitTester: WindowHitTester
 
     public private(set) var displays: [DisplayInfo] = []
@@ -155,19 +183,43 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
     private var pendingResult: OverlaySelection?
     private var continuation: CheckedContinuation<OverlaySelection, Never>?
 
+    // MARK: HUD state (design 20.5)
+
+    /// The all-in-one HUD's mode, target and area while the overlay runs as the HUD; nil for the
+    /// plain Cmd+Shift+4 overlay. Kept after the HUD closes, so the app can store mode and target.
+    public private(set) var hud: AllInOneState?
+    /// The toolbar's frame in global top-left points, on `toolbarDisplay`.
+    public private(set) var toolbarFrame: CGRect?
+    public private(set) var toolbarEdge: HUDToolbarEdge = .bottom
+    public private(set) var toolbarDisplay: DisplayInfo?
+    /// Shown in place of the size chip: "Too small to record", or what the app sets.
+    public private(set) var hudNotice: String?
+    /// After Record: what is being recorded, held under the dim for the countdown.
+    public private(set) var recordTarget: CGRect?
+    /// Seconds left in the countdown disc; nil before the first tick.
+    public private(set) var countdownSeconds: Int?
+    /// The last Options menu built, for tests.
+    public private(set) var lastOptionsMenu: NSMenu?
+    private var hudModeChanged: (@MainActor (HUDMode) -> Void)?
+    private var toolbarPress = false
+    private var previousArea: (rect: CGRect, display: DisplayInfo)?
+
     /// - Parameters:
     ///   - makeSurface: builds one display's panel; nil (tests, shot mode) means no panels at all.
     ///   - pointerLocation: the pointer in global top-left points when the overlay appears.
+    ///   - visibleDisplays: each display's visible frame (no menu bar or Dock), for the HUD toolbar.
     public init(
         options: Options = Options(),
         ownPID: Int32 = ProcessInfo.processInfo.processIdentifier,
         cursor: any OverlayCursor,
         pointerLocation: @escaping @MainActor () -> CGPoint? = { nil },
+        visibleDisplays: @escaping @MainActor ([DisplayInfo]) -> [VisibleDisplay] = { $0.map { VisibleDisplay($0) } },
         makeSurface: SurfaceFactory? = nil
     ) {
         self.options = options
         self.cursor = cursor
         self.pointerLocation = pointerLocation
+        self.visibleDisplays = visibleDisplays
         self.makeSurface = makeSurface
         self.hitTester = WindowHitTester(ownPID: ownPID)
     }
@@ -206,17 +258,7 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
             waiting.resume(returning: .cancelled)
         }
         prepare(displays: displays)
-        pendingResult = nil
-        interaction = .none
-        modifiers = []
-        spaceHeld = false
-        selection = nil
-        selectionDisplay = nil
-        hoveredWindow = nil
-        windows = []
-        frozen = [:]
-        phase = .idle
-        pointer = pointerLocation()
+        resetSession()
 
         if mode == .fullscreen {
             // Fullscreen has no overlay: the display under the pointer is the selection (design 6.4).
@@ -239,6 +281,80 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
             guard let state = states[display.id] else { continue }
             surfaces[display.id]?.show(state, makeKey: display.id == keyDisplay?.id)
         }
+    }
+
+    /// Clears everything one capture leaves behind, before the next one is presented.
+    private func resetSession() {
+        pendingResult = nil
+        interaction = .none
+        modifiers = []
+        spaceHeld = false
+        selection = nil
+        selectionDisplay = nil
+        hoveredWindow = nil
+        windows = []
+        frozen = [:]
+        phase = .idle
+        hud = nil
+        hudModeChanged = nil
+        toolbarFrame = nil
+        toolbarDisplay = nil
+        hudNotice = nil
+        recordTarget = nil
+        countdownSeconds = nil
+        toolbarPress = false
+        previousArea = nil
+        pointer = pointerLocation()
+    }
+
+    /// The all-in-one HUD (design 20.5, M16): the same pre-built panels, plus the toolbar, the
+    /// restored area with its handles and size chip, and the target. Nothing animates. The
+    /// cursor stays visible, since the toolbar and handles are clicked.
+    public func presentHUD(
+        _ state: AllInOneState, displays: [DisplayInfo], modeChanged: @escaping @MainActor (HUDMode) -> Void
+    ) {
+        if let waiting = continuation {
+            continuation = nil
+            waiting.resume(returning: .cancelled)
+        }
+        prepare(displays: displays)
+        resetSession()
+        hud = state
+        hudModeChanged = modeChanged
+        mode = Self.drawingMode(for: state.target)
+        if let area = state.area,
+           let display = CoordinateSpace.nearestDisplay(to: CGPoint(x: area.midX, y: area.midY), in: displays) {
+            selection = area
+            selectionDisplay = display
+            phase = .adjusting
+        }
+        isPresented = true
+        if mode == .window { updateHover() }
+        layoutToolbar()
+        rebuildStates()
+        let keyDisplay = toolbarDisplay ?? displays.first
+        for display in displays {
+            guard let state = states[display.id] else { continue }
+            surfaces[display.id]?.show(state, makeKey: display.id == keyDisplay?.id)
+        }
+    }
+
+    /// True between a HUD Record confirm and `dismiss()`: the panels show the countdown.
+    public var isHoldingForRecording: Bool { isPresented && recordTarget != nil }
+
+    /// Shows `seconds` in the countdown disc over the record target (design 20.6, M22); nil
+    /// shows the held target with no disc.
+    public func showCountdown(_ seconds: Int?) {
+        guard isHoldingForRecording else { return }
+        countdownSeconds = seconds
+        refreshAll()
+    }
+
+    /// Replaces the HUD's size chip with `text` ("Not enough disk space"); nil restores it.
+    public func setHUDNotice(_ text: String?) {
+        guard hud != nil else { return }
+        hudNotice = text
+        refreshAll()
     }
 
     public func showFrozen(_ image: CapturedImage, displayID: DisplayID) {
@@ -286,6 +402,10 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
     /// Maps one input event onto the selection. Points are global top-left.
     public func handle(_ event: OverlayInputEvent) {
         guard isPresented else { return }
+        if hud != nil {
+            handleHUD(event)
+            return
+        }
         switch event {
         case .mouseMoved(let point):
             pointerMoved(to: point)
@@ -492,6 +612,9 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
     private func endSession() {
         isPresented = false
         interaction = .none
+        recordTarget = nil
+        countdownSeconds = nil
+        toolbarPress = false
         for surface in surfaces.values { surface.hide() }
         showCursor()
     }
@@ -539,7 +662,28 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
             hoveredWindow: windowHere,
             showsMagnifier: options.showMagnifier,
             showsCrosshair: options.showCrosshair,
-            showsKeyHints: options.showKeyHints
+            showsKeyHints: options.showKeyHints,
+            hud: hudDrawing(for: display)
+        )
+    }
+
+    private func hudDrawing(for display: DisplayInfo) -> HUDOverlayDrawing? {
+        guard let hud else { return nil }
+        let pointerDisplay = pointer.flatMap { CoordinateSpace.nearestDisplay(to: $0, in: displays) }
+        var countdown: Int?
+        if let target = recordTarget, let seconds = countdownSeconds,
+           CoordinateSpace.nearestDisplay(to: CGPoint(x: target.midX, y: target.midY), in: displays)?.id == display.id {
+            countdown = seconds
+        }
+        return HUDOverlayDrawing(
+            mode: hud.mode,
+            target: hud.target,
+            toolbarOrigin: toolbarDisplay?.id == display.id ? toolbarFrame?.origin : nil,
+            notice: hudNotice,
+            highlightsDisplay: hud.target == .fullscreen && recordTarget == nil && pointerDisplay?.id == display.id,
+            displayName: displayName(display.id),
+            recordTarget: recordTarget,
+            countdown: countdown
         )
     }
 
@@ -553,5 +697,331 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
 
     private func refreshAll() {
         for display in displays { refresh(display.id) }
+    }
+}
+
+// MARK: HUD events (design 20.5)
+
+extension OverlayController {
+    /// The overlay drawing mode for a HUD target.
+    static func drawingMode(for target: CaptureMode) -> CaptureMode { target }
+
+    /// Virtual key codes of the HUD's letter and digit keys (`kVK_ANSI_1` to `3`, `kVK_ANSI_R`).
+    static func hudKey(_ key: OverlayKey, modifiers: OverlayModifiers) -> HUDKey? {
+        switch key {
+        case .escape: return .escape
+        case .tab: return .tab
+        case .returnKey: return .returnKey
+        case .arrow(let direction):
+            let step = modifiers.contains(.shift) ? 10.0 : 1.0
+            switch direction {
+            case .left: return .arrow(dx: -step, dy: 0)
+            case .right: return .arrow(dx: step, dy: 0)
+            case .up: return .arrow(dx: 0, dy: -step)
+            case .down: return .arrow(dx: 0, dy: step)
+            }
+        case .space: return nil
+        case .other(let code):
+            guard !modifiers.contains(.command) else { return nil }
+            switch code {
+            case 18: return .one
+            case 19: return .two
+            case 20: return .three
+            case 15: return .r
+            default: return nil
+            }
+        }
+    }
+
+    func handleHUD(_ event: OverlayInputEvent) {
+        if recordTarget != nil {
+            // The countdown only listens for Return and Esc; the panel stays key for them.
+            if case .keyDown(let key, _, _) = event {
+                if key == .returnKey { onCountdownKey?(.startNow) }
+                if key == .escape { onCountdownKey?(.cancel) }
+            }
+            return
+        }
+        guard let hud else { return }
+        switch event {
+        case .mouseMoved(let point):
+            pointer = point
+            if hud.target == .window { updateHover() }
+            refreshAll()
+        case .mouseDown(let point, let clickCount, let modifiers):
+            self.modifiers = modifiers
+            pointer = point
+            if let item = toolbarItem(at: point) {
+                toolbarPress = true
+                perform(item)
+                return
+            }
+            if hud.target == .area {
+                hudAreaMouseDown(at: point, clickCount: clickCount)
+            } else {
+                if hud.target == .window { updateHover() }
+                refreshAll()
+            }
+        case .mouseDragged(let point, let modifiers):
+            guard !toolbarPress else { return }
+            self.modifiers = modifiers
+            if hud.target == .area {
+                mouseDragged(to: point)
+            } else {
+                pointer = point
+                refreshAll()
+            }
+        case .mouseUp(let point, let modifiers):
+            if toolbarPress {
+                toolbarPress = false
+                return
+            }
+            self.modifiers = modifiers
+            pointer = point
+            switch hud.target {
+            case .area:
+                hudAreaMouseUp(at: point)
+            case .window:
+                updateHover()
+                if hoveredWindow != nil { confirmHUD() }
+            case .fullscreen:
+                confirmHUD()
+            }
+        case .rightMouseDown:
+            finish(.cancelled)
+        case .keyDown(let key, let modifiers, let isRepeat):
+            self.modifiers = modifiers
+            hudKeyDown(key, isRepeat: isRepeat)
+        case .keyUp(let key):
+            if key == .space { spaceHeld = false }
+        case .modifiersChanged(let modifiers):
+            self.modifiers = modifiers
+            if case .drawing = interaction, let point = pointer { mouseDragged(to: point) }
+        }
+    }
+
+    /// The toolbar control under a global point, if the toolbar is there.
+    public func toolbarItem(at point: CGPoint) -> AllInOneToolbarItem? {
+        guard let hud, let frame = toolbarFrame, frame.contains(point) else { return nil }
+        let local = CGPoint(x: point.x - frame.minX, y: point.y - frame.minY)
+        return AllInOneToolbarLayout.layout(for: hud.mode).hit(local)
+    }
+
+    /// What a toolbar click does.
+    public func perform(_ item: AllInOneToolbarItem) {
+        guard isPresented, hud != nil, recordTarget == nil else { return }
+        switch item {
+        case .close: finish(.cancelled)
+        case .mode(let mode): setHUDMode(mode)
+        case .target(let target): setHUDTarget(target)
+        case .options: showOptionsMenu()
+        case .primary: confirmHUD()
+        }
+    }
+
+    /// Screenshot or Record (M16: no animation). Record hides the frozen layer; the coordinator
+    /// learns of the switch so it can start the frozen captures Record mode skipped (D59).
+    public func setHUDMode(_ newMode: HUDMode) {
+        guard var state = hud, state.setMode(newMode) == .changed else { return }
+        hud = state
+        hudNotice = nil
+        layoutToolbar()
+        refreshAll()
+        hudModeChanged?(newMode)
+    }
+
+    /// Area, Window or Fullscreen. The area is kept, so switching back shows it again.
+    public func setHUDTarget(_ target: CaptureMode) {
+        guard var state = hud, state.setTarget(target) == .changed else { return }
+        hud = state
+        hudNotice = nil
+        interaction = .none
+        mode = Self.drawingMode(for: target)
+        phase = target == .area && selection != nil ? .adjusting : .idle
+        updateHover()
+        refreshAll()
+    }
+
+    private func hudKeyDown(_ key: OverlayKey, isRepeat: Bool) {
+        if key == .space {
+            spaceHeld = true
+            return
+        }
+        guard let hudKey = Self.hudKey(key, modifiers: modifiers), let state = hud else { return }
+        switch hudKey {
+        case .one: setHUDTarget(.area)
+        case .two: setHUDTarget(.window)
+        case .three: setHUDTarget(.fullscreen)
+        case .tab:
+            guard !isRepeat, !isHUDDrawing else { return }
+            setHUDTarget(state.target == .window ? .area : .window)
+        case .r:
+            guard !isRepeat else { return }
+            setHUDMode(state.mode.toggled)
+        case .returnKey: confirmHUD()
+        case .escape: finish(.cancelled)
+        case .arrow:
+            guard state.target == .area, case .arrow(let direction) = key, let rect = selection,
+                  let display = selectionDisplay else { return }
+            let geometry = SelectionGeometry(display: display)
+            let large = modifiers.contains(.shift)
+            selection = modifiers.contains(.command)
+                ? geometry.resized(rect, direction, large: large)
+                : geometry.nudged(rect, direction, large: large)
+            areaChanged()
+        }
+    }
+
+    private var isHUDDrawing: Bool {
+        if case .drawing = interaction { return true }
+        return false
+    }
+
+    /// Instant capture does not apply in the HUD: a drag leaves an editable area; Return, a
+    /// double-click inside or the primary button confirms (20.5).
+    private func hudAreaMouseDown(at point: CGPoint, clickCount: Int) {
+        if phase == .adjusting, let rect = selection {
+            if clickCount >= 2, rect.contains(point) {
+                confirmHUD()
+                return
+            }
+            if let handle = SelectionHandle.hit(point, rect: rect) {
+                interaction = .resizing(handle)
+                return
+            }
+            if rect.contains(point) {
+                interaction = .moving(last: point)
+                return
+            }
+        }
+        guard let display = CoordinateSpace.nearestDisplay(to: point, in: displays) else { return }
+        previousArea = selection.flatMap { rect in selectionDisplay.map { (rect, $0) } }
+        let drag = SelectionDrag(start: point, geometry: SelectionGeometry(display: display), modifiers: modifiers.dragModifiers)
+        interaction = .drawing(drag)
+        selectionDisplay = display
+        selection = drag.rect
+        phase = .dragging
+        refreshAll()
+    }
+
+    private func hudAreaMouseUp(at point: CGPoint) {
+        switch interaction {
+        case .drawing:
+            mouseDragged(to: point)
+            interaction = .none
+            if let rect = selection, let display = selectionDisplay, SelectionGeometry(display: display).isClick(rect) {
+                // A click outside the area keeps the area it had.
+                selection = previousArea?.rect
+                selectionDisplay = previousArea?.display
+            }
+            phase = selection == nil ? .idle : .adjusting
+            previousArea = nil
+            areaChanged()
+        case .moving, .resizing:
+            interaction = .none
+            areaChanged()
+        case .none:
+            break
+        }
+    }
+
+    private func areaChanged() {
+        hud?.setArea(selection)
+        hudNotice = nil
+        layoutToolbar()
+        refreshAll()
+    }
+
+    /// Places the toolbar on the display under the pointer (design 20.5): 28 pt above the visible
+    /// frame's bottom, or below its top when the area would sit under it.
+    func layoutToolbar() {
+        guard let hud else { return }
+        let display = toolbarDisplay
+            ?? pointer.flatMap { CoordinateSpace.nearestDisplay(to: $0, in: displays) }
+            ?? displays.first
+        guard let display else { return }
+        toolbarDisplay = display
+        let visible = visibleDisplays(displays).first { $0.id == display.id } ?? VisibleDisplay(display)
+        let size = AllInOneToolbarLayout.layout(for: hud.mode).size
+        let area = selectionDisplay?.id == display.id ? selection : nil
+        let placed = AllInOneState.toolbarFrame(size: size, display: visible, area: area)
+        toolbarFrame = placed.frame
+        toolbarEdge = placed.edge
+    }
+
+    /// Return, a double-click or the primary button. Screenshot mode finishes like Cmd+Shift+4;
+    /// Record mode keeps the panels up for the countdown and hands back the target (20.6).
+    public func confirmHUD() {
+        guard isPresented, let hud, recordTarget == nil else { return }
+        switch hud.target {
+        case .area:
+            guard let rect = selection, rect.width > 0, rect.height > 0, let display = selectionDisplay else { return }
+            guard hud.mode == .record else {
+                finish(.area(displayID: display.id, rect: rect))
+                return
+            }
+            guard isRecordable(rect, on: display) else {
+                hudNotice = "Too small to record"
+                refreshAll()
+                return
+            }
+            holdForRecording(.record(.area(rect)), target: rect)
+        case .window:
+            guard let window = hoveredWindow else { return }
+            if hud.mode == .screenshot {
+                finish(.window(window, includeShadow: options.includeWindowShadow != modifiers.contains(.option)))
+            } else {
+                holdForRecording(.record(.window(window)), target: window.frame)
+            }
+        case .fullscreen:
+            let display = pointer.flatMap { CoordinateSpace.nearestDisplay(to: $0, in: displays) } ?? displays.first
+            guard let display else { return }
+            if hud.mode == .screenshot {
+                finish(.fullscreen(displayID: display.id))
+            } else {
+                holdForRecording(.record(.fullscreen(displayID: display.id)), target: display.frameTopLeft)
+            }
+        }
+    }
+
+    /// At least 64 px on a side after rounding down to even pixels (design 20.6).
+    func isRecordable(_ rect: CGRect, on display: DisplayInfo) -> Bool {
+        let scale = options.recordsAtRetina ? display.scale : 1
+        do {
+            _ = try RecordingPlan.evenPixelSize(width: rect.width, height: rect.height, scale: scale)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Resolves the selection with a Record result but keeps the panels: the toolbar, handles
+    /// and chips go, the dim and the target's border stay for the countdown (M23 removes them).
+    private func holdForRecording(_ result: OverlaySelection, target: CGRect) {
+        recordTarget = target
+        countdownSeconds = nil
+        interaction = .none
+        refreshAll()
+        if let waiting = continuation {
+            continuation = nil
+            waiting.resume(returning: result)
+        } else {
+            pendingResult = result
+        }
+        onFinish?(result)
+    }
+
+    private func showOptionsMenu() {
+        guard let hud, let frame = toolbarFrame, let display = toolbarDisplay,
+              let slot = AllInOneToolbarLayout.layout(for: hud.mode).frame(of: .options) else { return }
+        let menu = AllInOneOptions.makeMenu(hudOptionItems(hud.mode)) { [weak self] option in
+            self?.onHUDOption?(option)
+        }
+        lastOptionsMenu = menu
+        let local = CGPoint(
+            x: frame.minX + slot.minX - display.frameTopLeft.minX,
+            y: frame.minY + (toolbarEdge == .bottom ? slot.minY : slot.maxY) - display.frameTopLeft.minY
+        )
+        surfaces[display.id]?.popUpMenu(menu, at: local)
     }
 }

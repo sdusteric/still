@@ -173,6 +173,39 @@ nonisolated public enum Theme {
         public static let thumbnailStroke = ThemeColor(both: .black(0.18))
         /// Star on the default preset.
         public static let star = ThemeColor(both: .init(hex: 0xF5A623))
+
+        // M2 (design 20.11).
+        /// Recording timer, Record button, record dot.
+        public static let record = ThemeColor(light: .init(hex: 0xFF3B30), dark: .init(hex: 0xFF453A))
+        /// Highlight tool default: #FFD60A at 38%.
+        public static let highlightDefault = ThemeColor(both: .init(hex: 0xFFD60A, alpha: 0.38))
+        /// Highlight color without its alpha, for the color well.
+        public static let highlightSolid = ThemeColor(both: .init(hex: 0xFFD60A))
+        /// Click-through pin badge: chip color at 0.72.
+        public static let lockBadge = ThemeColor(both: .init(red: 28 / 255, green: 28 / 255, blue: 30 / 255, alpha: 0.72))
+        /// Pin opacity slider: track and fill.
+        public static let pinSliderTrack = ThemeColor(both: .white(0.28))
+        public static let pinSliderFill = ThemeColor(both: .white(1))
+        /// Dividers inside chip bars (pin control bar, HUD toolbar).
+        public static let chipDivider = ThemeColor(both: .white(0.24))
+        public static let hudDivider = ThemeColor(both: .white(0.18))
+        /// HUD mode switch track, and the selected segment or target.
+        public static let hudSegmentTrack = ThemeColor(both: .white(0.10))
+        public static let hudSelected = ThemeColor(both: .white(0.20))
+        /// Unselected HUD glyphs and labels.
+        public static let hudIdle = ThemeColor(both: .white(0.78))
+        public static let hudOptions = ThemeColor(both: .white(0.86))
+        public static let hudClose = ThemeColor(both: .white(0.80))
+        /// Countdown disc shadow color.
+        public static let countdownShadow = ThemeColor(both: .black(0.35))
+        /// History "Interrupted" pill: warning fill at 0.92.
+        public static let interruptedPill = ThemeColor(both: .init(hex: 0xB25000, alpha: 0.92))
+        /// The 3 pt dot between footer facts in the history window.
+        public static let historyFooterDot = ThemeColor(
+            light: .init(hex: 0x8A8A8F), dark: .init(hex: 0x8E8E93), system: .tertiaryLabel
+        )
+        /// Redact black-out fill.
+        public static let blackout = ThemeColor(both: .init(hex: 0x000000))
     }
 
     // MARK: Type (17.3)
@@ -317,6 +350,8 @@ nonisolated public enum Theme {
 
     public enum BackgroundEditor {
         public static let windowSize = CGSize(width: 920, height: 640)
+        /// The mockup's window title bar, part of its 920 x 640; the content fits in the rest.
+        public static let titleBarHeight: Double = 52
         public static let sidebarWidth: Double = 300
         public static let sidebarPadding = NSEdgeInsets(top: 16, left: 20, bottom: 16, right: 20)
         public static let previewPadding: Double = 28
@@ -375,6 +410,8 @@ nonisolated public enum Theme {
         public static let radius: Double = 16
         public static let padding: Double = 12
         public static let visibleSeconds: Double = 6
+        /// A message chip ("Recording could not start", design D69) stays 4 s.
+        public static let messageSeconds: Double = 4
         public static let rise: Double = 6
     }
 
@@ -387,6 +424,207 @@ nonisolated public enum Theme {
         public static let thumbnailRadius: Double = 6
         public static let radius: Double = 12
         public static let statusDotSize: Double = 7
+    }
+
+    // MARK: M2 surfaces (design 20.2 to 20.11)
+
+    /// Pin to screen (20.2, mockup 8).
+    public enum Pin {
+        /// Opaque captures are clipped to this radius (`pinRadius`).
+        public static let radius: Double = 8
+        public static let closeButtonSize: Double = 22
+        public static let closeButtonInset: Double = 8
+        public static let controlBarHeight: Double = 30
+        public static let controlBarInset: Double = 8
+        public static let controlBarLeadingPadding: Double = 10
+        public static let controlBarTrailingPadding: Double = 4
+        public static let controlBarSpacing: Double = 2
+        public static let dropGlyphSize: Double = 14
+        public static let sliderWidth: Double = 72
+        public static let sliderTrackHeight: Double = 3
+        public static let sliderKnobSize: Double = 14
+        public static let valueWidth: Double = 32
+        public static let valueStyle = TextStyle(size: 11, lineHeight: 15, weight: .medium, tabular: true)
+        public static let dividerHeight: Double = 14
+        public static let controlButtonSize = CGSize(width: 26, height: 24)
+        /// Below this width the slider hides and the value becomes a scrub control.
+        public static let compactChromeWidth: Double = 260
+        /// Below this width only Close and More remain.
+        public static let minimalChromeWidth: Double = 120
+        /// `lockBadge`: 18 pt, 6 pt inside the top-left corner, 10 pt lock glyph.
+        public static let lockBadgeSize: Double = 18
+        public static let lockBadgeInset: Double = 6
+        public static let lockGlyphSize: Double = 10
+        /// The size chip sits this far above the bottom edge during a resize or zoom.
+        public static let sizeChipBottomInset: Double = 8
+        /// Opening from the menu or history, and closing, scale between this and 1 (M18, M19).
+        public static let appearScale: Double = 0.96
+    }
+
+    /// Capture history window (20.3, mockup 9).
+    public enum History {
+        public static let windowSize = CGSize(width: 760, height: 560)
+        public static let minimumSize = CGSize(width: 560, height: 400)
+        public static let toolbarHeight: Double = 52
+        public static let titleStyle = TextStyle(size: 15, lineHeight: 19, weight: .semibold)
+        public static let subtitleStyle = TextStyle(size: 11, lineHeight: 15, weight: .regular)
+        public static let titleLeadingInset: Double = 14
+        public static let toolbarSpacing: Double = 12
+        public static let searchFieldSize = CGSize(width: 190, height: 28)
+        public static let searchFieldRadius: Double = 8
+        public static let sectionHeadingStyle = TextStyle(size: 13, lineHeight: 18, weight: .semibold)
+        public static let sectionCountStyle = TextStyle(size: 12, lineHeight: 16, weight: .regular, tabular: true)
+        public static let sectionTopSpacing: Double = 16
+        public static let sectionBottomSpacing: Double = 10
+        public static let bodyTopPadding: Double = 4
+        /// `historyTile`: 164 x 112, radius 8, gaps 16 (columns) and 14 (rows).
+        public static let tileSize = CGSize(width: 164, height: 112)
+        public static let tileRadius: Double = 8
+        public static let columnGap: Double = 16
+        public static let rowGap: Double = 14
+        public static let sidePadding: Double = 28
+        public static let tileStrokeWidth: Double = 0.5
+        public static let captionGap: Double = 6
+        public static let captionTimeStyle = TextStyle(size: 12, lineHeight: 16, weight: .medium, tabular: true)
+        public static let captionAppStyle = TextStyle(size: 12, lineHeight: 16, weight: .regular)
+        /// Thumbnails are 328 px on the long side (164 pt at 2x).
+        public static let thumbnailPixels = 328
+        /// Badges sit 6 pt inside the tile.
+        public static let badgeInset: Double = 6
+        public static let durationPillHeight: Double = 18
+        public static let editedChipSize: Double = 20
+        public static let badgeStyle = TextStyle(size: 11, lineHeight: 18, weight: .medium, tabular: true)
+        /// Selected tile: 2 pt accent ring at 4 pt outside the box.
+        public static let selectionRingWidth: Double = 2
+        public static let selectionRingOffset: Double = 4
+        public static let footerHeight: Double = 48
+        public static let footerLeadingPadding: Double = 20
+        public static let footerTrailingPadding: Double = 16
+        public static let footerSpacing: Double = 8
+        public static let footerDotSize: Double = 3
+        public static let footerStyle = TextStyle(size: 12, lineHeight: 16, weight: .regular, tabular: true)
+        public static let emptyIconSize: Double = 56
+        public static let emptyIconRadius: Double = 16
+        public static let emptyIconGap: Double = 14
+        public static let emptyTitleStyle = TextStyle(size: 14, lineHeight: 20, weight: .semibold)
+        public static let emptyTextMaxWidth: Double = 340
+        public static let emptyTextGap: Double = 4
+        public static let keyCapRadius: Double = 5
+    }
+
+    /// All-in-one HUD toolbar (20.5, mockup 10). Flat chip material, never a blur (rule 2 of 17.1).
+    public enum HUD {
+        /// `hudBar`: chip, 44 pt high, radius 14, 6 pt padding.
+        public static let barHeight: Double = 44
+        public static let barRadius: Double = 14
+        public static let barPadding: Double = 6
+        public static let barSpacing: Double = 6
+        /// Distance from the visible frame's bottom (or top) edge.
+        public static let edgeInset: Double = 28
+        public static let closeButtonSize: Double = 30
+        public static let dividerSize = CGSize(width: 1, height: 20)
+        public static let dividerMargin: Double = 2
+        public static let segmentHeight: Double = 28
+        public static let segmentPadding: Double = 2
+        public static let segmentTrackRadius: Double = 9
+        public static let segmentRadius: Double = 7
+        public static let segmentHorizontalPadding: Double = 10
+        public static let segmentLabelStyle = TextStyle(size: 12, lineHeight: 16, weight: .medium)
+        public static let targetButtonSize = CGSize(width: 36, height: 32)
+        public static let targetButtonRadius: Double = 8
+        public static let targetGlyphSize: Double = 17
+        public static let optionsHeight: Double = 30
+        public static let optionsHorizontalPadding: Double = 8
+        public static let primaryHeight: Double = 30
+        public static let primaryRadius: Double = 9
+        public static let primaryHorizontalPadding: Double = 16
+        public static let primaryStyle = TextStyle(size: 13, lineHeight: 18, weight: .semibold)
+        /// Restored area handles: 10 pt, white, 1.5 pt accent border.
+        public static let handleSize: Double = 10
+        public static let handleBorderWidth: Double = 1.5
+        public static let sizeChipGap: Double = 8
+    }
+
+    /// Recording countdown (20.6, mockup 11a).
+    public enum Countdown {
+        /// `countdownDisc`: chip, 88 pt, 44 pt semibold tabular digits.
+        public static let discSize: Double = 88
+        public static let ringWidth: Double = 0.5
+        public static let shadowOffsetY: Double = 10
+        public static let shadowBlur: Double = 30
+        public static let digitStyle = TextStyle(size: 44, lineHeight: 48, weight: .semibold, tracking: -0.02, tabular: true)
+        public static let hintGap: Double = 12
+    }
+
+    /// While recording (20.6, mockup 11b).
+    public enum Recording {
+        /// The outline sits this far outside the area so it is never in the frames.
+        public static let outlineOutset: Double = 2
+        public static let outlineWidth: Double = 1
+        public static let outlineHairlineWidth: Double = 1
+        /// The red timer status item: 18 pt capsule, 8 pt white stop square.
+        public static let timerHeight: Double = 18
+        public static let timerRadius: Double = 9
+        public static let timerLeadingPadding: Double = 7
+        public static let timerTrailingPadding: Double = 8
+        public static let timerSpacing: Double = 6
+        public static let stopSquareSize: Double = 8
+        public static let stopSquareRadius: Double = 2
+        public static let timerStyle = TextStyle(size: 12, lineHeight: 16, weight: .semibold, tabular: true)
+        public static let menuWidth: Double = 260
+        public static let infoStyle = TextStyle(size: 12, lineHeight: 16, weight: .regular)
+        /// Smallest recordable output, in pixels.
+        public static let minimumPixels = 64
+        /// "Recording could not start" and "No microphone" chips.
+        public static let noticeSeconds: Double = 4
+    }
+
+    /// Quick Access additions for M2 (20.2 and 20.6, mockup 11c).
+    public enum QuickAccessM2 {
+        /// The Pin chip mirrors Close at the top-right of the thumbnail.
+        public static let pinButtonSize: Double = 22
+        public static let pinButtonInset: Double = 8
+        /// The video card's duration pill replaces the dimension pill.
+        public static let durationPillHeight: Double = 18
+        public static let durationPillRadius: Double = 9
+        public static let durationGlyphSize: Double = 9
+        public static let durationPillSpacing: Double = 4
+        public static let openButtonSpacing: Double = 5
+        /// How long a recording's note chip stays on its card ("No microphone", design 20.6).
+        public static let noteSeconds: Double = 4
+    }
+
+    /// Annotate additions (20.8, mockup 12).
+    public enum AnnotateM2 {
+        public static let highlightOpacity: Double = 0.38
+        public static let highlightRadius: Double = 2
+        /// Step circle diameters for stroke widths 2, 4 and 7.
+        public static let stepDiameters: [Double] = [24, 28, 36]
+        /// Step number size at the 28 pt circle; scaled with the diameter.
+        public static let stepNumberSize: Double = 15
+        public static let stepSelectionRingWidth: Double = 1.5
+        public static let stepSelectionRingOffset: Double = 2.5
+        /// Freehand drops points closer than this to the last kept point.
+        public static let freehandMinimumDistance: Double = 1.5
+        /// Freehand hit testing: within width / 2 plus this.
+        public static let freehandHitSlop: Double = 4
+        public static let stylePopupSpacing: Double = 6
+        public static let styleMenuWidth: Double = 236
+        public static let styleMenuNoteStyle = TextStyle(size: 11, lineHeight: 15, weight: .regular)
+    }
+
+    /// Settings additions (20.10, mockup 14).
+    public enum SettingsM2 {
+        /// The Recording tab shot: 480 x 690.
+        public static let recordingTabSize = CGSize(width: 480, height: 690)
+        public static let warningRowIconSize: Double = 14
+    }
+
+    /// Menu additions (20.10, mockup 15).
+    public enum MenuM2 {
+        /// The menu shot: 420 x 600.
+        public static let shotSize = CGSize(width: 420, height: 600)
+        public static let pinnedThumbnailSize: Double = 32
     }
 
     // MARK: Materials (17.5)
@@ -446,6 +684,16 @@ nonisolated public enum Theme {
         public static let firstRunStep: Double = 0.240
         public static let hintIn: Double = 0.160
         public static let hintOut: Double = 0.200
+        // M2 (20.12).
+        /// M18: pin opens from the menu or history.
+        public static let pinEnter: Double = 0.160
+        /// M19: pin closes.
+        public static let pinExit: Double = 0.120
+        /// M22: countdown digit.
+        public static let countdownDigit: Double = 0.120
+        /// M28: a trashed history tile fades and shrinks to this scale (the M19 pin close values).
+        public static let historyTileExit: Double = 0.120
+        public static let historyTileExitScale: Double = 0.96
 
         public static func enter(_ duration: Double) -> Animation {
             let points = enterControlPoints

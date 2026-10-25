@@ -34,7 +34,11 @@ public struct AspectRatio: Codable, Sendable, Hashable {
 /// What fills the canvas behind the card (design 10.1).
 public enum BackgroundFill: Codable, Sendable, Hashable {
     case gradient(GradientID)
+    /// One of the six original 3 x 3 meshes (design 20.9).
+    case mesh(MeshID)
     case solid(RGBAColor)
+    /// The capture itself, aspect-filled, blurred and dimmed a little (design 20.9).
+    case blurredCapture
     /// An image file, aspect-filled; `blur` 0 to 40 points. A missing file falls back to the default gradient.
     case image(path: String, blur: Double)
     /// A transparent canvas.
@@ -43,7 +47,7 @@ public enum BackgroundFill: Codable, Sendable, Hashable {
     public static let defaultGradient = GradientID.dusk
 
     private enum CodingKeys: String, CodingKey {
-        case type, gradient, color, path, blur
+        case type, gradient, mesh, color, path, blur
     }
 
     public init(from decoder: any Decoder) throws {
@@ -56,6 +60,11 @@ public enum BackgroundFill: Codable, Sendable, Hashable {
                 path: try container.decode(String.self, forKey: .path),
                 blur: try container.value(.blur, default: 0)
             )
+        case "mesh":
+            let name = try container.decodeIfPresent(String.self, forKey: .mesh) ?? ""
+            self = MeshID(name: name).map { .mesh($0) } ?? .gradient(BackgroundFill.defaultGradient)
+        case "blurred":
+            self = .blurredCapture
         case "none":
             self = .none
         default:
@@ -70,6 +79,11 @@ public enum BackgroundFill: Codable, Sendable, Hashable {
         case .gradient(let id):
             try container.encode("gradient", forKey: .type)
             try container.encode(id, forKey: .gradient)
+        case .mesh(let id):
+            try container.encode("mesh", forKey: .type)
+            try container.encode(id, forKey: .mesh)
+        case .blurredCapture:
+            try container.encode("blurred", forKey: .type)
         case .solid(let color):
             try container.encode("solid", forKey: .type)
             try container.encode(color, forKey: .color)
@@ -82,10 +96,15 @@ public enum BackgroundFill: Codable, Sendable, Hashable {
         }
     }
 
-    /// Parses the `snapctl --background` forms: `gradient:<name>`, `solid:#RRGGBB`, `image:<path>`, `none`.
+    /// Parses the `snapctl --background` forms: `gradient:<name>`, `mesh:<name>`, `blurred`,
+    /// `solid:#RRGGBB`, `image:<path>`, `none`.
     public init?(parsing text: String) {
         if text == "none" {
             self = .none
+        } else if text == "blurred" {
+            self = .blurredCapture
+        } else if text.hasPrefix("mesh:"), let id = MeshID(name: String(text.dropFirst(5))) {
+            self = .mesh(id)
         } else if text.hasPrefix("gradient:"), let id = GradientID(name: String(text.dropFirst(9))) {
             self = .gradient(id)
         } else if text.hasPrefix("solid:"), let color = RGBAColor(hex: String(text.dropFirst(6))) {

@@ -4,8 +4,9 @@ import Foundation
 let arguments = Array(CommandLine.arguments.dropFirst())
 
 if arguments.contains("--shot") {
-    // Shot mode never reaches NSApplication: no run loop of its own, no window, no status item,
-    // no hotkeys, no permission check.
+    // Shot mode never calls NSApplication.run: no window, no status item, no hotkeys, no
+    // permission check. Drawing views does create NSApplication.shared; the bundle's LSUIElement
+    // keeps the process a UIElement, so ShotMode refuses to run outside the bundle.
     switch ShotOptions.parse(arguments) {
     case .success(let options): ShotMode.run(options)
     case .failure(let error): ShotMode.fail(error)

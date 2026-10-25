@@ -6,25 +6,33 @@ import SwiftUI
 /// `NSMenu` cannot be drawn without showing it (design 16, D27). 280 pt wide, 6 pt padding,
 /// 24 pt rows, 42 pt recent rows with 32 pt thumbnails, radius 12 (design 17.4, 17.6).
 public struct MenuPreviewView: View {
-    let model: MenuModel
     let thumbnails: [String: CGImage]
     /// The row drawn as hovered, as in the mockup.
     let highlighted: MenuItemID?
+    let items: [MenuItem]
+    let width: Double
 
     public init(model: MenuModel, thumbnails: [String: CGImage] = [:], highlighted: MenuItemID? = nil) {
-        self.model = model
+        self.init(items: model.items, thumbnails: thumbnails, highlighted: highlighted)
+    }
+
+    /// Any list of rows, such as the recording menu (260 pt wide, design 20.6).
+    public init(items: [MenuItem], thumbnails: [String: CGImage] = [:], highlighted: MenuItemID? = nil,
+                width: Double = Theme.Menu.width) {
+        self.items = items
         self.thumbnails = thumbnails
         self.highlighted = highlighted
+        self.width = width
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(model.items) { item in
+            ForEach(items) { item in
                 row(item)
             }
         }
         .padding(Theme.Menu.padding)
-        .frame(width: Theme.Menu.width)
+        .frame(width: width)
         .background(
             RoundedRectangle(cornerRadius: Theme.Menu.radius, style: .continuous)
                 .fill(Theme.Colors.menu.color)
@@ -61,6 +69,18 @@ public struct MenuPreviewView: View {
             }
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: Theme.Menu.rowHeight, alignment: .leading)
+        case .info:
+            HStack(spacing: 8) {
+                if let symbol = item.symbolName {
+                    Image(systemName: symbol)
+                        .font(.system(size: 12, weight: .regular))
+                        .frame(width: 16)
+                }
+                Text(item.title).font(Theme.Recording.infoStyle.font)
+            }
+            .foregroundStyle(Theme.Colors.text2.color)
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, minHeight: Theme.Menu.rowHeight, alignment: .leading)
         case .action:
             if let captureID = item.captureID {
                 recentRow(item, image: thumbnails[captureID])
@@ -80,6 +100,11 @@ public struct MenuPreviewView: View {
             if let shortcut = item.shortcutText {
                 Text(shortcut)
                     .font(Theme.Typography.body.font)
+                    .foregroundStyle(isHighlighted ? Color.white.opacity(0.85) : Theme.Colors.text2.color)
+            }
+            if !item.children.isEmpty {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(isHighlighted ? Color.white.opacity(0.85) : Theme.Colors.text2.color)
             }
         }
@@ -197,5 +222,94 @@ private struct MenuStage: View {
                 : [ThemeRGBA(hex: 0xD9E2F5).color, ThemeRGBA(hex: 0xE8DDF0).color, ThemeRGBA(hex: 0xF2E4D8).color],
             startPoint: .topLeading, endPoint: .bottomTrailing
         )
+    }
+}
+
+// MARK: M2 menu
+
+/// The `menu-m2` shot (mockup 15, design 20.10 and 20.11): the M2 menu model with a screenshot,
+/// a recording and a screenshot in Recent Captures, Capture History hovered and three pins, under
+/// a menu bar with the Snap symbol highlighted. 420 x 600 pt.
+public enum MenuM2Demo {
+    public static var size: CGSize { Theme.MenuM2.shotSize }
+    /// The menu's top-left corner in the scene.
+    static let menuOrigin = CGPoint(x: 112, y: 30)
+    static let menuBarHeight = 24.0
+
+    public static func makeModel() -> MenuModel {
+        let now = MenuDemo.now
+        let captures = [
+            CaptureItem(id: "demo-1", createdAt: now.addingTimeInterval(-120), mode: .area, scale: 2,
+                        originalURL: URL(filePath: "/demo/history/demo-1/shot.png")),
+            CaptureItem(id: "demo-2", createdAt: now.addingTimeInterval(-8_233), mode: .area, scale: 2,
+                        originalURL: URL(filePath: "/demo/history/demo-2/recording.mp4"), kind: .video,
+                        durationSeconds: 42.4),
+            CaptureItem(id: "demo-3", createdAt: now.addingTimeInterval(-17_382), mode: .window, scale: 2,
+                        originalURL: URL(filePath: "/demo/history/demo-3/shot.png")),
+        ]
+        let pins = (1...3).map { index in
+            PinnedCaptureEntry(id: index, itemID: "demo-\(index)", createdAt: now.addingTimeInterval(Double(-index) * 600),
+                               clickThrough: index == 3)
+        }
+        return MenuModel(MenuInput(recentCaptures: captures, pins: pins, now: now, timeZone: MenuDemo.timeZone))
+    }
+
+    /// The mockup's thumbnails: a light window on violet, a light square on near-black (the
+    /// recording's poster) and a light square on dark teal.
+    public static func makeThumbnails() -> [String: CGImage] {
+        var result: [String: CGImage] = [:]
+        let specs: [(String, [UInt32], Double)] = [
+            ("demo-1", [0x7B6CFF, 0xB65BFF], 0.95), ("demo-2", [0x1C1C1E, 0x1C1C1E], 0.84),
+            ("demo-3", [0x163040, 0x2B4F5E], 0.86),
+        ]
+        for (id, stops, white) in specs {
+            guard let context = SyntheticImages.makeContext(width: 64, height: 64, flipped: false) else { continue }
+            let colors = stops.map { ThemeRGBA(hex: $0).cgColor }
+            if let gradient = CGGradient(colorsSpace: SyntheticImages.colorSpace, colors: colors as CFArray, locations: [0, 1]) {
+                context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: 64), end: CGPoint(x: 64, y: 0), options: [])
+            }
+            context.setFillColor(CGColor(gray: white, alpha: 1))
+            context.addPath(CGPath(roundedRect: CGRect(x: 16, y: 16, width: 32, height: 32), cornerWidth: 4, cornerHeight: 4, transform: nil))
+            context.fillPath()
+            if let image = context.makeImage() { result[id] = image }
+        }
+        return result
+    }
+
+    /// The wallpaper and the menu bar with the Snap symbol highlighted, as one image.
+    static func stage(dark: Bool, scale: Double = 2) -> CGImage? {
+        M2DemoArt.render(size: size, scale: scale) { context in
+            M2DemoArt.wallpaper(CGRect(origin: .zero, size: size), dark: dark, in: context)
+            M2DemoArt.menuBar(width: size.width, dark: dark, in: context)
+        }
+    }
+
+    public static func scene(dark: Bool) -> some View {
+        let stage = stage(dark: dark)
+        return ZStack(alignment: .topLeading) {
+            if let stage {
+                Image(decorative: stage, scale: 2).frame(width: size.width, height: size.height)
+            }
+            // The status item's pressed highlight behind the symbol, as the system draws it.
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Theme.Colors.separatorStrong.color)
+                .frame(width: 27, height: 20)
+                .offset(x: statusItemX - 6, y: 2)
+            MenuPreviewView(model: makeModel(), thumbnails: makeThumbnails(), highlighted: .captureHistory)
+                .offset(x: menuOrigin.x, y: menuOrigin.y)
+        }
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+        .environment(\.colorScheme, dark ? .dark : .light)
+    }
+
+    /// Where `M2DemoArt.menuBar` puts the Snap symbol: left of the clock.
+    static var statusItemX: Double {
+        let clockWidth = M2DemoArt.lineWidth("Sat 14:03", font: M2DemoArt.font(13, .medium))
+        return size.width - 14 - clockWidth - 14 - 15
+    }
+
+    /// The scene at `scale` through `ImageRenderer`: no window, no menu shown.
+    public static func renderScene(dark: Bool, scale: Double = 2) -> CGImage? {
+        QuickAccessDemo.render(scene(dark: dark), size: size, dark: dark, scale: scale)
     }
 }

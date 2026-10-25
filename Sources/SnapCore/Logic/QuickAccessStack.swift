@@ -47,8 +47,24 @@ public struct QuickAccessStack: Sendable {
         }
     }
 
+    /// What a card shows (design 20.6): a screenshot, or a finished recording whose card offers
+    /// Open, Save, Reveal and Copy instead of Background, Annotate and Pin.
+    public enum CardKind: String, Sendable, Hashable, CaseIterable {
+        case screenshot
+        case video
+
+        /// Background, Annotate and Pin apply to screenshots only (design D46, D67).
+        public var canEdit: Bool { self == .screenshot }
+        public var canPin: Bool { self == .screenshot }
+        /// A video card's Open button plays the file in the default player.
+        public var canOpen: Bool { self == .video }
+        /// Copy on a video card puts the mp4's file URL on the pasteboard, not an image.
+        public var copiesFileURL: Bool { self == .video }
+    }
+
     public struct Card: Sendable, Hashable, Identifiable {
         public let id: String
+        public var kind: CardKind = .screenshot
         public var height: Double
         public var isHovered = false
         public var isDragging = false
@@ -69,6 +85,8 @@ public struct QuickAccessStack: Sendable {
         case draggedOut
         case copied
         case saved
+        /// The screenshot was pinned to the screen; the same image is now on screen (design D46).
+        case pinned
     }
 
     public struct Closure: Sendable, Hashable {
@@ -98,6 +116,7 @@ public struct QuickAccessStack: Sendable {
     public var ids: [String] { cards.map(\.id) }
     public var count: Int { cards.count }
     public func contains(_ id: String) -> Bool { cards.contains { $0.id == id } }
+    public func kind(of id: String) -> CardKind? { cards.first { $0.id == id }?.kind }
 
     /// Total height of the cards and the gaps between them.
     public var stackHeight: Double {
@@ -108,9 +127,9 @@ public struct QuickAccessStack: Sendable {
 
     /// Adds a card at the corner edge and returns the cards that had to close to make room.
     @discardableResult
-    public mutating func push(id: String, height: Double) -> [Closure] {
+    public mutating func push(id: String, height: Double, kind: CardKind = .screenshot) -> [Closure] {
         cards.removeAll { $0.id == id }
-        var card = Card(id: id, height: height)
+        var card = Card(id: id, kind: kind, height: height)
         card.deadline = newDeadline()
         cards.insert(card, at: 0)
 
@@ -173,6 +192,15 @@ public struct QuickAccessStack: Sendable {
             return close(id, reason: .draggedOut)
         }
         return nil
+    }
+
+    // MARK: Pin
+
+    /// Pinning a screenshot closes its card (design D46). A video card cannot be pinned and stays.
+    @discardableResult
+    public mutating func pinned(_ id: String) -> Closure? {
+        guard kind(of: id)?.canPin == true else { return nil }
+        return close(id, reason: .pinned)
     }
 
     // MARK: Copy and save

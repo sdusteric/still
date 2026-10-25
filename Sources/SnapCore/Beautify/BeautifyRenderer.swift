@@ -125,7 +125,7 @@ public enum BeautifyRenderer {
         else { throw RenderError.contextFailed }
 
         canvas.interpolationQuality = .high
-        drawBackground(preset.background, in: canvas, geometry: geometry, space: space)
+        drawBackground(preset.background, capture: image, in: canvas, geometry: geometry, space: space)
         drawCard(card, in: canvas, geometry: geometry, shadow: preset.shadow)
         guard let result = canvas.makeImage() else { throw RenderError.contextFailed }
         return Output(image: result, geometry: geometry)
@@ -265,7 +265,8 @@ public enum BeautifyRenderer {
     }
 
     private static func drawBackground(
-        _ fill: BackgroundFill, in context: CGContext, geometry: BeautifyGeometry, space: CGColorSpace
+        _ fill: BackgroundFill, capture: CGImage, in context: CGContext, geometry: BeautifyGeometry,
+        space: CGColorSpace
     ) {
         let bounds = CGRect(x: 0, y: 0, width: geometry.canvasSize.width, height: geometry.canvasSize.height)
         switch fill {
@@ -276,6 +277,10 @@ public enum BeautifyRenderer {
             context.fill(bounds)
         case .gradient(let id):
             GradientPainter.draw(id, in: context, rect: bounds)
+        case .mesh(let id):
+            MeshGradientPainter.draw(id, in: context, rect: bounds)
+        case .blurredCapture:
+            BlurredCaptureBackground.draw(capture, in: context, bounds: bounds, space: space)
         case .image(let path, let blur):
             if let image = loadImage(path) {
                 drawAspectFill(image, blur: blur * geometry.outputScale, in: context, bounds: bounds, space: space)

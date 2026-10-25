@@ -1,8 +1,9 @@
+import CoreGraphics
 import Foundation
 
-/// Remembered state, not settings (design sections 13 and 14).
+/// Remembered state, not settings (design sections 13, 14 and 20.10).
 public struct SnapState: VersionedDocument {
-    public static let currentVersion = 1
+    public static let currentVersion = 2
     /// Key hints show for this many captures, then the app turns them off (design D33).
     public static let keyHintCaptureLimit = 10
 
@@ -14,19 +15,38 @@ public struct SnapState: VersionedDocument {
     public var lastCaptureID: String?
     /// Captures taken so far, used for the first-10 key hints.
     public var captureCount: Int
+    /// The last confirmed area, restored by the HUD only on the same display layout (design D58).
+    public var lastArea: LastArea?
+    public var hudMode: HUDMode
+    public var hudTarget: CaptureMode
+    /// The history window's frame in AppKit screen coordinates (bottom-left origin).
+    public var historyWindowFrame: CGRect?
+    /// When the microphone access request was made. Set once per install, only from a user action
+    /// that turns the microphone on (design D65).
+    public var microphoneRequested: Date?
 
     public init(
         version: Int = SnapState.currentVersion,
         screenRecordingRequested: Date? = nil,
         onboardingCompleted: Bool = false,
         lastCaptureID: String? = nil,
-        captureCount: Int = 0
+        captureCount: Int = 0,
+        lastArea: LastArea? = nil,
+        hudMode: HUDMode = .screenshot,
+        hudTarget: CaptureMode = .area,
+        historyWindowFrame: CGRect? = nil,
+        microphoneRequested: Date? = nil
     ) {
         self.version = version
         self.screenRecordingRequested = screenRecordingRequested
         self.onboardingCompleted = onboardingCompleted
         self.lastCaptureID = lastCaptureID
         self.captureCount = max(captureCount, 0)
+        self.lastArea = lastArea
+        self.hudMode = hudMode
+        self.hudTarget = hudTarget
+        self.historyWindowFrame = historyWindowFrame
+        self.microphoneRequested = microphoneRequested
     }
 
     public init(from decoder: any Decoder) throws {
@@ -37,7 +57,12 @@ public struct SnapState: VersionedDocument {
             screenRecordingRequested: try container.decodeIfPresent(Date.self, forKey: .screenRecordingRequested),
             onboardingCompleted: try container.value(.onboardingCompleted, default: defaults.onboardingCompleted),
             lastCaptureID: try container.decodeIfPresent(String.self, forKey: .lastCaptureID),
-            captureCount: try container.value(.captureCount, default: defaults.captureCount)
+            captureCount: try container.value(.captureCount, default: defaults.captureCount),
+            lastArea: container.lenientValue(.lastArea, default: nil),
+            hudMode: container.lenientValue(.hudMode, default: defaults.hudMode),
+            hudTarget: container.lenientValue(.hudTarget, default: defaults.hudTarget),
+            historyWindowFrame: container.lenientValue(.historyWindowFrame, default: nil),
+            microphoneRequested: try container.decodeIfPresent(Date.self, forKey: .microphoneRequested)
         )
     }
 }

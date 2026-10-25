@@ -49,6 +49,17 @@ public final class QuickAccessCardModel: Identifiable {
     /// Option is held: Copy writes the file URL (design 9) and its button says so.
     public var copiesFile = false
     public var swipeOffset = 0.0
+    /// Dismissed by a swipe: the release carried the card toward the edge, so its removal only
+    /// fades (M7) instead of adding the M6 offset.
+    public var swipeDismissed = false
+    /// A screenshot, or a recording shown by its poster (design 20.6).
+    public let kind: QuickAccessStack.CardKind
+    /// A recording's length for the duration pill.
+    public var durationSeconds: Double?
+    /// The 4 s note chip ("Stopped: the window closed", "No microphone"), nil when none.
+    public var note: String?
+    /// A recording that does not play: Reveal in Finder and Close only (design D69).
+    public var revealOnly = false
     @ObservationIgnored var pendingCloseAction: QuickAccessStack.CardAction?
 
     public init(
@@ -56,13 +67,17 @@ public final class QuickAccessCardModel: Identifiable {
         thumbnail: CGImage,
         pointSize: CGSize,
         size: QuickAccessSize = .medium,
-        corner: QuickAccessCorner = .bottomLeft
+        corner: QuickAccessCorner = .bottomLeft,
+        kind: QuickAccessStack.CardKind = .screenshot,
+        durationSeconds: Double? = nil
     ) {
         self.id = id
         self.thumbnail = thumbnail
         self.pointSize = pointSize
         self.size = size
         self.corner = corner
+        self.kind = kind
+        self.durationSeconds = durationSeconds
     }
 
     public var thumbnailSize: CGSize {
@@ -81,6 +96,32 @@ public final class QuickAccessCardModel: Identifiable {
 
     /// `842 × 516` in points.
     public var dimensionText: String { OverlayDrawing.sizeText(pointSize) }
+
+    public var isVideo: Bool { kind == .video }
+
+    /// Whether the card offers `action`: what its kind allows, and only Reveal and Close on a
+    /// recording that does not play.
+    public func allows(_ action: QuickAccessCardAction) -> Bool {
+        guard action.isAvailable(on: kind) else { return false }
+        return !revealOnly || action == .reveal || action == .close
+    }
+
+    /// The duration pill of a video card: `0:42`, `1:02:05` after an hour.
+    public var durationText: String { Self.durationText(durationSeconds ?? 0) }
+
+    /// Whole seconds, rounded to the nearest: `0:42`, `12:05`, `1:02:05`.
+    public static func durationText(_ seconds: Double) -> String {
+        let total = max(Int(seconds.rounded()), 0)
+        let hours = total / 3600
+        let minutes = total % 3600 / 60
+        let rest = total % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, rest)
+            : String(format: "%d:%02d", minutes, rest)
+    }
+
+    /// What the pill at the bottom-left says: the size, or a recording's duration.
+    public var pillText: String { isVideo ? durationText : dimensionText }
 
     /// Labels are dropped when the bar would not fit: Small, or Medium with the Reveal button.
     public var compactBar: Bool {
@@ -168,7 +209,7 @@ public struct QuickAccessCardView: View {
             .offset(x: card.swipeOffset)
             .onHover { hovering in handler.hover(hovering) }
             .accessibilityElement(children: .contain)
-            .accessibilityLabel("Screenshot \(card.dimensionText)")
+            .accessibilityLabel(card.isVideo ? "Recording \(card.durationText)" : "Screenshot \(card.dimensionText)")
     }
 
     // MARK: Thumbnail
@@ -200,7 +241,11 @@ public struct QuickAccessCardView: View {
         }
         .overlay(alignment: .bottomLeading) {
             if !card.isHovered {
-                dimensionPill.padding(Theme.Spacing.xs).transition(.opacity)
+                Group {
+                    if card.isVideo { durationPill } else { dimensionPill }
+                }
+                .padding(Theme.Spacing.xs)
+                .transition(.opacity)
             }
         }
         .overlay(alignment: .topTrailing) {
@@ -211,11 +256,20 @@ public struct QuickAccessCardView: View {
         .overlay(alignment: .topLeading) {
             if card.isHovered {
                 closeButton.padding(Theme.Spacing.xs).transition(.opacity)
+            } else if let note = card.note {
+                noteChip(note).padding(Theme.Spacing.xs).transition(.opacity)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if card.isHovered && card.kind.canPin {
+                pinButton.padding(Theme.QuickAccessM2.pinButtonInset).transition(.opacity)
             }
         }
         .overlay(alignment: .bottom) {
             if card.isHovered {
-                controlBar
+                Group {
+                    if card.isVideo { videoControlBar } else { controlBar }
+                }
                     .padding(.bottom, Theme.Spacing.xs)
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: Theme.Motion.hoverRise)))
             }
@@ -232,6 +286,24 @@ public struct QuickAccessCardView: View {
             .frame(height: Theme.QuickAccess.dimensionPillHeight)
             .background(Capsule().fill(Theme.Colors.dimensionPill.color))
             .allowsHitTesting(false)
+            // M10: the size text changes in place while the card height springs.
+            .transaction { $0.animation = nil }
+    }
+
+    /// A recording's duration in place of the dimension pill: play glyph and `0:42` (mockup 11c).
+    private var durationPill: some View {
+        HStack(spacing: Theme.QuickAccessM2.durationPillSpacing) {
+            Image(systemName: "play.fill")
+                .font(.system(size: Theme.QuickAccessM2.durationGlyphSize, weight: .bold))
+            Text(card.durationText)
+                .font(Theme.Typography.chip.font)
+        }
+        .foregroundStyle(Theme.Colors.chipText.color)
+        .padding(.leading, 6)
+        .padding(.trailing, 7)
+        .frame(height: Theme.QuickAccessM2.durationPillHeight)
+        .background(Capsule().fill(Theme.Colors.dimensionPill.color))
+        .allowsHitTesting(false)
     }
 
     private var copiedChip: some View {
@@ -248,6 +320,26 @@ public struct QuickAccessCardView: View {
         .frame(height: Theme.QuickAccess.copiedChipHeight)
         .background(chipBackground)
         .allowsHitTesting(false)
+    }
+
+    /// A note about how the recording ended, in the Copied chip's style with a warning glyph.
+    private func noteChip(_ note: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(Theme.Colors.warningDot.color)
+            Text(note)
+                .font(.system(size: Theme.Typography.chip.size, weight: .semibold))
+                .foregroundStyle(Theme.Colors.chipText.color)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .padding(.leading, 7)
+        .padding(.trailing, 9)
+        .frame(height: Theme.QuickAccess.copiedChipHeight)
+        .background(chipBackground)
+        .allowsHitTesting(false)
+        .accessibilityLabel(note)
     }
 
     private var chipBackground: some View {
@@ -270,15 +362,77 @@ public struct QuickAccessCardView: View {
         .accessibilityLabel("Close")
     }
 
+    /// Pin to Screen, mirroring Close at the top-right (design 20.2, mockup 11c).
+    private var pinButton: some View {
+        Button { handler.perform(.pin) } label: {
+            Image(systemName: "pin")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(Theme.Colors.chipText.color)
+                .frame(width: Theme.QuickAccessM2.pinButtonSize, height: Theme.QuickAccessM2.pinButtonSize)
+                .background(Circle().fill(Theme.Colors.chip.color))
+                .overlay(Circle().strokeBorder(Theme.Colors.chipRing.color, lineWidth: Theme.Overlay.chipRingWidth))
+        }
+        .buttonStyle(CardPressStyle(reduceMotion: reduceMotion))
+        .help("Pin to Screen (P)")
+        .accessibilityLabel("Pin to Screen")
+    }
+
     // MARK: Control bar
+
+    /// The video card's bar (design 20.6): the labeled Open button, then Save, Reveal and Copy.
+    private var videoControlBar: some View {
+        HStack(spacing: 2) {
+            if card.revealOnly {
+                iconButton("folder", label: "Show in Finder", key: "R", action: .reveal)
+            } else {
+                videoActions
+            }
+        }
+        .padding(.horizontal, 4)
+        .frame(height: Theme.QuickAccess.controlBarHeight)
+        .background {
+            ZStack {
+                Capsule().fill(.ultraThinMaterial).environment(\.colorScheme, .dark)
+                Capsule().fill(Theme.Colors.chip.color)
+            }
+        }
+        .overlay(Capsule().strokeBorder(Theme.Colors.chipRing.color, lineWidth: Theme.Overlay.chipRingWidth))
+        .environment(\.colorScheme, .dark)
+    }
+
+    @ViewBuilder private var videoActions: some View {
+            Button { handler.perform(.open) } label: {
+                HStack(spacing: Theme.QuickAccessM2.openButtonSpacing) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                    if card.size != .small {
+                        Text("Open")
+                            .font(Theme.Typography.captionSemibold.font)
+                            .fixedSize()
+                    }
+                }
+                .padding(.leading, 9)
+                .padding(.trailing, 10)
+                .frame(height: 26)
+                .contentShape(Capsule())
+            }
+            .buttonStyle(CardPressStyle(reduceMotion: reduceMotion))
+            .foregroundStyle(Theme.Colors.chipText.color)
+            .background(Capsule().fill(Color.white.opacity(0.18)))
+            .help("Open (O)")
+            .accessibilityLabel("Open")
+            iconButton(card.confirmedAction == .save ? "checkmark" : "square.and.arrow.down", label: "Save", key: "S", action: .save)
+            iconButton("folder", label: "Show in Finder", key: "R", action: .reveal)
+            iconButton(card.confirmedAction == .copy ? "checkmark" : "square.on.square", label: "Copy", key: "C", action: .copy)
+    }
 
     private var controlBar: some View {
         HStack(spacing: 2) {
             backgroundSplitButton
-            iconButton("pencil", label: "Annotate", key: "A", action: .annotate)
+            iconButton("pencil.line", label: "Annotate", key: "A", action: .annotate)
             iconButton(card.confirmedAction == .save ? "checkmark" : "square.and.arrow.down", label: "Save", key: "S", action: .save)
             iconButton(
-                card.confirmedAction == .copy ? "checkmark" : (card.copiesFile ? "doc" : "doc.on.doc"),
+                card.confirmedAction == .copy ? "checkmark" : (card.copiesFile ? "doc" : "square.on.square"),
                 label: card.copiesFile ? "Copy File" : "Copy", key: card.copiesFile ? "\u{2325}C" : "C",
                 action: card.copiesFile ? .copyFile : .copy
             )
@@ -302,7 +456,7 @@ public struct QuickAccessCardView: View {
         HStack(spacing: 0) {
             Button { handler.perform(.background) } label: {
                 HStack(spacing: 5) {
-                    Image(systemName: "wand.and.stars")
+                    Image(systemName: "wand.and.sparkles")
                         .font(.system(size: 12, weight: .semibold))
                     if !card.compactBar {
                         Text("Background")
@@ -421,12 +575,23 @@ public struct QuickAccessStackView: View {
     /// Bottom corners list the oldest first so the newest sits at the bottom edge.
     private var ordered: [QuickAccessCardModel] { isBottom ? cards.reversed() : cards }
 
-    private var transition: AnyTransition {
-        guard !reduceMotion else { return .opacity }
+    /// Entry rides the transaction's spring (M1). The removal has its own exit curve (M6), so the
+    /// cards that stay can close the gap on the spring (M2) in the same transaction.
+    private func transition(for card: QuickAccessCardModel) -> AnyTransition {
+        guard !reduceMotion else {
+            return .asymmetric(
+                insertion: .opacity,
+                removal: .opacity.animation(QuickAccessMotion.removal(reduceMotion: true))
+            )
+        }
         let sign: Double = isLeft ? 1 : -1
+        let removal = AnyTransition.modifier(
+            active: CardRemovalOffset(card: card, offset: Theme.Motion.cardDismissOffsetX * sign),
+            identity: CardRemovalOffset(card: card, offset: 0)
+        )
         return .asymmetric(
             insertion: .offset(x: Theme.Motion.cardEnterOffsetX * sign).combined(with: .opacity),
-            removal: .offset(x: Theme.Motion.cardDismissOffsetX * sign).combined(with: .opacity)
+            removal: removal.combined(with: .opacity).animation(QuickAccessMotion.removal(reduceMotion: false))
         )
     }
 
@@ -434,7 +599,7 @@ public struct QuickAccessStackView: View {
         VStack(alignment: isLeft ? .leading : .trailing, spacing: Theme.QuickAccess.cardGap) {
             ForEach(ordered) { card in
                 QuickAccessCardView(card: card, handler: handler(card.id), interactive: interactive)
-                    .transition(transition)
+                    .transition(transition(for: card))
             }
         }
         .padding(QuickAccessLayout.shadowMargin)
@@ -442,6 +607,41 @@ public struct QuickAccessStackView: View {
             maxWidth: .infinity,
             maxHeight: .infinity,
             alignment: Alignment(horizontal: isLeft ? .leading : .trailing, vertical: isBottom ? .bottom : .top)
+        )
+    }
+}
+
+/// The M6 removal offset, read when the removal runs: a swiped card already moved toward the
+/// edge with its release velocity, so it only fades.
+private struct CardRemovalOffset: ViewModifier {
+    let card: QuickAccessCardModel
+    let offset: Double
+
+    func body(content: Content) -> some View {
+        content.offset(x: card.swipeDismissed ? 0 : offset)
+    }
+}
+
+/// The animations of the stack's reflow and removal (17.7 M2, M6, M7; Reduce Motion rows).
+public enum QuickAccessMotion {
+    /// Cards that stay move to their new place (gap closing, a card's height changing): the
+    /// spring, or at once under Reduce Motion.
+    public static func reflow(reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : Theme.Motion.spring
+    }
+
+    /// A closing card leaves on the exit curve in 220 ms, or fades in 100 ms under Reduce Motion.
+    public static func removal(reduceMotion: Bool) -> Animation {
+        reduceMotion ? .easeOut(duration: Theme.Motion.reducedMotionFade) : Theme.Motion.exit(Theme.Motion.dismiss)
+    }
+
+    /// A swipe past the threshold hands its release velocity (points per second, toward the edge)
+    /// to the momentum spring over the M6 distance.
+    public static func swipeRelease(velocity: Double) -> Animation {
+        let distance = abs(Theme.Motion.cardDismissOffsetX)
+        return .interpolatingSpring(
+            Spring(response: Theme.Motion.springResponse, dampingRatio: Theme.Motion.momentumDamping),
+            initialVelocity: max(velocity, 0) / distance
         )
     }
 }
@@ -511,6 +711,73 @@ public enum QuickAccessDemo {
 
     public static func renderScene(dark: Bool, scale: Double = 2) -> CGImage? {
         render(scene(cards: cards(dark: dark), dark: dark), size: sceneSize, dark: dark, scale: scale)
+    }
+
+    // MARK: Video card scene
+
+    /// The `quick-access-video` shot (mockup 11c): 600 x 760 pt.
+    public static let videoSceneSize = CGSize(width: 600, height: 760)
+    static let messagesFrame = CGRect(x: 300, y: 90, width: 276, height: 520)
+
+    /// Top to bottom: a hovered screenshot card with the Pin chip, a hovered video card and a
+    /// fresh video card with the duration pill and Copied.
+    public static func videoCards(dark: Bool = false) -> [QuickAccessCardModel] {
+        guard let notes = M2DemoArt.notes(dark: dark, scale: 1),
+              let poster = M2DemoArt.terminal(M2DemoArt.buildLines, size: CGSize(width: 360, height: 225), dark: dark, bar: true)
+        else { return [] }
+        let recording = CGSize(width: 1280, height: 800)
+        let fresh = QuickAccessCardModel(
+            id: "demo-video-fresh", thumbnail: poster, pointSize: recording, kind: .video, durationSeconds: 42
+        )
+        fresh.showsCopied = true
+        let hoveredVideo = QuickAccessCardModel(
+            id: "demo-video-hovered", thumbnail: poster, pointSize: recording, kind: .video, durationSeconds: 42
+        )
+        hoveredVideo.isHovered = true
+        let screenshot = QuickAccessCardModel(id: "demo-screenshot", thumbnail: notes, pointSize: CGSize(width: 842, height: 516))
+        screenshot.isHovered = true
+        return [fresh, hoveredVideo, screenshot]
+    }
+
+    /// The desktop of the video card scene: wallpaper, menu bar and a Messages window.
+    public static func videoDesktop(dark: Bool, scale: Double = 2) -> CGImage? {
+        M2DemoArt.render(size: videoSceneSize, scale: scale) { context in
+            M2DemoArt.wallpaper(CGRect(origin: .zero, size: videoSceneSize), dark: dark, in: context)
+            M2DemoArt.appWindow(messagesFrame, title: "Messages", dark: dark, scale: scale, in: context) { body in
+                let width = body.width - 32
+                let font = M2DemoArt.font(13)
+                let first = CGRect(x: body.minX + 16, y: body.minY + 16, width: width, height: 32)
+                M2DemoArt.fillRounded(first, radius: 16, color: Theme.Colors.thumbnailBacking.cgColor(dark: dark), in: context)
+                M2DemoArt.line("Can you show me the bug?", x: first.minX + 12, y: first.minY + 7, font: font,
+                               color: M2DemoArt.text(dark: dark), lineHeight: 18)
+                let reply = "Recording it now."
+                let replyWidth = M2DemoArt.lineWidth(reply, font: font) + 24
+                let second = CGRect(x: body.maxX - 16 - replyWidth, y: first.maxY + 10, width: replyWidth, height: 32)
+                M2DemoArt.fillRounded(second, radius: 16, color: Theme.Colors.accent.cgColor(dark: dark), in: context)
+                M2DemoArt.line(reply, x: second.minX + 12, y: second.minY + 7, font: font, color: .white, lineHeight: 18)
+            }
+            M2DemoArt.menuBar(width: videoSceneSize.width, dark: dark, in: context)
+        }
+    }
+
+    public static func videoScene(dark: Bool) -> some View {
+        let inset = Theme.QuickAccess.edgeInset - QuickAccessLayout.shadowMargin
+        let desktop = videoDesktop(dark: dark)
+        return ZStack(alignment: .bottomLeading) {
+            if let desktop {
+                Image(decorative: desktop, scale: 2)
+                    .frame(width: videoSceneSize.width, height: videoSceneSize.height)
+            }
+            QuickAccessStackView(cards: videoCards(dark: dark), corner: .bottomLeft, interactive: false) { _ in .inert }
+                .frame(width: QuickAccessLayout.cardWidth(.medium) + 2 * QuickAccessLayout.shadowMargin)
+                .offset(x: inset, y: -inset)
+        }
+        .frame(width: videoSceneSize.width, height: videoSceneSize.height, alignment: .bottomLeading)
+        .environment(\.colorScheme, dark ? .dark : .light)
+    }
+
+    public static func renderVideoScene(dark: Bool, scale: Double = 2) -> CGImage? {
+        render(videoScene(dark: dark), size: videoSceneSize, dark: dark, scale: scale)
     }
 
     /// A Background-style thumbnail: the window on a violet gradient with a margin.

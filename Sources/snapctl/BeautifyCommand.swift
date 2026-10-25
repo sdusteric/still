@@ -13,7 +13,7 @@ enum BeautifyCommand {
             var preset = try loadPreset(parsed.options["--preset"])
             if let text = parsed.options["--background"] {
                 guard let fill = BackgroundFill(parsing: text) else {
-                    throw UsageError("--background must be solid:#RRGGBB, gradient:<name>, image:<path> or none")
+                    throw UsageError("--background must be solid:#RRGGBB, gradient:<name>, mesh:<name>, blurred, image:<path> or none")
                 }
                 preset.background = fill
             }

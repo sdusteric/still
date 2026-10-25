@@ -5,7 +5,7 @@ import Foundation
 // fakes and the UI controllers run without panels.
 
 let usage = """
-    usage: snapbench latency --fake --runs N --display WxH@S [--capture-delay-ms D] [--json]
+    usage: snapbench latency --fake [--mode area|hud] [--record] --runs N --display WxH@S [--capture-delay-ms D] [--json]
     """
 
 /// A usage mistake: printed with the usage text, exit status 64.
@@ -16,7 +16,7 @@ struct UsageError: Error, CustomStringConvertible {
 
 /// Parsed command line: boolean flags and `--name value` options.
 struct BenchArguments {
-    static let valueOptions: Set<String> = ["--runs", "--display", "--capture-delay-ms"]
+    static let valueOptions: Set<String> = ["--runs", "--display", "--capture-delay-ms", "--mode"]
 
     var flags: Set<String> = []
     var options: [String: String] = [:]

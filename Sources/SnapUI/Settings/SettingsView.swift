@@ -3,9 +3,28 @@ import Observation
 import SnapCore
 import SwiftUI
 
-/// The four settings tabs (design 12.2, D42).
+/// An audio input the Recording tab and the HUD's Options menu offer (design 20.7, 20.10). The
+/// app lists them from `InputDevices` in SnapSystem; tests and shots pass fixed ones.
+public struct MicrophoneDevice: Sendable, Hashable, Identifiable {
+    public var id: String
+    public var name: String
+
+    public init(id: String, name: String) {
+        self.id = id
+        self.name = name
+    }
+
+    /// The stored choice when that device is present, else the first (the system default).
+    public static func resolve(_ chosenID: String?, among devices: [MicrophoneDevice]) -> String? {
+        if let chosenID, devices.contains(where: { $0.id == chosenID }) { return chosenID }
+        return devices.first?.id
+    }
+}
+
+/// The five settings tabs (design 12.2, D42, and 20.10: Recording sits between Quick Access and
+/// Shortcuts).
 public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
-    case general, capture, quickAccess, shortcuts
+    case general, capture, quickAccess, recording, shortcuts
 
     public var id: String { rawValue }
 
@@ -14,6 +33,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
         case .general: "General"
         case .capture: "Capture"
         case .quickAccess: "Quick Access"
+        case .recording: "Recording"
         case .shortcuts: "Shortcuts"
         }
     }
@@ -23,6 +43,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
         case .general: "slider.horizontal.3"
         case .capture: "viewfinder"
         case .quickAccess: "square.on.square"
+        case .recording: "record.circle"
         case .shortcuts: "command"
         }
     }
@@ -47,6 +68,11 @@ public struct SettingsActions {
     public var recordingChanged: (Bool) -> Void
     /// The time used for the file name preview.
     public var now: () -> Date
+    /// Turning the microphone on asks for access when it was never asked (design D65). The app
+    /// asks at most once per install and returns the status after the answer.
+    public var requestMicrophoneAccess: () async -> MicrophoneAccess
+    /// "Open Privacy Settings": Privacy & Security > Microphone.
+    public var openMicrophonePrivacySettings: () -> Void
 
     public init(
         settingsChanged: @escaping (SnapCore.Settings) -> Void = { _ in },
@@ -56,7 +82,9 @@ public struct SettingsActions {
         evaluateShortcuts: @escaping (ShortcutSettings) -> HotkeyPlan? = { _ in nil },
         editPreset: @escaping (String) -> Void = { _ in },
         recordingChanged: @escaping (Bool) -> Void = { _ in },
-        now: @escaping () -> Date = { Date() }
+        now: @escaping () -> Date = { Date() },
+        requestMicrophoneAccess: @escaping () async -> MicrophoneAccess = { .notDetermined },
+        openMicrophonePrivacySettings: @escaping () -> Void = {}
     ) {
         self.settingsChanged = settingsChanged
         self.setLaunchAtLogin = setLaunchAtLogin
@@ -66,6 +94,8 @@ public struct SettingsActions {
         self.editPreset = editPreset
         self.recordingChanged = recordingChanged
         self.now = now
+        self.requestMicrophoneAccess = requestMicrophoneAccess
+        self.openMicrophonePrivacySettings = openMicrophonePrivacySettings
     }
 }
 
@@ -91,6 +121,10 @@ public final class SettingsModel {
     public internal(set) var launchAtLoginError: String?
     /// The Updates group in General. Nil in tests, shots and when `SNAP_NO_UPDATES=1`.
     public var updates: UpdateSettingsModel?
+    /// Microphone access as the app last read it; drives the warning row (design 20.7).
+    public var microphoneAccess: MicrophoneAccess
+    /// Audio inputs for the device popup.
+    public var microphones: [MicrophoneDevice]
 
     @ObservationIgnored public var actions: SettingsActions
 
@@ -101,6 +135,8 @@ public final class SettingsModel {
         registrationErrors: [ShortcutAction: String] = [:],
         presets: [BackgroundPreset] = [BackgroundPreset.factoryDefault],
         starredPresetID: String = BackgroundPreset.factoryID,
+        microphoneAccess: MicrophoneAccess = .notDetermined,
+        microphones: [MicrophoneDevice] = [],
         actions: SettingsActions = SettingsActions()
     ) {
         self.settings = settings
@@ -109,6 +145,8 @@ public final class SettingsModel {
         self.registrationErrors = registrationErrors
         self.presets = presets
         self.starredPresetID = starredPresetID
+        self.microphoneAccess = microphoneAccess
+        self.microphones = microphones
         self.actions = actions
         if plan == nil { self.plan = actions.evaluateShortcuts(settings.shortcuts) }
     }
@@ -165,6 +203,39 @@ public final class SettingsModel {
         }
     }
 
+    // MARK: Recording (design 20.7, 20.10)
+
+    /// The "Record microphone" switch. Turning it on asks for access when it was never asked;
+    /// a denial keeps the switch on as the user's intent and shows the warning row (D65).
+    public var recordsMicrophone: Bool {
+        get { settings.recording.microphone }
+        set {
+            settings.recording.microphone = newValue
+            guard newValue, microphoneAccess == .notDetermined else { return }
+            let request = actions.requestMicrophoneAccess
+            Task { @MainActor [weak self] in
+                let access = await request()
+                self?.microphoneAccess = access
+            }
+        }
+    }
+
+    /// "Microphone access is off for Snap. Recordings are saved without it."
+    public var showsMicrophoneWarning: Bool {
+        settings.recording.microphone && (microphoneAccess == .denied || microphoneAccess == .restricted)
+    }
+
+    /// The device popup shows while the microphone is on and usable.
+    public var showsMicrophoneDevices: Bool {
+        settings.recording.microphone && !showsMicrophoneWarning && !microphones.isEmpty
+    }
+
+    /// The chosen device, or the system default when the stored one is gone.
+    public var microphoneDeviceID: String {
+        get { MicrophoneDevice.resolve(settings.recording.microphoneDeviceID, among: microphones) ?? "" }
+        set { settings.recording.microphoneDeviceID = newValue.isEmpty ? nil : newValue }
+    }
+
     /// The preset the one-click Background uses.
     public var defaultPresetID: String {
         get { settings.quickAccess.defaultPresetID ?? starredPresetID }
@@ -190,6 +261,7 @@ public struct SettingsView: View {
                     case .general: GeneralTab(model: model)
                     case .capture: CaptureTab(model: model)
                     case .quickAccess: QuickAccessTab(model: model)
+                    case .recording: RecordingTab(model: model)
                     case .shortcuts: ShortcutsTab(model: model)
                     }
                 }
@@ -504,6 +576,99 @@ private struct QuickAccessTab: View {
     }
 }
 
+// MARK: Recording
+
+private struct RecordingTab: View {
+    @Bindable var model: SettingsModel
+
+    var body: some View {
+        SettingsGroup(title: "Video") {
+            SettingsRow(title: "Format", subtitle: "HEVC files are about half the size.", divider: false) {
+                Picker("Format", selection: $model.settings.recording.format) {
+                    ForEach(VideoFormat.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+            }
+            SettingsRow(title: "Frame rate") {
+                Picker("Frame rate", selection: $model.settings.recording.fps) {
+                    ForEach(RecordingSettings.frameRates, id: \.self) { Text("\($0) fps").tag($0) }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .fixedSize()
+            }
+            SettingsRow(title: "Resolution") {
+                Picker("Resolution", selection: $model.settings.recording.scale) {
+                    ForEach(RecordingScale.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .fixedSize()
+            }
+        }
+        SettingsGroup(title: "While recording") {
+            SettingsRow(title: "Countdown", divider: false) {
+                Picker("Countdown", selection: $model.settings.recording.countdownSeconds) {
+                    ForEach(RecordingSettings.countdownChoices, id: \.self) { Text(RecordingCountdown.title($0)).tag($0) }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+            }
+            SwitchRow(title: "Show cursor", isOn: $model.settings.recording.showCursor)
+            SwitchRow(title: "Highlight clicks", isOn: $model.settings.recording.highlightClicks)
+        }
+        SettingsGroup(title: "Audio") {
+            SwitchRow(title: "Record system audio", divider: false, isOn: $model.settings.recording.systemAudio)
+            SwitchRow(title: "Record microphone", subtitle: "Asked once, when you turn this on.", isOn: $model.recordsMicrophone)
+            if model.showsMicrophoneDevices {
+                SettingsRow(title: "Microphone") {
+                    Picker("Microphone", selection: $model.microphoneDeviceID) {
+                        ForEach(model.microphones) { Text($0.name).tag($0.id) }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .fixedSize()
+                }
+            }
+            if model.showsMicrophoneWarning {
+                MicrophoneWarningRow { model.actions.openMicrophonePrivacySettings() }
+            }
+        }
+    }
+}
+
+/// The warning row under the microphone switch when access is off (design 20.7, mockup 14).
+private struct MicrophoneWarningRow: View {
+    let openSettings: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(Theme.Colors.separator.color).frame(height: 1)
+            HStack(alignment: .center, spacing: 12) {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: Theme.SettingsM2.warningRowIconSize, weight: .regular))
+                        .padding(.top, 1)
+                    Text("Microphone access is off for Snap. Recordings are saved without it.")
+                        .font(Theme.Typography.body.font)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundStyle(Theme.Colors.warning.color)
+                Spacer(minLength: 8)
+                Button("Open Privacy Settings", action: openSettings)
+            }
+            .padding(.vertical, Theme.Settings.rowPadding.top + 2)
+            .padding(.horizontal, Theme.Settings.rowPadding.left)
+            .frame(minHeight: Theme.Settings.rowMinHeight)
+            .background(Theme.Colors.warningBackground.color)
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
 // MARK: Shortcuts
 
 private struct ShortcutsTab: View {
@@ -531,12 +696,19 @@ private struct ShortcutsTab: View {
         }
         SettingsGroup(title: "Capture") {
             recorderRow(.captureArea, divider: false)
-            recorderRow(.captureWindow)
             recorderRow(.captureFullscreen)
+            recorderRow(.allInOne)
+            recorderRow(.captureWindow)
+            recorderRow(.recordScreen)
+            recorderRow(.stopRecording, subtitle: "\u{21E7}\u{2318}5 always stops a recording.")
         }
         SettingsGroup(title: "Last capture") {
             recorderRow(.applyBackground, divider: false)
             recorderRow(.openInAnnotate)
+            recorderRow(.pinLastCapture)
+        }
+        SettingsGroup(title: "Other") {
+            recorderRow(.openHistory, divider: false)
         }
         Text(footnote)
             .font(Theme.Typography.captionSmall.font)
@@ -552,8 +724,8 @@ private struct ShortcutsTab: View {
             : "Screenshot shortcuts in System Settings are off, so nothing else is using these keys."
     }
 
-    private func recorderRow(_ action: ShortcutAction, divider: Bool = true) -> some View {
-        SettingsRow(title: action.title, warning: model.messages(for: action), divider: divider) {
+    private func recorderRow(_ action: ShortcutAction, subtitle: String? = nil, divider: Bool = true) -> some View {
+        SettingsRow(title: action.title, subtitle: subtitle, warning: model.messages(for: action), divider: divider) {
             ShortcutRecorder(
                 action: action,
                 shortcut: Binding(
@@ -573,6 +745,8 @@ private struct ShortcutsTab: View {
 public enum SettingsDemo {
     public static let size = CGSize(width: Theme.Settings.width, height: 690)
 
+    /// The Recording tab shot (design 20.11 `settings-recording`): the microphone on and access
+    /// denied, so the warning row shows.
     public static func makeModel(tab: SettingsTab = .capture) -> SettingsModel {
         let actions = SettingsActions(
             saveFolder: { _ in URL(filePath: "/Users/demo/Downloads", directoryHint: .isDirectory) },
@@ -584,7 +758,12 @@ public enum SettingsDemo {
             },
             now: { Date(timeIntervalSince1970: 1_792_850_602) }
         )
-        return SettingsModel(tab: tab, actions: actions)
+        let model = SettingsModel(
+            tab: tab, microphoneAccess: tab == .recording ? .denied : .notDetermined,
+            microphones: [MicrophoneDevice(id: "demo-mic", name: "MacBook Pro Microphone")], actions: actions
+        )
+        if tab == .recording { model.settings.recording.microphone = true }
+        return model
     }
 
     public static func makeView(tab: SettingsTab = .capture, dark: Bool = false) -> NSView {

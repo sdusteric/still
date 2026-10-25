@@ -50,8 +50,8 @@ custom_rules:
 
   screen_capture_only_in_system:
     name: "Screen capture only in SnapSystem"
-    included: 'Sources/(SnapCore|SnapUI|Snap|snapctl)/.*\.swift$'
-    regex: '\bScreenCaptureKit\b|\bSCShareableContent\b|\bSCScreenshotManager\b|\bCGRequestScreenCaptureAccess\b'
+    included: 'Sources/(SnapCore|SnapUI|Snap|snapctl|snapbench)/.*\.swift$'
+    regex: '\bScreenCaptureKit\b|\bSCShareableContent\b|\bSCScreenshotManager\b|\bCGRequestScreenCaptureAccess\b|\bSCStream\b|\bSCRecordingOutput\b|\bSCStreamConfiguration\b|\bSCContentFilter\b|\bAVCaptureDevice\b'
     excluded_match_kinds: [comment, comment.mark, comment.url, doccomment, doccomment.field]
-    message: "ScreenCaptureKit and CGRequestScreenCaptureAccess belong in Sources/SnapSystem only (design section 5)."
+    message: "ScreenCaptureKit (SCStream, SCRecordingOutput, SCStreamConfiguration, SCContentFilter), CGRequestScreenCaptureAccess and AVCaptureDevice belong in Sources/SnapSystem only (design sections 5 and 20.7)."
     severity: error

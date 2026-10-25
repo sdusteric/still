@@ -1,14 +1,17 @@
 import Foundation
 
-/// Every user setting (design section 12.2), grouped as the four settings tabs are. Missing keys
-/// decode to their defaults, so an older file keeps working when a setting is added.
+/// Every user setting (design sections 12.2 and 20.10), grouped as the settings tabs are. Missing
+/// keys decode to their defaults, so an older file keeps working when a setting is added. A
+/// version 1 file is migrated on decode by `SettingsMigration` (Cmd+Shift+5 moves to All-in-One).
 public struct Settings: VersionedDocument {
-    public static let currentVersion = 1
+    public static let currentVersion = 2
 
     public var version: Int
     public var general: GeneralSettings
     public var capture: CaptureSettings
     public var quickAccess: QuickAccessSettings
+    public var recording: RecordingSettings
+    public var annotate: AnnotateSettings
     public var shortcuts: ShortcutSettings
 
     public init(
@@ -16,23 +19,67 @@ public struct Settings: VersionedDocument {
         general: GeneralSettings = GeneralSettings(),
         capture: CaptureSettings = CaptureSettings(),
         quickAccess: QuickAccessSettings = QuickAccessSettings(),
+        recording: RecordingSettings = RecordingSettings(),
+        annotate: AnnotateSettings = AnnotateSettings(),
         shortcuts: ShortcutSettings = ShortcutSettings()
     ) {
         self.version = version
         self.general = general
         self.capture = capture
         self.quickAccess = quickAccess
+        self.recording = recording
+        self.annotate = annotate
         self.shortcuts = shortcuts
     }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let defaults = Settings()
-        version = try container.value(.version, default: defaults.version)
+        let fileVersion = try container.value(.version, default: defaults.version)
+        version = fileVersion
         general = try container.value(.general, default: defaults.general)
         capture = try container.value(.capture, default: defaults.capture)
         quickAccess = try container.value(.quickAccess, default: defaults.quickAccess)
-        shortcuts = try container.value(.shortcuts, default: defaults.shortcuts)
+        recording = try container.value(.recording, default: defaults.recording)
+        annotate = try container.value(.annotate, default: defaults.annotate)
+        if fileVersion < 2 {
+            // Version 1 shortcuts decode with the version 1 defaults, then migrate.
+            let v1 = try container.decodeIfPresent(VersionOneShortcuts.self, forKey: .shortcuts)?.shortcuts
+                ?? ShortcutSettings.version1Defaults
+            shortcuts = v1
+            self = SettingsMigration.migrate(self, from: fileVersion)
+        } else {
+            shortcuts = try container.value(.shortcuts, default: defaults.shortcuts)
+        }
+    }
+}
+
+/// Pure migrations between `settings.json` versions (design 20.10).
+public enum SettingsMigration {
+    /// Version 1 to 2 (design D56): when Capture Window still holds the default Cmd+Shift+5, the
+    /// combo moves to All-in-One and Capture Window becomes unset. A changed or cleared Capture
+    /// Window is left alone, and All-in-One then stays unset. Recording and annotate settings take
+    /// their defaults. `settings.shortcuts` holds the shortcuts as version 1 stored them.
+    public static func migrate(_ settings: Settings, from version: Int) -> Settings {
+        guard version < 2 else { return settings }
+        var migrated = settings
+        var shortcuts = settings.shortcuts
+        if shortcuts.captureWindow == .commandShift5 {
+            shortcuts.allInOne = .commandShift5
+            shortcuts.captureWindow = nil
+        }
+        migrated.shortcuts = shortcuts
+        migrated.version = 2
+        return migrated
+    }
+}
+
+/// Decodes the shortcuts of a version 1 file, where a missing Capture Window key meant Cmd+Shift+5.
+private struct VersionOneShortcuts: Decodable {
+    let shortcuts: ShortcutSettings
+
+    init(from decoder: any Decoder) throws {
+        shortcuts = try ShortcutSettings(from: decoder, defaults: .version1Defaults)
     }
 }
 
@@ -213,9 +260,12 @@ public struct QuickAccessSettings: Codable, Sendable, Hashable {
     }
 }
 
-/// The five actions that can have a global shortcut (design 12.3).
+/// The actions that can have a global shortcut (design 12.3 and 20.10). New actions are appended,
+/// because `HotkeyConflicts` skips the later of two duplicates and `HotkeyCenter` numbers
+/// registrations by this order.
 public enum ShortcutAction: String, Codable, Sendable, Hashable, CaseIterable {
     case captureArea, captureWindow, captureFullscreen, applyBackground, openInAnnotate
+    case allInOne, recordScreen, stopRecording, pinLastCapture, openHistory
 
     public var title: String {
         switch self {
@@ -224,6 +274,11 @@ public enum ShortcutAction: String, Codable, Sendable, Hashable, CaseIterable {
         case .captureFullscreen: "Capture Fullscreen"
         case .applyBackground: "Apply Background to Last Capture"
         case .openInAnnotate: "Open Last Capture in Annotate"
+        case .allInOne: "All-in-One"
+        case .recordScreen: "Record Screen"
+        case .stopRecording: "Stop Recording"
+        case .pinLastCapture: "Pin Last Capture"
+        case .openHistory: "Open Capture History"
         }
     }
 }
@@ -260,9 +315,12 @@ public struct KeyShortcut: Codable, Sendable, Hashable {
 }
 
 /// Shortcuts tab. A key that is present with `null` means the user cleared that shortcut.
+/// Defaults (design 20.10): Cmd+Shift+4 area, Cmd+Shift+3 fullscreen, Cmd+Shift+5 All-in-One,
+/// every other action unset.
 public struct ShortcutSettings: Codable, Sendable, Hashable {
     private enum CodingKeys: String, CodingKey {
         case captureArea, captureWindow, captureFullscreen, applyBackground, openInAnnotate
+        case allInOne, recordScreen, stopRecording, pinLastCapture, openHistory
     }
 
     public var captureArea: KeyShortcut?
@@ -270,29 +328,56 @@ public struct ShortcutSettings: Codable, Sendable, Hashable {
     public var captureFullscreen: KeyShortcut?
     public var applyBackground: KeyShortcut?
     public var openInAnnotate: KeyShortcut?
+    public var allInOne: KeyShortcut?
+    public var recordScreen: KeyShortcut?
+    public var stopRecording: KeyShortcut?
+    public var pinLastCapture: KeyShortcut?
+    public var openHistory: KeyShortcut?
 
     public init(
         captureArea: KeyShortcut? = .commandShift4,
-        captureWindow: KeyShortcut? = .commandShift5,
+        captureWindow: KeyShortcut? = nil,
         captureFullscreen: KeyShortcut? = .commandShift3,
         applyBackground: KeyShortcut? = nil,
-        openInAnnotate: KeyShortcut? = nil
+        openInAnnotate: KeyShortcut? = nil,
+        allInOne: KeyShortcut? = .commandShift5,
+        recordScreen: KeyShortcut? = nil,
+        stopRecording: KeyShortcut? = nil,
+        pinLastCapture: KeyShortcut? = nil,
+        openHistory: KeyShortcut? = nil
     ) {
         self.captureArea = captureArea
         self.captureWindow = captureWindow
         self.captureFullscreen = captureFullscreen
         self.applyBackground = applyBackground
         self.openInAnnotate = openInAnnotate
+        self.allInOne = allInOne
+        self.recordScreen = recordScreen
+        self.stopRecording = stopRecording
+        self.pinLastCapture = pinLastCapture
+        self.openHistory = openHistory
     }
 
+    /// What a version 1 file meant by a missing key: Cmd+Shift+5 on Capture Window and no
+    /// All-in-One (it did not exist yet).
+    public static let version1Defaults = ShortcutSettings(captureWindow: .commandShift5, allInOne: nil)
+
     public init(from decoder: any Decoder) throws {
+        try self.init(from: decoder, defaults: ShortcutSettings())
+    }
+
+    init(from decoder: any Decoder, defaults: ShortcutSettings) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let defaults = ShortcutSettings()
         captureArea = try container.optionalValue(.captureArea, default: defaults.captureArea)
         captureWindow = try container.optionalValue(.captureWindow, default: defaults.captureWindow)
         captureFullscreen = try container.optionalValue(.captureFullscreen, default: defaults.captureFullscreen)
         applyBackground = try container.optionalValue(.applyBackground, default: defaults.applyBackground)
         openInAnnotate = try container.optionalValue(.openInAnnotate, default: defaults.openInAnnotate)
+        allInOne = try container.optionalValue(.allInOne, default: defaults.allInOne)
+        recordScreen = try container.optionalValue(.recordScreen, default: defaults.recordScreen)
+        stopRecording = try container.optionalValue(.stopRecording, default: defaults.stopRecording)
+        pinLastCapture = try container.optionalValue(.pinLastCapture, default: defaults.pinLastCapture)
+        openHistory = try container.optionalValue(.openHistory, default: defaults.openHistory)
     }
 
     // Encode nil as an explicit null so a cleared default stays cleared after a round trip.
@@ -303,6 +388,11 @@ public struct ShortcutSettings: Codable, Sendable, Hashable {
         try container.encode(captureFullscreen, forKey: .captureFullscreen)
         try container.encode(applyBackground, forKey: .applyBackground)
         try container.encode(openInAnnotate, forKey: .openInAnnotate)
+        try container.encode(allInOne, forKey: .allInOne)
+        try container.encode(recordScreen, forKey: .recordScreen)
+        try container.encode(stopRecording, forKey: .stopRecording)
+        try container.encode(pinLastCapture, forKey: .pinLastCapture)
+        try container.encode(openHistory, forKey: .openHistory)
     }
 
     public subscript(action: ShortcutAction) -> KeyShortcut? {
@@ -313,6 +403,11 @@ public struct ShortcutSettings: Codable, Sendable, Hashable {
             case .captureFullscreen: captureFullscreen
             case .applyBackground: applyBackground
             case .openInAnnotate: openInAnnotate
+            case .allInOne: allInOne
+            case .recordScreen: recordScreen
+            case .stopRecording: stopRecording
+            case .pinLastCapture: pinLastCapture
+            case .openHistory: openHistory
             }
         }
         set {
@@ -322,8 +417,164 @@ public struct ShortcutSettings: Codable, Sendable, Hashable {
             case .captureFullscreen: captureFullscreen = newValue
             case .applyBackground: applyBackground = newValue
             case .openInAnnotate: openInAnnotate = newValue
+            case .allInOne: allInOne = newValue
+            case .recordScreen: recordScreen = newValue
+            case .stopRecording: stopRecording = newValue
+            case .pinLastCapture: pinLastCapture = newValue
+            case .openHistory: openHistory = newValue
             }
         }
+    }
+}
+
+/// Video file format (design 20.6): H.264 by default, HEVC files are about half the size.
+public enum VideoFormat: String, Codable, Sendable, Hashable, CaseIterable {
+    case h264, hevc
+
+    /// The FourCC `snapctl probe` and `item.json` report.
+    public var fourCC: String {
+        switch self {
+        case .h264: "avc1"
+        case .hevc: "hvc1"
+        }
+    }
+
+    public var title: String {
+        switch self {
+        case .h264: "H.264"
+        case .hevc: "HEVC"
+        }
+    }
+}
+
+/// Recording resolution: the display's pixels (Retina) or one pixel per point.
+public enum RecordingScale: String, Codable, Sendable, Hashable, CaseIterable {
+    case retina
+    case oneX = "1x"
+
+    public var title: String {
+        switch self {
+        case .retina: "Retina"
+        case .oneX: "1x"
+        }
+    }
+}
+
+/// Recording tab (design 20.10).
+public struct RecordingSettings: Codable, Sendable, Hashable {
+    public static let frameRates = [30, 60]
+    public static let countdownChoices = [0, 3, 5]
+
+    public var format: VideoFormat
+    /// 30 or 60.
+    public var fps: Int
+    public var scale: RecordingScale
+    /// 0 (off), 3 or 5.
+    public var countdownSeconds: Int
+    public var showCursor: Bool
+    public var highlightClicks: Bool
+    public var systemAudio: Bool
+    /// The user's intent; recordings proceed without the microphone when access is denied.
+    public var microphone: Bool
+    /// The chosen input device's unique id; nil means the system default input.
+    public var microphoneDeviceID: String?
+
+    public init(
+        format: VideoFormat = .h264,
+        fps: Int = 30,
+        scale: RecordingScale = .retina,
+        countdownSeconds: Int = 3,
+        showCursor: Bool = true,
+        highlightClicks: Bool = true,
+        systemAudio: Bool = false,
+        microphone: Bool = false,
+        microphoneDeviceID: String? = nil
+    ) {
+        self.format = format
+        self.fps = RecordingSettings.normalizedFPS(fps)
+        self.scale = scale
+        self.countdownSeconds = RecordingSettings.normalizedCountdown(countdownSeconds)
+        self.showCursor = showCursor
+        self.highlightClicks = highlightClicks
+        self.systemAudio = systemAudio
+        self.microphone = microphone
+        self.microphoneDeviceID = microphoneDeviceID
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = RecordingSettings()
+        self.init(
+            format: container.lenientValue(.format, default: defaults.format),
+            fps: container.lenientValue(.fps, default: defaults.fps),
+            scale: container.lenientValue(.scale, default: defaults.scale),
+            countdownSeconds: container.lenientValue(.countdownSeconds, default: defaults.countdownSeconds),
+            showCursor: try container.value(.showCursor, default: defaults.showCursor),
+            highlightClicks: try container.value(.highlightClicks, default: defaults.highlightClicks),
+            systemAudio: try container.value(.systemAudio, default: defaults.systemAudio),
+            microphone: try container.value(.microphone, default: defaults.microphone),
+            microphoneDeviceID: try container.decodeIfPresent(String.self, forKey: .microphoneDeviceID)
+        )
+    }
+
+    /// 60 stays 60; anything else records at 30.
+    public static func normalizedFPS(_ value: Int) -> Int { value == 60 ? 60 : 30 }
+
+    /// The nearest of 0, 3 and 5.
+    public static func normalizedCountdown(_ value: Int) -> Int {
+        countdownChoices.min { abs($0 - value) < abs($1 - value) } ?? 3
+    }
+
+    /// The audio sources a recording asks for.
+    public var audioSources: [AudioSource] {
+        var sources: [AudioSource] = []
+        if systemAudio { sources.append(.system) }
+        if microphone { sources.append(.microphone) }
+        return sources
+    }
+}
+
+/// The Redact tool's three styles (design 20.8). P cycles them in this order.
+public enum RedactStyle: String, Codable, Sendable, Hashable, CaseIterable {
+    case pixelate, blur, blackout
+
+    public var title: String {
+        switch self {
+        case .pixelate: "Pixelate"
+        case .blur: "Blur"
+        case .blackout: "Black-out"
+        }
+    }
+
+    /// The next style when P is pressed again.
+    public var next: RedactStyle {
+        let all = RedactStyle.allCases
+        let index = all.firstIndex(of: self) ?? 0
+        return all[(index + 1) % all.count]
+    }
+}
+
+/// Annotate tool settings that persist across documents (design 20.8).
+public struct AnnotateSettings: Codable, Sendable, Hashable {
+    /// #FFD60A, drawn at `highlightOpacity`.
+    public static let defaultHighlightColor = RGBAColor(red: 1, green: 214.0 / 255, blue: 10.0 / 255)
+    public static let highlightOpacity = 0.38
+
+    public var highlightColor: RGBAColor
+    public var redactStyle: RedactStyle
+
+    public init(highlightColor: RGBAColor = AnnotateSettings.defaultHighlightColor, redactStyle: RedactStyle = .pixelate) {
+        self.highlightColor = highlightColor
+        self.redactStyle = redactStyle
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = AnnotateSettings()
+        self.init(
+            highlightColor: container.lenientValue(.highlightColor, default: defaults.highlightColor),
+            redactStyle: container.lenientValue(.redactStyle, default: defaults.redactStyle)
+        )
     }
 }
 
@@ -337,5 +588,15 @@ extension KeyedDecodingContainer {
     func optionalValue<T: Decodable>(_ key: Key, default fallback: T?) throws -> T? {
         guard contains(key) else { return fallback }
         return try decodeIfPresent(T.self, forKey: key)
+    }
+
+    /// Like `value(_:default:)`, but a value of the wrong type or an unknown enum case also falls
+    /// back, so one bad M2 field does not move the whole settings file aside.
+    func lenientValue<T: Decodable>(_ key: Key, default fallback: T) -> T {
+        do {
+            return try decodeIfPresent(T.self, forKey: key) ?? fallback
+        } catch {
+            return fallback
+        }
     }
 }

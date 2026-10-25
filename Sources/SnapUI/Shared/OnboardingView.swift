@@ -83,7 +83,9 @@ public struct OnboardingView: View {
     private var steps: some View {
         VStack(spacing: 0) {
             if model.permissionGranted {
-                grantedStep
+                // M13 lives on the inserted row: SwiftUI does not reliably run a transition on a
+                // child of an inserted view, so the row carries it and hands the scale to the check.
+                grantedStep.transition(grantedTransition)
             } else {
                 permissionStep
             }
@@ -122,6 +124,17 @@ public struct OnboardingView: View {
                 .padding(.top, 4)
             }
         }
+    }
+
+    private var grantedTransition: AnyTransition {
+        guard !reduceMotion else { return .identity }
+        let check = AnyTransition.modifier(
+            active: GrantedCheckScale(scale: Theme.Motion.checkStartScale), identity: GrantedCheckScale(scale: 1)
+        )
+        return .asymmetric(
+            insertion: check.animation(Theme.Motion.playfulSpring).combined(with: .opacity),
+            removal: .opacity
+        )
     }
 
     private var grantedStep: some View {
@@ -221,21 +234,37 @@ private struct StepRow<Content: View>: View {
     }
 }
 
-/// The green check that scales in from 0.6 when the permission is granted (M13). The scale is a
-/// transition, so a static render (shots) shows the final state.
+/// The green check that scales in from 0.6 when the permission is granted (M13). The scale comes
+/// from the granted row's insertion transition, so a static render (shots) shows the final state.
 private struct GrantedCheck: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.grantedCheckScale) private var scale
 
     var body: some View {
         Circle()
             .fill(Theme.Colors.success.color)
             .overlay(Image(systemName: "checkmark").font(.system(size: 15, weight: .bold)).foregroundStyle(.white))
             .frame(width: Theme.Onboarding.stepIconSize, height: Theme.Onboarding.stepIconSize)
-            .transition(
-                reduceMotion ? .identity : .scale(scale: Theme.Motion.checkStartScale).animation(Theme.Motion.playfulSpring)
-            )
+            .scaleEffect(scale)
             .accessibilityHidden(true)
     }
+}
+
+/// The M13 transition's state: the check's scale, animated frame by frame and passed down.
+struct GrantedCheckScale: ViewModifier, Animatable {
+    var scale: Double
+
+    var animatableData: Double {
+        get { scale }
+        set { scale = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        content.environment(\.grantedCheckScale, scale)
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var grantedCheckScale: Double = 1
 }
 
 /// The app icon drawn in code (design 17.8): a rounded square, #3B4CE0 to #8A4DE8, with a white

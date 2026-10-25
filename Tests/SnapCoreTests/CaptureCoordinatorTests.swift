@@ -10,6 +10,7 @@ import Testing
 private final class RecordingOverlay: OverlayPresenter {
     enum Call: Equatable {
         case present(CaptureMode)
+        case presentHUD(HUDMode, area: CGRect?)
         case frozen(DisplayID)
         case windows(Int)
         case dismiss
@@ -19,6 +20,8 @@ private final class RecordingOverlay: OverlayPresenter {
     /// Capture source calls seen at the moment `present` ran.
     var sourceCallsAtPresent: Int?
     var onPresent: (() -> Void)?
+    /// The HUD's mode switch callback, so a test can play the user pressing R.
+    var hudModeChanged: (@MainActor (HUDMode) -> Void)?
     /// When set, the first frozen image resolves the selection with this value.
     var selectAfterFrozen: OverlaySelection?
     private var pending: CheckedContinuation<OverlaySelection, Never>?
@@ -26,6 +29,12 @@ private final class RecordingOverlay: OverlayPresenter {
 
     func present(mode: CaptureMode, displays: [DisplayInfo]) {
         calls.append(.present(mode))
+        onPresent?()
+    }
+
+    func presentHUD(_ state: AllInOneState, displays: [DisplayInfo], modeChanged: @escaping @MainActor (HUDMode) -> Void) {
+        calls.append(.presentHUD(state.mode, area: state.area))
+        hudModeChanged = modeChanged
         onPresent?()
     }
 
@@ -193,6 +202,23 @@ private struct Harness {
         #expect(harness.results.stored.count == 1)
         #expect(stored.copied)
         #expect(harness.clipboard.writtenImages.count == 1)
+    }
+
+    @Test func storedItemKeepsTheScreenRectAndPixelSize() async throws {
+        let harness = try Harness(source: FakeCaptureSource(displays: [display]))
+        defer { harness.cleanUp() }
+        harness.overlay.selectAfterFrozen = .area(displayID: display.id, rect: selection)
+
+        let ticket = try #require(await harness.coordinator.run(mode: .area))
+        let stored = try #require(await ticket.stored.value)
+        let image = ticket.result.image.cgImage
+
+        #expect(stored.item.screenRect == ticket.result.rect)
+        #expect(stored.item.pixelSize == PixelSize(width: image.width, height: image.height))
+        // The item.json on disk carries both, so a pin from history opens at the captured rect.
+        let reread = try #require(try harness.history.item(id: stored.item.id))
+        #expect(reread.screenRect == ticket.result.rect)
+        #expect(reread.pixelSize == PixelSize(width: image.width, height: image.height))
     }
 
     @Test func overlayIsPresentedBeforeAnyCaptureStarts() async throws {
@@ -547,5 +573,118 @@ private struct Harness {
         #expect(summary.p95 == 48)
         #expect(summary.max == 50)
         #expect(LatencyLog.summarize([]) == nil)
+    }
+
+    // MARK: All-in-one HUD (design 20.5, D59)
+
+    private func hudState(_ mode: HUDMode) -> AllInOneState {
+        AllInOneState(
+            mode: mode, target: .area,
+            lastArea: LastArea(displayID: display.id, displayFrame: display.frameTopLeft, rect: selection),
+            displays: [display]
+        )
+    }
+
+    private func displayCaptures(_ source: FakeCaptureSource) -> Int {
+        source.recordedCalls.filter { if case .display = $0 { true } else { false } }.count
+    }
+
+    @Test func hudScreenshotModeCropsTheFrozenImageAndStoresTheLastArea() async throws {
+        let harness = try Harness(source: FakeCaptureSource(displays: [display]))
+        defer { harness.cleanUp() }
+        var stored: [LastArea] = []
+        harness.coordinator.onAreaConfirmed = { stored.append($0) }
+        harness.overlay.selectAfterFrozen = .area(displayID: display.id, rect: selection)
+
+        let outcome = await harness.coordinator.runHUD(hudState(.screenshot))
+        let ticket = try #require(outcome.ticket)
+        _ = await ticket.stored.value
+        #expect(harness.overlay.calls.first == .presentHUD(.screenshot, area: selection))
+        #expect(ticket.result.trace.order.prefix(4) == [.present, .frozen, .confirm, .card])
+        #expect(ticket.result.mode == .area)
+        #expect(ticket.result.image.pixelWidth == 1684)
+        #expect(stored == [LastArea(displayID: display.id, displayFrame: display.frameTopLeft, rect: selection)])
+        #expect(harness.overlay.dismissCount == 1)
+    }
+
+    @Test func hudRecordModeRequestsNoFrozenCaptureAndLeavesTheOverlayUp() async throws {
+        let source = FakeCaptureSource(displays: [display])
+        let harness = try Harness(source: source)
+        defer { harness.cleanUp() }
+        try await harness.coordinator.refreshDisplays()
+        var stored: [LastArea] = []
+        harness.coordinator.onAreaConfirmed = { stored.append($0) }
+        harness.overlay.resolve(.record(.area(selection)))
+
+        let outcome = await harness.coordinator.runHUD(hudState(.record))
+        guard case .record(let target, let trace) = outcome else {
+            Issue.record("expected a recording, got \(outcome)")
+            return
+        }
+        #expect(target == .area(selection))
+        #expect(trace.order == [.present, .confirm])
+        #expect(displayCaptures(source) == 0)
+        #expect(!harness.overlay.calls.contains(.frozen(display.id)))
+        // The countdown runs on the same panels, so the coordinator does not dismiss them.
+        #expect(harness.overlay.dismissCount == 0)
+        #expect(!harness.coordinator.isCapturing)
+        #expect(harness.results.cards.isEmpty)
+        #expect(stored.map(\.rect) == [selection])
+        #expect(try harness.history.allItems().isEmpty)
+    }
+
+    @Test func switchingTheHUDToScreenshotStartsTheFrozenCaptures() async throws {
+        let source = FakeCaptureSource(displays: [display])
+        let harness = try Harness(source: source)
+        defer { harness.cleanUp() }
+        try await harness.coordinator.refreshDisplays()
+        #expect(await harness.coordinator.beginHUD(hudState(.record)))
+        #expect(displayCaptures(source) == 0)
+
+        harness.overlay.hudModeChanged?(.screenshot)
+        for _ in 0..<10_000 where !harness.overlay.calls.contains(.frozen(display.id)) { await Task.yield() }
+        #expect(displayCaptures(source) == 1)
+        #expect(harness.overlay.calls.contains(.frozen(display.id)))
+        // Back to Record and to Screenshot again: the capture already running is reused.
+        harness.overlay.hudModeChanged?(.record)
+        harness.overlay.hudModeChanged?(.screenshot)
+        #expect(displayCaptures(source) == 1)
+
+        let ticket = try #require(await harness.coordinator.confirm(.area(displayID: display.id, rect: selection)))
+        _ = await ticket.stored.value
+        #expect(ticket.result.image.pixelHeight == 1032)
+    }
+
+    @Test func hudFullscreenAndWindowTargetsKeepTheirModes() async throws {
+        let harness = try Harness(source: FakeCaptureSource(displays: [display]))
+        defer { harness.cleanUp() }
+        var stored: [LastArea] = []
+        harness.coordinator.onAreaConfirmed = { stored.append($0) }
+        harness.overlay.resolve(.fullscreen(displayID: display.id))
+        let fullscreen = try #require(await harness.coordinator.runHUD(hudState(.screenshot)).ticket)
+        _ = await fullscreen.stored.value
+        #expect(fullscreen.result.mode == .fullscreen)
+        #expect(fullscreen.result.image.pixelWidth == display.pixelWidth)
+        #expect(fullscreen.result.rect == display.frameTopLeft)
+        #expect(stored.isEmpty)
+
+        let window = try #require(FakeWindowSource.sample.first)
+        harness.overlay.resolve(.window(window, includeShadow: false))
+        let windowTicket = try #require(await harness.coordinator.runHUD(hudState(.screenshot)).ticket)
+        _ = await windowTicket.stored.value
+        #expect(windowTicket.result.mode == .window)
+        #expect(windowTicket.result.sourceApp == window.ownerName)
+    }
+
+    @Test func plainAreaCaptureAlsoStoresTheLastArea() async throws {
+        let harness = try Harness(source: FakeCaptureSource(displays: [display]))
+        defer { harness.cleanUp() }
+        var stored: [LastArea] = []
+        harness.coordinator.onAreaConfirmed = { stored.append($0) }
+        harness.overlay.selectAfterFrozen = .area(displayID: display.id, rect: selection)
+        let ticket = try #require(await harness.coordinator.run(mode: .area))
+        _ = await ticket.stored.value
+        #expect(stored.map(\.rect) == [selection])
+        #expect(stored.first?.restore(on: [display]) == selection)
     }
 }

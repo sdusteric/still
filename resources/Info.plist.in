@@ -19,6 +19,8 @@
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSSupportsAutomaticTermination</key><false/>
   <key>NSSupportsSuddenTermination</key><false/>
+  <!-- Design D79: asked once, only when the user turns the microphone on for recordings. -->
+  <key>NSMicrophoneUsageDescription</key><string>Snap records your microphone only during a screen recording you start with the microphone turned on.</string>
 
   <!-- Sparkle auto-update (app-updates CONTRACT.md). -->
   <key>SUFeedURL</key><string>https://sdusteric.github.io/app-updates/snap/appcast.xml</string>

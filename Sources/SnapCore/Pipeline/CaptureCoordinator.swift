@@ -86,6 +86,21 @@ public struct CaptureConfiguration: Sendable, Hashable {
     }
 }
 
+/// What one all-in-one HUD session ended with (design 20.5).
+public enum HUDCaptureOutcome: Sendable {
+    /// Screenshot mode: the card is shown and the background stage runs, as for Cmd+Shift+4.
+    case screenshot(CaptureTicket)
+    /// Record mode: what to record. The overlay is still up so it can show the countdown; the
+    /// caller hands the target to the recording controller and dismisses the overlay.
+    case record(RecordingTarget, trace: CaptureTrace)
+    case cancelled
+
+    public var ticket: CaptureTicket? {
+        if case .screenshot(let ticket) = self { return ticket }
+        return nil
+    }
+}
+
 /// A finished capture, before it is encoded or stored.
 public struct CaptureResult: Sendable {
     public var mode: CaptureMode
@@ -202,7 +217,11 @@ public struct CaptureOutputStage: Sendable {
         let fileName = namer.fileName(date: result.createdAt, app: result.sourceApp) { _ in false }
         let item = try history.add(
             pngData: png, fileName: fileName, mode: result.mode, scale: result.image.scale,
-            sourceApp: result.sourceApp, createdAt: result.createdAt
+            sourceApp: result.sourceApp, createdAt: result.createdAt,
+            // Area and window captures keep their rect, so a pin opened later from history lands
+            // on top of what it shows (design 20.4, D47); fullscreen has none.
+            screenRect: result.mode == .fullscreen ? nil : result.rect,
+            pixelSize: PixelSize(width: result.image.cgImage.width, height: result.image.cgImage.height)
         )
         trace.record(.history, at: clock.now())
 
@@ -245,18 +264,24 @@ public final class CaptureCoordinator {
         let displays: [DisplayInfo]
         let configuration: CaptureConfiguration
         let presented: Bool
+        /// An all-in-one HUD session: the result mode follows the selection, not the hotkey.
+        let hud: Bool
         var frozen: [DisplayID: Task<CapturedImage, any Error>] = [:]
         var pendingFrozen = 0
         var windows: [WindowInfo] = []
         var windowTask: Task<Void, Never>?
         var finished = false
 
-        init(mode: CaptureMode, trace: CaptureTrace, displays: [DisplayInfo], configuration: CaptureConfiguration, presented: Bool) {
+        init(
+            mode: CaptureMode, trace: CaptureTrace, displays: [DisplayInfo], configuration: CaptureConfiguration,
+            presented: Bool, hud: Bool = false
+        ) {
             self.mode = mode
             self.trace = trace
             self.displays = displays
             self.configuration = configuration
             self.presented = presented
+            self.hud = hud
         }
     }
 
@@ -274,6 +299,9 @@ public final class CaptureCoordinator {
     public private(set) var displays: [DisplayInfo] = []
     /// The trace of the most recent capture, for tests and the latency tool.
     public private(set) var lastTrace: CaptureTrace?
+    /// Called when an area is confirmed from Cmd+Shift+4 or the HUD (a screenshot or a recording),
+    /// so the app stores it in `state.json` for the next HUD (design D58).
+    public var onAreaConfirmed: ((LastArea) -> Void)?
 
     public init(
         captureSource: any CaptureSource,
@@ -324,6 +352,16 @@ public final class CaptureCoordinator {
         return await confirm(selection)
     }
 
+    /// The all-in-one HUD (design 20.5): presents the overlay with the toolbar, starts the frozen
+    /// captures only in Screenshot mode (D59), waits for the user and confirms. Record mode ends
+    /// with the target to record; the overlay stays up for the countdown.
+    public func runHUD(_ state: AllInOneState, eventTime: TimeInterval? = nil) async -> HUDCaptureOutcome {
+        guard await beginHUD(state, eventTime: eventTime), let session else { return .cancelled }
+        let selection = await overlay.selection()
+        guard self.session === session else { return .cancelled }
+        return await finish(selection)
+    }
+
     // MARK: Steps
 
     /// Presents the overlay at once, then starts the display captures and the window snapshot in
@@ -366,65 +404,104 @@ public final class CaptureCoordinator {
             targets = [CoordinateSpace.display(containing: point, in: known)
                 ?? CoordinateSpace.nearestDisplay(to: point, in: known) ?? known[0]]
         }
-        session.pendingFrozen = targets.count
-        for display in targets {
-            session.frozen[display.id] = startDisplayCapture(display, session: session)
-        }
-        if presented {
-            session.windowTask = Task { [windowSource, overlay] in
-                do {
-                    let windows = try await windowSource.snapshot()
-                    guard self.session === session else { return }
-                    session.windows = windows
-                    overlay.updateWindows(windows)
-                } catch {
-                    self.log?.warning("capture: window list failed: \(error)")
-                }
+        startFrozenCaptures(targets, session: session)
+        if presented { startWindowSnapshot(session) }
+        return true
+    }
+
+    /// The HUD's first step: presents the overlay with the toolbar at once, then the window
+    /// snapshot, and the display captures only when `state` is in Screenshot mode. Switching to
+    /// Screenshot later starts them then. Returns false when a capture is already running or no
+    /// display is known.
+    @discardableResult
+    public func beginHUD(_ state: AllInOneState, eventTime: TimeInterval? = nil) async -> Bool {
+        guard session == nil else { return false }
+        let trace = CaptureTrace(mode: state.target, triggerTime: eventTime ?? clock.now())
+        lastTrace = trace
+        var configuration = configuration()
+        configuration.options = configuration.captureOptions(overlayShown: true)
+
+        var known = displays
+        if known.isEmpty {
+            do {
+                known = try await refreshDisplays()
+            } catch {
+                report(mode: state.target, stage: .capture, error: error)
+                return false
             }
         }
+        guard session == nil, !known.isEmpty else {
+            if known.isEmpty { report(mode: state.target, stage: .capture, error: CaptureError.failed("no displays")) }
+            return false
+        }
+
+        let session = Session(
+            mode: state.target, trace: trace, displays: known, configuration: configuration, presented: true, hud: true
+        )
+        self.session = session
+        overlay.presentHUD(state, displays: known) { [weak self, weak session] mode in
+            guard let self, let session, mode == .screenshot else { return }
+            self.startFrozenCaptures(session.displays, session: session)
+        }
+        trace.record(.present, at: clock.now())
+        if state.needsFrozenCapture { startFrozenCaptures(known, session: session) }
+        startWindowSnapshot(session)
         return true
+    }
+
+    /// Starts the frozen capture of each display that has none yet.
+    private func startFrozenCaptures(_ targets: [DisplayInfo], session: Session) {
+        guard self.session === session, !session.finished else { return }
+        let missing = targets.filter { session.frozen[$0.id] == nil }
+        guard !missing.isEmpty else { return }
+        session.pendingFrozen += missing.count
+        for display in missing {
+            session.frozen[display.id] = startDisplayCapture(display, session: session)
+        }
+    }
+
+    private func startWindowSnapshot(_ session: Session) {
+        session.windowTask = Task { [windowSource, overlay] in
+            do {
+                let windows = try await windowSource.snapshot()
+                guard self.session === session else { return }
+                session.windows = windows
+                overlay.updateWindows(windows)
+            } catch {
+                self.log?.warning("capture: window list failed: \(error)")
+            }
+        }
     }
 
     /// Finishes the capture with the user's selection: crops the frozen image (waiting for it if
     /// needed) or captures the window live, dismisses the overlay, shows the card and hands the
-    /// image to the background stage.
+    /// image to the background stage. A Record selection returns nil here; `runHUD` reports it.
     @discardableResult
     public func confirm(_ selection: OverlaySelection) async -> CaptureTicket? {
-        guard let session, !session.finished else { return nil }
+        await finish(selection).ticket
+    }
+
+    /// `confirm` with the HUD's Record outcome kept.
+    private func finish(_ selection: OverlaySelection) async -> HUDCaptureOutcome {
+        guard let session, !session.finished else { return .cancelled }
         switch selection {
         case .cancelled:
             end(session)
-            return nil
+            return .cancelled
 
         case .area(let displayID, let rect):
             session.trace.record(.confirm, at: clock.now())
-            guard let task = session.frozen[displayID],
-                  let display = session.displays.first(where: { $0.id == displayID }) else {
+            if let area = LastArea.store(rect, displays: session.displays) { onAreaConfirmed?(area) }
+            let mode: CaptureMode = session.hud ? .area : session.mode
+            return await cropFrozen(session, displayID: displayID, rect: rect, mode: mode)
+
+        case .fullscreen(let displayID):
+            session.trace.record(.confirm, at: clock.now())
+            guard let display = session.displays.first(where: { $0.id == displayID }) else {
                 fail(session, error: CaptureError.displayNotFound(displayID))
-                return nil
+                return .cancelled
             }
-            let frozen: CapturedImage
-            do {
-                frozen = try await task.value
-            } catch {
-                fail(session, error: error)
-                return nil
-            }
-            guard self.session === session, !session.finished else { return nil }
-            let cropped: CapturedImage
-            let global: CGRect
-            do {
-                (cropped, global) = try CaptureCoordinator.crop(frozen, to: rect, on: display)
-            } catch {
-                fail(session, error: error)
-                return nil
-            }
-            end(session)
-            let result = CaptureResult(
-                mode: session.mode, image: cropped, createdAt: clock.date(), rect: global,
-                sourceApp: nil, trace: session.trace
-            )
-            return deliver(result, configuration: session.configuration)
+            return await cropFrozen(session, displayID: displayID, rect: display.frameTopLeft, mode: .fullscreen)
 
         case .window(let window, let includeShadow):
             session.trace.record(.confirm, at: clock.now())
@@ -439,14 +516,58 @@ public final class CaptureCoordinator {
                 }
             } catch {
                 report(mode: session.mode, stage: .capture, error: error)
-                return nil
+                return .cancelled
             }
             let result = CaptureResult(
-                mode: session.mode, image: image, createdAt: clock.date(), rect: window.frame,
+                mode: session.hud ? .window : session.mode, image: image, createdAt: clock.date(), rect: window.frame,
                 sourceApp: window.ownerName, trace: session.trace
             )
-            return deliver(result, configuration: session.configuration)
+            return .screenshot(deliver(result, configuration: session.configuration))
+
+        case .record(let target):
+            session.trace.record(.confirm, at: clock.now())
+            if case .area(let rect) = target, let area = LastArea.store(rect, displays: session.displays) {
+                onAreaConfirmed?(area)
+            }
+            // The overlay stays up: it shows the countdown over the same dim.
+            end(session, dismissOverlay: false)
+            return .record(target, trace: session.trace)
         }
+    }
+
+    /// Crops the frozen image of `displayID` (starting its capture if Record mode never asked for
+    /// it), then ends the session and delivers the card.
+    private func cropFrozen(_ session: Session, displayID: DisplayID, rect: CGRect, mode: CaptureMode) async -> HUDCaptureOutcome {
+        guard let display = session.displays.first(where: { $0.id == displayID }) else {
+            fail(session, error: CaptureError.displayNotFound(displayID))
+            return .cancelled
+        }
+        if session.frozen[displayID] == nil { startFrozenCaptures([display], session: session) }
+        guard let task = session.frozen[displayID] else {
+            fail(session, error: CaptureError.displayNotFound(displayID))
+            return .cancelled
+        }
+        let frozen: CapturedImage
+        do {
+            frozen = try await task.value
+        } catch {
+            fail(session, error: error)
+            return .cancelled
+        }
+        guard self.session === session, !session.finished else { return .cancelled }
+        let cropped: CapturedImage
+        let global: CGRect
+        do {
+            (cropped, global) = try CaptureCoordinator.crop(frozen, to: rect, on: display)
+        } catch {
+            fail(session, error: error)
+            return .cancelled
+        }
+        end(session)
+        let result = CaptureResult(
+            mode: mode, image: cropped, createdAt: clock.date(), rect: global, sourceApp: nil, trace: session.trace
+        )
+        return .screenshot(deliver(result, configuration: session.configuration))
     }
 
     /// Closes the overlay without a capture (screen change, Esc handled outside the presenter).
@@ -538,12 +659,12 @@ public final class CaptureCoordinator {
         }
     }
 
-    private func end(_ session: Session) {
+    private func end(_ session: Session, dismissOverlay: Bool = true) {
         guard !session.finished else { return }
         session.finished = true
         session.windowTask?.cancel()
         if self.session === session { self.session = nil }
-        if session.presented { overlay.dismiss() }
+        if session.presented, dismissOverlay { overlay.dismiss() }
     }
 
     private func fail(_ session: Session, error: any Error) {

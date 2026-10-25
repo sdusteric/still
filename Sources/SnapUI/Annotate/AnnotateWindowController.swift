@@ -9,13 +9,20 @@ public final class AnnotateEditorView: NSView {
     public let canvas: AnnotateCanvasView
     public var model: AnnotateEditorModel { canvas.model }
     private let toolbarHost: NSView?
+    /// The Redact style menu drawn over the canvas, for the shot only (a real menu cannot open there).
+    private let styleMenuHost: NSView?
 
-    public init(document: AnnotationDocument, model: AnnotateEditorModel, inlineToolbar: Bool) {
+    /// Where the style menu hangs in the shot: under the style popup (mockup 12).
+    static let styleMenuOrigin = CGPoint(x: 428, y: 48)
+
+    public init(document: AnnotationDocument, model: AnnotateEditorModel, inlineToolbar: Bool, showsStyleMenu: Bool = false) {
         canvas = AnnotateCanvasView(document: document, model: model)
         toolbarHost = inlineToolbar ? NSHostingView(rootView: InlineToolbar(model: model)) : nil
+        styleMenuHost = showsStyleMenu ? NSHostingView(rootView: RedactStyleMenu(model: model, framed: true)) : nil
         super.init(frame: CGRect(origin: .zero, size: Theme.Annotate.windowSize))
         addSubview(canvas)
         if let toolbarHost { addSubview(toolbarHost) }
+        if let styleMenuHost { addSubview(styleMenuHost) }
         layoutParts()
     }
 
@@ -35,6 +42,13 @@ public final class AnnotateEditorView: NSView {
         let toolbarHeight = toolbarHost == nil ? 0 : Theme.Annotate.toolbarHeight
         toolbarHost?.frame = CGRect(x: 0, y: 0, width: bounds.width, height: toolbarHeight)
         canvas.frame = CGRect(x: 0, y: toolbarHeight, width: bounds.width, height: max(bounds.height - toolbarHeight, 0))
+        if let styleMenuHost {
+            let size = styleMenuHost.fittingSize
+            let inset = RedactStyleMenu.shadowInset
+            styleMenuHost.frame = CGRect(
+                x: Self.styleMenuOrigin.x - inset, y: Self.styleMenuOrigin.y - inset, width: size.width, height: size.height
+            )
+        }
     }
 }
 
@@ -169,8 +183,8 @@ public final class AnnotateWindowController: NSWindowController, NSWindowDelegat
     }
 }
 
-/// The annotate editor with a sample capture and one item of each kind, the Rectangle tool active
-/// and the rectangle selected (mockup section 4), for tests and shots.
+/// The annotate editor with a sample capture, for tests and shots: one item of each M1 kind with
+/// the Rectangle tool active (mockup section 4), and the M2 tools state of mockup 12.
 public enum AnnotateDemo {
     public static let size = Theme.Annotate.windowSize
 
@@ -193,6 +207,47 @@ public enum AnnotateDemo {
         model.canUndo = true
         let view = AnnotateEditorView(document: document, model: model, inlineToolbar: true)
         view.canvas.setSelection(document.items.first?.id)
+        view.frame = CGRect(origin: .zero, size: size)
+        view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        return view
+    }
+
+    // MARK: Tools (mockup 12)
+
+    /// The sample capture with a blurred sidebar row, a black-out over the token, a highlight, a
+    /// freehand loop and three steps, laid out on `DemoCapture.notesWindow`.
+    public static func makeToolsDocument(dark: Bool = false) -> AnnotationDocument? {
+        guard let capture = DemoCapture.notesWindow(dark: dark) else { return nil }
+        var document = AnnotationDocument(image: capture, scale: 2)
+        let mono = NSFont.monospacedSystemFont(ofSize: 10.5, weight: .regular)
+        let cell = ("0" as NSString).size(withAttributes: [.font: mono]).width
+        let line = ("The only edit I ever make is a gradient behind the window. That is one click now, and the" as NSString)
+            .size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)]).width
+        document.add(.redact(CGRect(x: 8, y: 90, width: 182, height: 44), style: .blur))
+        // "export SNAP_TOKEN=" is 18 cells; the black-out covers the token but for its last character.
+        document.add(.redact(CGRect(x: 232 + 18 * cell, y: 202, width: 16 * cell, height: 17), style: .blackout))
+        document.add(.highlight(CGRect(x: 218, y: 245, width: line + 4, height: 21)))
+        let loop = (0...64).map { index -> CGPoint in
+            let angle = (-160 + Double(index) * 5.4) * .pi / 180
+            return CGPoint(x: 262 + cos(angle) * 58, y: 308 + sin(angle) * 22)
+        }
+        document.add(.freehand(FreehandPath.decimated(loop)))
+        document.add(.step(at: CGPoint(x: 206, y: 70)))
+        document.add(.step(at: CGPoint(x: 650, y: 186)))
+        document.add(.step(at: CGPoint(x: 210, y: 258)))
+        return document
+    }
+
+    /// The editor with the Redact tool active, its style menu open on Black-out and step 2
+    /// selected, at 1100 x 720 with the appearance set.
+    public static func makeToolsView(dark: Bool = false) -> NSView {
+        guard let document = makeToolsDocument(dark: dark) else { return NSView(frame: CGRect(origin: .zero, size: size)) }
+        let model = AnnotateEditorModel()
+        model.tool = .redact
+        model.redactStyle = .blackout
+        model.canUndo = true
+        let view = AnnotateEditorView(document: document, model: model, inlineToolbar: true, showsStyleMenu: true)
+        view.canvas.setSelection(document.items.filter { $0.kind == .step }.dropFirst().first?.id)
         view.frame = CGRect(origin: .zero, size: size)
         view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         return view

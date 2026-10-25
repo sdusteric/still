@@ -30,6 +30,9 @@ final class FakeOverlaySurface: OverlaySurface {
         hideCount += 1
         isVisible = false
     }
+
+    var poppedMenus: [(menu: NSMenu, point: CGPoint)] = []
+    func popUpMenu(_ menu: NSMenu, at point: CGPoint) { poppedMenus.append((menu, point)) }
 }
 
 @MainActor
@@ -518,5 +521,295 @@ enum ImageStats {
         var unnamed = OverlayDemo.notesWindow
         unnamed.ownerName = nil
         #expect(SelectionOverlayView.windowLabel(unnamed) == "842 \u{00D7} 516")
+    }
+}
+
+// MARK: All-in-one HUD (design 20.5, 20.6)
+
+extension OverlayControllerTests {
+    static let hudArea = CGRect(x: 400, y: 200, width: 842, height: 516)
+
+    func presentHUD(
+        _ controller: OverlayController, mode: HUDMode = .screenshot, area: CGRect? = OverlayControllerTests.hudArea,
+        modeChanges: ((HUDMode) -> Void)? = nil
+    ) {
+        let last = area.map { LastArea(displayID: 1, displayFrame: DisplayInfo.fake5K.frameTopLeft, rect: $0) }
+        let state = AllInOneState(mode: mode, target: .area, lastArea: last, displays: displays)
+        controller.presentHUD(state, displays: displays) { modeChanges?($0) }
+    }
+
+    func key(_ code: UInt16, _ modifiers: OverlayModifiers = []) -> OverlayInputEvent {
+        .keyDown(OverlayKey(keyCode: code), modifiers: modifiers, isRepeat: false)
+    }
+
+    func click(_ controller: OverlayController, _ point: CGPoint) {
+        controller.handle(.mouseDown(point, clickCount: 1, modifiers: []))
+        controller.handle(.mouseUp(point, modifiers: []))
+    }
+
+    func toolbarPoint(_ controller: OverlayController, _ item: AllInOneToolbarItem) throws -> CGPoint {
+        let frame = try #require(controller.toolbarFrame)
+        let hud = try #require(controller.hud)
+        let slot = try #require(AllInOneToolbarLayout.layout(for: hud.mode).frame(of: item))
+        return CGPoint(x: frame.minX + slot.midX, y: frame.minY + slot.midY)
+    }
+
+    @Test func hudRestoresTheLastAreaEditableWithTheToolbarAndKeepsTheCursor() throws {
+        let box = SurfaceBox()
+        let controller = makeController(pointer: CGPoint(x: 1280, y: 1300), box: box)
+        presentHUD(controller)
+        #expect(controller.isPresented)
+        #expect(controller.selection == Self.hudArea)
+        #expect(controller.phase == .adjusting)
+        #expect(controller.hud?.restoredArea == true)
+        // The toolbar and handles are clicked, so the cursor stays.
+        #expect(cursor.hidden == 0)
+        let state = try #require(box.surfaces[1]?.lastState)
+        #expect(state.hud?.mode == .screenshot)
+        #expect(state.hud?.toolbarOrigin != nil)
+        #expect(box.surfaces[2]?.lastState?.hud?.toolbarOrigin == nil)
+        #expect(box.surfaces[1]?.shown.first?.makeKey == true)
+        // Centered, 28 pt above the bottom of the visible frame.
+        let frame = try #require(controller.toolbarFrame)
+        #expect(Double(frame.height) == Theme.HUD.barHeight)
+        #expect(abs(frame.midX - 1280) <= 0.5)
+        #expect(Double(frame.maxY) == 1440 - Theme.HUD.edgeInset)
+        #expect(controller.toolbarEdge == .bottom)
+    }
+
+    @Test func hudWithoutAUsableLastAreaShowsTheCrosshair() throws {
+        let box = SurfaceBox()
+        let controller = makeController(pointer: CGPoint(x: 600, y: 600), box: box)
+        // Stored on a display layout that is gone: no restore (D58).
+        let stale = LastArea(displayID: 1, displayFrame: CGRect(x: 0, y: 0, width: 1512, height: 982), rect: Self.hudArea)
+        controller.presentHUD(AllInOneState(lastArea: stale, displays: displays), displays: displays) { _ in }
+        #expect(controller.selection == nil)
+        #expect(controller.phase == .idle)
+        let state = try #require(box.surfaces[1]?.lastState)
+        #expect(state.drawsCrosshair)
+        #expect(!state.drawsHints)
+    }
+
+    @Test func hudReturnConfirmsTheAreaAndDoubleClickInsideToo() async {
+        let controller = makeController(pointer: CGPoint(x: 1280, y: 1300))
+        presentHUD(controller)
+        // Instant capture does not apply: dragging a new area leaves it editable.
+        drag(controller, from: CGPoint(x: 100, y: 100), to: CGPoint(x: 300, y: 260))
+        #expect(controller.isPresented)
+        #expect(controller.selection == CGRect(x: 100, y: 100, width: 200, height: 160))
+        #expect(controller.hud?.area == CGRect(x: 100, y: 100, width: 200, height: 160))
+        controller.handle(key(36))
+        #expect(await controller.selection() == .area(displayID: 1, rect: CGRect(x: 100, y: 100, width: 200, height: 160)))
+        #expect(!controller.isPresented)
+
+        presentHUD(controller)
+        controller.handle(.mouseDown(CGPoint(x: 800, y: 400), clickCount: 2, modifiers: []))
+        #expect(await controller.selection() == .area(displayID: 1, rect: Self.hudArea))
+    }
+
+    @Test func hudClickOutsideKeepsTheAreaAndArrowsNudgeIt() {
+        let controller = makeController(pointer: CGPoint(x: 1280, y: 1300))
+        presentHUD(controller)
+        click(controller, CGPoint(x: 50, y: 50))
+        #expect(controller.selection == Self.hudArea)
+        controller.handle(key(124))
+        #expect(controller.selection == Self.hudArea.offsetBy(dx: 1, dy: 0))
+        controller.handle(key(125, .shift))
+        #expect(controller.selection == Self.hudArea.offsetBy(dx: 1, dy: 10))
+        #expect(controller.hud?.area == Self.hudArea.offsetBy(dx: 1, dy: 10))
+        // Inside drags move it, handles resize it.
+        controller.handle(.mouseDown(CGPoint(x: 600, y: 400), clickCount: 1, modifiers: []))
+        controller.handle(.mouseDragged(CGPoint(x: 610, y: 400), modifiers: []))
+        controller.handle(.mouseUp(CGPoint(x: 610, y: 400), modifiers: []))
+        #expect(controller.selection?.minX == 411)
+        #expect(controller.isPresented)
+    }
+
+    @Test func hudKeysPickTheTargetAndToggleTheMode() {
+        let box = SurfaceBox()
+        var modes: [HUDMode] = []
+        let controller = makeController(pointer: CGPoint(x: 1280, y: 1300), box: box)
+        presentHUD(controller) { modes.append($0) }
+        controller.handle(key(19))
+        #expect(controller.hud?.target == .window)
+        #expect(box.surfaces[1]?.lastState?.mode == .window)
+        controller.handle(key(20))
+        #expect(controller.hud?.target == .fullscreen)
+        controller.handle(key(48))
+        #expect(controller.hud?.target == .window)
+        controller.handle(key(48))
+        #expect(controller.hud?.target == .area)
+        // Switching back keeps the area.
+        #expect(controller.selection == Self.hudArea)
+        #expect(controller.phase == .adjusting)
+        controller.handle(key(15))
+        #expect(controller.hud?.mode == .record)
+        #expect(modes == [.record])
+        #expect(box.surfaces[1]?.lastState?.showsFrozenImage == false)
+        #expect(box.surfaces[1]?.lastState?.hud?.mode == .record)
+        // Cmd+R is not R.
+        controller.handle(key(15, .command))
+        #expect(controller.hud?.mode == .record)
+        controller.handle(key(53))
+        #expect(!controller.isPresented)
+    }
+
+    @Test func hudRecordModeHoldsThePanelsForTheCountdown() async {
+        let box = SurfaceBox()
+        var keys: [CountdownKey] = []
+        let controller = makeController(pointer: CGPoint(x: 1280, y: 1300), box: box)
+        controller.onCountdownKey = { keys.append($0) }
+        presentHUD(controller, mode: .record)
+        controller.handle(key(36))
+        #expect(await controller.selection() == .record(.area(Self.hudArea)))
+        #expect(controller.isHoldingForRecording)
+        #expect(box.surfaces[1]?.hideCount == 0)
+        let held = box.surfaces[1]?.lastState
+        #expect(held?.hud?.recordTarget == Self.hudArea)
+        #expect(held?.localToolbar == nil)
+        #expect(held?.localSelection == nil)
+
+        controller.showCountdown(3)
+        #expect(box.surfaces[1]?.lastState?.hud?.countdown == 3)
+        #expect(box.surfaces[2]?.lastState?.hud?.countdown == nil)
+        controller.showCountdown(2)
+        #expect(box.surfaces[1]?.lastState?.hud?.countdown == 2)
+        // Only Return and Esc do anything now.
+        controller.handle(key(19))
+        controller.handle(.mouseDown(CGPoint(x: 10, y: 10), clickCount: 1, modifiers: []))
+        controller.handle(key(36))
+        controller.handle(key(53))
+        #expect(keys == [.startNow, .cancel])
+        #expect(controller.isPresented)
+        controller.dismiss()
+        #expect(!controller.isPresented)
+        #expect(box.surfaces[1]?.hideCount == 1)
+        #expect(cursor.isBalanced)
+    }
+
+    @Test func hudRefusesAnAreaTooSmallToRecord() async {
+        let box = SurfaceBox()
+        let controller = makeController(pointer: CGPoint(x: 1280, y: 1300), box: box)
+        // 30 x 30 pt is 60 x 60 px at 2x, under the 64 px minimum.
+        presentHUD(controller, mode: .record, area: CGRect(x: 100, y: 100, width: 30, height: 30))
+        controller.handle(key(36))
+        #expect(controller.hudNotice == "Too small to record")
+        #expect(box.surfaces[1]?.lastState?.hud?.notice == "Too small to record")
+        #expect(!controller.isHoldingForRecording)
+        // Screenshot mode takes the same area.
+        controller.handle(key(15))
+        #expect(controller.hudNotice == nil)
+        controller.handle(key(36))
+        #expect(await controller.selection() == .area(displayID: 1, rect: CGRect(x: 100, y: 100, width: 30, height: 30)))
+    }
+
+    @Test func hudWindowAndFullscreenTargetsConfirmOnClick() async {
+        let controller = makeController(pointer: CGPoint(x: 1280, y: 1300))
+        presentHUD(controller)
+        controller.updateWindows(FakeWindowSource.sample)
+        controller.handle(key(19))
+        // The Notes window of the sample is frontmost at this point.
+        let inside = CGPoint(x: 600, y: 300)
+        controller.handle(.mouseMoved(inside))
+        #expect(controller.hoveredWindow?.id == 202)
+        click(controller, inside)
+        let picked = await controller.selection()
+        if case .window(let chosen, _) = picked {
+            #expect(chosen.id == 202)
+        } else {
+            Issue.record("expected a window, got \(picked)")
+        }
+
+        presentHUD(controller, mode: .record)
+        controller.handle(key(20))
+        controller.handle(.mouseMoved(CGPoint(x: 3000, y: 700)))
+        click(controller, CGPoint(x: 3000, y: 700))
+        #expect(await controller.selection() == .record(.fullscreen(displayID: 2)))
+        #expect(controller.recordTarget == displays[1].frameTopLeft)
+        controller.dismiss()
+
+        presentHUD(controller)
+        controller.handle(key(20))
+        controller.handle(.mouseMoved(CGPoint(x: 500, y: 500)))
+        controller.handle(key(36))
+        #expect(await controller.selection() == .fullscreen(displayID: 1))
+    }
+
+    @Test func hudToolbarClicksRunTheirControls() async throws {
+        var modes: [HUDMode] = []
+        let controller = makeController(pointer: CGPoint(x: 1280, y: 1300))
+        presentHUD(controller) { modes.append($0) }
+        #expect(controller.toolbarItem(at: CGPoint(x: 10, y: 10)) == nil)
+        click(controller, try toolbarPoint(controller, .target(.window)))
+        #expect(controller.hud?.target == .window)
+        click(controller, try toolbarPoint(controller, .target(.area)))
+        click(controller, try toolbarPoint(controller, .mode(.record)))
+        #expect(controller.hud?.mode == .record)
+        click(controller, try toolbarPoint(controller, .mode(.screenshot)))
+        #expect(modes == [.record, .screenshot])
+        // A press on the toolbar never starts a drag, even when it moves.
+        let primary = try toolbarPoint(controller, .primary)
+        controller.handle(.mouseDown(primary, clickCount: 1, modifiers: []))
+        #expect(await controller.selection() == .area(displayID: 1, rect: Self.hudArea))
+
+        presentHUD(controller)
+        click(controller, try toolbarPoint(controller, .close))
+        #expect(await controller.selection() == .cancelled)
+    }
+
+    @Test func hudOptionsMenuShowsTheModesSettingsAndReportsAChoice() throws {
+        let box = SurfaceBox()
+        var chosen: [AllInOneOption] = []
+        let controller = makeController(pointer: CGPoint(x: 1280, y: 1300), box: box)
+        var settings = SnapCore.Settings()
+        settings.recording.countdownSeconds = 5
+        let microphones = [MicrophoneDevice(id: "m1", name: "Studio Mic")]
+        controller.hudOptionItems = { AllInOneOptions.items(mode: $0, settings: settings, microphones: microphones) }
+        controller.onHUDOption = { chosen.append($0) }
+        presentHUD(controller, mode: .record)
+        click(controller, try toolbarPoint(controller, .options))
+        let menu = try #require(controller.lastOptionsMenu)
+        #expect(box.surfaces[1]?.poppedMenus.count == 1)
+        let titles = menu.items.filter { !$0.isHidden && !$0.isSeparatorItem }.map(\.title)
+        #expect(titles.contains("Studio Mic"))
+        #expect(titles.contains("Record System Audio"))
+        let five = try #require(menu.items.first { $0.title == "5 seconds" })
+        #expect(five.state == .on)
+        _ = five.target?.perform(five.action, with: five)
+        #expect(chosen == [.countdown(5)])
+        #expect(controller.isPresented)
+    }
+
+    @Test func hudToolbarMovesToTheTopWhenTheAreaSitsUnderIt() throws {
+        let controller = makeController(pointer: CGPoint(x: 1280, y: 1300))
+        presentHUD(controller, area: CGRect(x: 800, y: 1200, width: 900, height: 220))
+        #expect(controller.toolbarEdge == .top)
+        #expect(controller.toolbarFrame.map { Double($0.minY) } == Theme.HUD.edgeInset)
+        // Moving the area away brings the toolbar back down.
+        controller.handle(.mouseDown(CGPoint(x: 1000, y: 1300), clickCount: 1, modifiers: []))
+        controller.handle(.mouseDragged(CGPoint(x: 1000, y: 500), modifiers: []))
+        controller.handle(.mouseUp(CGPoint(x: 1000, y: 500), modifiers: []))
+        #expect(controller.toolbarEdge == .bottom)
+    }
+
+    @Test func hudRendersTheMockupSceneInBothAppearances() throws {
+        let light = try #require(HUDDemo.renderHUD(dark: false))
+        let dark = try #require(HUDDemo.renderHUD(dark: true))
+        #expect(light.width == 2560 && light.height == 1600)
+        #expect(try #require(ImageStats.luminance(light)).standardDeviation >= 4)
+        // The toolbar (mockup region 360 728 560 44) is the dark chip in both appearances.
+        let toolbar = CGRect(x: 380 * 2, y: 734 * 2, width: 60 * 2, height: 30 * 2)
+        #expect(try #require(ImageStats.luminance(light, region: toolbar)).mean < 90)
+        let lightMean = try #require(ImageStats.luminance(light)).mean
+        let darkMean = try #require(ImageStats.luminance(dark)).mean
+        #expect(lightMean - darkMean >= 40)
+        // The restored area is undimmed: brighter than the dim beside it.
+        let inside = try #require(ImageStats.luminance(light, region: CGRect(x: 1400, y: 500, width: 100, height: 100)))
+        let outside = try #require(ImageStats.luminance(light, region: CGRect(x: 100, y: 1300, width: 100, height: 100)))
+        #expect(inside.mean > outside.mean)
+
+        let countdown = try #require(HUDDemo.renderCountdown(dark: false))
+        let disc = CGRect(x: (650 - 30) * 2, y: (350 - 30) * 2, width: 120, height: 120)
+        #expect(try #require(ImageStats.luminance(countdown, region: disc)).mean < 120)
     }
 }

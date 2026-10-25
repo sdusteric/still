@@ -77,10 +77,15 @@ private final class StoreScratch {
         #expect(settings.general.fileNamePattern == "Snap {yyyy}-{MM}-{dd} at {HH}.{mm}.{ss}")
         #expect(settings.shortcuts.captureFullscreen == .commandShift3)
         #expect(settings.shortcuts.captureArea == .commandShift4)
-        #expect(settings.shortcuts.captureWindow == .commandShift5)
+        #expect(settings.shortcuts.allInOne == .commandShift5)
+        #expect(settings.shortcuts.captureWindow == nil)
         #expect(settings.shortcuts.captureArea?.modifiers == 768)
         #expect(settings.shortcuts.applyBackground == nil)
         #expect(settings.shortcuts.openInAnnotate == nil)
+        for action in [ShortcutAction.recordScreen, .stopRecording, .pinLastCapture, .openHistory] {
+            #expect(settings.shortcuts[action] == nil)
+        }
+        #expect(settings.version == 2)
     }
 
     @Test func missingKeysDecodeToDefaults() throws {
@@ -100,7 +105,7 @@ private final class StoreScratch {
         let reloaded = SettingsStore(fileURL: scratch.file("settings.json"))
         try reloaded.load()
         #expect(reloaded.settings.shortcuts.captureArea == nil)
-        #expect(reloaded.settings.shortcuts.captureWindow == .commandShift5)
+        #expect(reloaded.settings.shortcuts.allInOne == .commandShift5)
     }
 
     @Test func updateClampsAutoCloseSeconds() throws {
@@ -133,6 +138,46 @@ private final class StoreScratch {
         #expect(reloaded.state == store.state)
         #expect(reloaded.state.screenRecordingRequested == requested)
         #expect(reloaded.state.captureCount == 4)
+    }
+
+    @Test func stateM2FieldsRoundTripAndAVersion1StateStillLoads() throws {
+        let scratch = try StoreScratch()
+        let url = scratch.file("state.json")
+        try Data(#"{"version": 1, "captureCount": 7, "onboardingCompleted": true}"#.utf8).write(to: url)
+        let store = StateStore(fileURL: url)
+        #expect(try store.load() == .loaded)
+        #expect(store.state.captureCount == 7)
+        #expect(store.state.lastArea == nil)
+        #expect(store.state.hudMode == .screenshot)
+        #expect(store.state.hudTarget == .area)
+        #expect(store.state.historyWindowFrame == nil)
+        #expect(store.state.microphoneRequested == nil)
+
+        let area = LastArea(
+            displayID: 3, displayFrame: CGRect(x: 0, y: 0, width: 2560, height: 1440),
+            rect: CGRect(x: 330.5, y: 150, width: 640, height: 400)
+        )
+        let requested = Date(timeIntervalSince1970: 1_792_843_200)
+        try store.update { state in
+            state.lastArea = area
+            state.hudMode = .record
+            state.hudTarget = .window
+            state.historyWindowFrame = CGRect(x: 100, y: 200, width: 760, height: 560)
+            state.microphoneRequested = requested
+        }
+        let reloaded = StateStore(fileURL: url)
+        #expect(try reloaded.load() == .loaded)
+        #expect(reloaded.state == store.state)
+        #expect(reloaded.state.lastArea == area)
+        #expect(reloaded.state.hudMode == .record)
+        #expect(reloaded.state.microphoneRequested == requested)
+    }
+
+    @Test func anUnknownHUDModeFallsBackInsteadOfDiscardingTheState() throws {
+        let json = #"{"version": 2, "captureCount": 2, "hudMode": "video", "hudTarget": "area"}"#
+        let state = try JSONDecoder().decode(SnapState.self, from: Data(json.utf8))
+        #expect(state.hudMode == .screenshot)
+        #expect(state.captureCount == 2)
     }
 
     @Test func corruptFileIsMovedAsideNotDeleted() throws {
@@ -191,7 +236,8 @@ private final class StoreScratch {
         let userHome = "/Users/example"
         let custom = SnapPaths(environment: ["SNAP_HOME": scratch.url.path(percentEncoded: false), "HOME": userHome])
         #expect(!custom.isDefaultHome)
-        #expect(custom.defaultSaveFolder.path(percentEncoded: false).hasPrefix(scratch.url.path(percentEncoded: false)))
+        // Both sides normalized: under /private/tmp the existing home loses its /private prefix.
+        #expect(SnapPaths.normalizedPath(custom.defaultSaveFolder).hasPrefix(SnapPaths.normalizedPath(scratch.url)))
         #expect(custom.defaultSaveFolder.lastPathComponent == "Saved")
         #expect(!custom.defaultSaveFolder.path(percentEncoded: false).contains("Downloads"))
 
@@ -208,6 +254,18 @@ private final class StoreScratch {
 
         let empty = SnapPaths(environment: ["SNAP_HOME": "", "HOME": userHome])
         #expect(empty.isDefaultHome)
+    }
+
+    @Test func pathsUnderPrivateTmpCompareEqualToTheirTmpForm() {
+        let existing = URL(filePath: "/private/tmp", directoryHint: .isDirectory)
+        let missing = URL(filePath: "/private/tmp/snap-\(UUID().uuidString)/Saved", directoryHint: .isDirectory)
+        #expect(SnapPaths.normalizedPath(existing) == "/tmp/")
+        #expect(SnapPaths.normalizedPath(missing).hasPrefix("/tmp/snap-"))
+        #expect(SnapPaths.normalizedPath(URL(filePath: "/private/tmpfoo")) == "/private/tmpfoo")
+        let paths = SnapPaths(environment: ["SNAP_HOME": "/private/tmp/snap-home-x", "HOME": "/Users/example"])
+        var settings = Settings()
+        settings.general.saveFolderPath = "/tmp/snap-home-x/Elsewhere"
+        #expect(paths.saveFolder(for: settings).lastPathComponent == "Elsewhere")
     }
 
     @Test func storedSaveFolderOutsideTestHomeIsIgnored() throws {

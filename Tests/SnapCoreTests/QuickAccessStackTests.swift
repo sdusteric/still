@@ -244,4 +244,40 @@ import Testing
         let closed = stack.setHeight(300, for: "b")
         #expect(closed == [Stack.Closure(id: "a", reason: .tooTall)])
     }
+
+    // MARK: Card kind (design 20.6)
+
+    @Test func cardsRememberTheirKind() {
+        var (stack, _) = makeStack()
+        stack.push(id: "shot", height: 163)
+        stack.push(id: "movie", height: 166, kind: .video)
+        #expect(stack.kind(of: "shot") == .screenshot)
+        #expect(stack.kind(of: "movie") == .video)
+        #expect(stack.kind(of: "gone") == nil)
+    }
+
+    @Test func videoCardsOfferOpenAndFileCopyButNotEditsOrPin() {
+        let video = Stack.CardKind.video
+        #expect(video.canOpen && video.copiesFileURL)
+        #expect(!video.canEdit && !video.canPin)
+        let shot = Stack.CardKind.screenshot
+        #expect(shot.canEdit && shot.canPin)
+        #expect(!shot.canOpen && !shot.copiesFileURL)
+    }
+
+    @Test func pinningClosesAScreenshotCardButNotAVideoCard() {
+        var (stack, _) = makeStack()
+        stack.push(id: "shot", height: 163)
+        stack.push(id: "movie", height: 166, kind: .video)
+        #expect(stack.pinned("movie") == nil)
+        #expect(stack.pinned("shot") == Stack.Closure(id: "shot", reason: .pinned))
+        #expect(stack.ids == ["movie"])
+    }
+
+    @Test func videoCardsStackAndExpireLikeScreenshots() {
+        var (stack, clock) = makeStack()
+        stack.push(id: "movie", height: 166, kind: .video)
+        clock.advance(by: 15)
+        #expect(stack.expire() == [Stack.Closure(id: "movie", reason: .autoClose)])
+    }
 }

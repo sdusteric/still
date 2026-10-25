@@ -55,6 +55,20 @@ public struct AnnotationDocument: Sendable, Equatable {
         items.firstIndex { $0.id == id }
     }
 
+    // MARK: Steps
+
+    /// Each step's number: its order among the step items, so deleting step 2 renumbers 3 to 2.
+    public var stepNumbers: [UUID: Int] {
+        var numbers: [UUID: Int] = [:]
+        for item in items where item.kind == .step { numbers[item.id] = numbers.count + 1 }
+        return numbers
+    }
+
+    /// The number shown on step `id`, nil when `id` is not a step.
+    public func stepNumber(of id: UUID) -> Int? {
+        stepNumbers[id]
+    }
+
     // MARK: Hit-testing
 
     /// The topmost item under `point`, nil when none.

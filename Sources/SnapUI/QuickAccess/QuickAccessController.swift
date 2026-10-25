@@ -3,22 +3,46 @@ import Observation
 import SnapCore
 import SwiftUI
 
-/// One capture handed to the Quick Access stack.
+/// One capture handed to the Quick Access stack: a screenshot, or a finished recording whose
+/// thumbnail is its poster (design 20.6).
 public struct QuickAccessItem: Sendable {
     public var id: String
     public var thumbnail: CGImage
-    /// Size in points, shown in the dimension pill.
+    /// Size in points, shown in the dimension pill. For a recording, the poster's size.
     public var pointSize: CGSize
-    /// The clipboard already holds it, so the card shows "Copied" for 2 s.
+    /// The clipboard already holds it (the image, or a recording's file URL), so the card shows
+    /// "Copied" for 2 s.
     public var copied: Bool
     public var savedURL: URL?
+    public var kind: QuickAccessStack.CardKind
+    /// A recording's length, shown in the duration pill in place of the dimension pill.
+    public var durationSeconds: Double?
+    /// A short note shown on the card for 4 s, such as "Stopped: the window closed" or
+    /// "No microphone" (design 20.6, D69).
+    public var note: String?
+    /// A recording whose file does not play: the card offers Reveal in Finder and Close only.
+    public var revealOnly: Bool
 
-    public init(id: String, thumbnail: CGImage, pointSize: CGSize, copied: Bool = true, savedURL: URL? = nil) {
+    public init(
+        id: String,
+        thumbnail: CGImage,
+        pointSize: CGSize,
+        copied: Bool = true,
+        savedURL: URL? = nil,
+        kind: QuickAccessStack.CardKind = .screenshot,
+        durationSeconds: Double? = nil,
+        note: String? = nil,
+        revealOnly: Bool = false
+    ) {
         self.id = id
         self.thumbnail = thumbnail
         self.pointSize = pointSize
         self.copied = copied
         self.savedURL = savedURL
+        self.kind = kind
+        self.durationSeconds = durationSeconds
+        self.note = note
+        self.revealOnly = revealOnly
     }
 }
 
@@ -38,6 +62,21 @@ public struct QuickAccessThumbnail: Sendable {
 /// What a card button or key does.
 public enum QuickAccessCardAction: Sendable, Hashable, CaseIterable {
     case copy, copyFile, save, background, backgroundEditor, annotate, reveal, close
+    /// Pin to Screen (design 20.2): screenshot cards only.
+    case pin
+    /// Open the recording in the default player (design 20.6): video cards only.
+    case open
+
+    /// Whether the action exists on a card of `kind`. Reveal also needs a file to show, which the
+    /// controller checks when it runs.
+    public func isAvailable(on kind: QuickAccessStack.CardKind) -> Bool {
+        switch self {
+        case .background, .backgroundEditor, .annotate: kind.canEdit
+        case .pin: kind.canPin
+        case .open: kind.canOpen
+        case .copy, .copyFile, .save, .reveal, .close: true
+        }
+    }
 }
 
 /// What the app does for each card action. Supplied by the app wiring, so this UI does not depend
@@ -54,8 +93,13 @@ public struct QuickAccessActions {
     public var openBackgroundEditor: @MainActor (String) -> Void
     public var annotate: @MainActor (String) -> Void
     public var reveal: @MainActor (URL) -> Void
-    /// The item's current PNG in `SNAP_HOME/history/<id>/`, for drag-out.
+    /// The item's current PNG in `SNAP_HOME/history/<id>/`, or a recording's mp4, for drag-out
+    /// and for Reveal on a video card that was not saved.
     public var dragURL: @MainActor (String) -> URL?
+    /// Pins the card's screenshot (design 20.2); true when a pin opened, which closes the card.
+    public var pin: @MainActor (String) async -> Bool
+    /// Opens a recording in the default player.
+    public var open: @MainActor (String) -> Void
     /// A card left the stack.
     public var closed: @MainActor (String, QuickAccessStack.CloseReason) -> Void
 
@@ -68,6 +112,8 @@ public struct QuickAccessActions {
         annotate: @escaping @MainActor (String) -> Void = { _ in },
         reveal: @escaping @MainActor (URL) -> Void = { _ in },
         dragURL: @escaping @MainActor (String) -> URL? = { _ in nil },
+        pin: @escaping @MainActor (String) async -> Bool = { _ in false },
+        open: @escaping @MainActor (String) -> Void = { _ in },
         closed: @escaping @MainActor (String, QuickAccessStack.CloseReason) -> Void = { _, _ in }
     ) {
         self.copy = copy
@@ -78,13 +124,17 @@ public struct QuickAccessActions {
         self.annotate = annotate
         self.reveal = reveal
         self.dragURL = dragURL
+        self.pin = pin
+        self.open = open
         self.closed = closed
     }
 }
 
-/// Keys on a hovered card (design 8): C, S, A, B, Delete or Esc, and Option-C for Copy File.
+/// Keys on a hovered card (design 8, 20.2, 20.6): C, S, A, B, P, Delete or Esc, and Option-C for
+/// Copy File on a screenshot card; O, S, R, C, Delete or Esc on a video card. A key whose action
+/// the hovered card lacks does nothing.
 public enum QuickAccessKey: Sendable, Hashable {
-    case copy, copyFile, save, annotate, background, close
+    case copy, copyFile, save, annotate, background, close, pin, open, reveal
 
     /// `characters` is `charactersIgnoringModifiers`, so Option-C still reads as "c".
     public init?(characters: String?, keyCode: UInt16, modifiers: NSEvent.ModifierFlags = []) {
@@ -107,6 +157,9 @@ public enum QuickAccessKey: Sendable, Hashable {
         case "s": self = .save
         case "a": self = .annotate
         case "b": self = .background
+        case "p": self = .pin
+        case "o": self = .open
+        case "r": self = .reveal
         default: return nil
         }
     }
@@ -119,6 +172,9 @@ public enum QuickAccessKey: Sendable, Hashable {
         case .annotate: .annotate
         case .background: .background
         case .close: .close
+        case .pin: .pin
+        case .open: .open
+        case .reveal: .reveal
         }
     }
 }
@@ -223,9 +279,12 @@ public final class QuickAccessController {
     @ObservationIgnored private let optionHeld: @MainActor () -> Bool
     @ObservationIgnored private var timerTask: Task<Void, Never>?
     @ObservationIgnored private var copiedUntil: [String: TimeInterval] = [:]
+    @ObservationIgnored private var noteUntil: [String: TimeInterval] = [:]
     @ObservationIgnored private var confirmedUntil: [String: TimeInterval] = [:]
     @ObservationIgnored private var hidePanelAt: TimeInterval?
     @ObservationIgnored public private(set) var isPanelVisible = false
+    /// The visible frame the panel was last placed in, for `thumbnailFrame(for:)`.
+    @ObservationIgnored private var lastVisibleFrame: CGRect?
 
     /// - Parameters:
     ///   - visibleFrame: `visibleFrame` of the screen under the pointer, `NSScreen` coordinates.
@@ -281,17 +340,21 @@ public final class QuickAccessController {
         let frame = visibleFrame()
         stack.configuration.maxStackHeight = frame.map(QuickAccessLayout.maxStackHeight(visibleFrame:))
         let height = QuickAccessLayout.cardHeight(pointSize: item.pointSize, size: settings.size)
-        let closed = stack.push(id: item.id, height: height)
+        let closed = stack.push(id: item.id, height: height, kind: item.kind)
         cards.removeAll { $0.id == item.id }
         removeModels(for: closed)
+        if let frame { lastVisibleFrame = frame }
 
         let model = QuickAccessCardModel(
             id: item.id, thumbnail: item.thumbnail, pointSize: item.pointSize,
-            size: settings.size, corner: settings.corner
+            size: settings.size, corner: settings.corner, kind: item.kind, durationSeconds: item.durationSeconds
         )
         model.showsCopied = item.copied
         model.savedURL = item.savedURL
+        model.note = item.note
+        model.revealOnly = item.revealOnly
         if item.copied { copiedUntil[item.id] = clock.now() + Theme.QuickAccess.copiedChipSeconds }
+        if item.note != nil { noteUntil[item.id] = clock.now() + Theme.QuickAccessM2.noteSeconds }
         withAnimation(reduceMotion() ? .easeOut(duration: Theme.Motion.reducedMotionFade) : Theme.Motion.spring) {
             cards.insert(model, at: 0)
         }
@@ -307,7 +370,10 @@ public final class QuickAccessController {
             card.thumbnail = thumbnail.image
             card.thumbnailVersion += 1
         }
-        card.pointSize = thumbnail.pointSize
+        // M2: the card's height and the cards around it move on the spring; B again retargets it.
+        withAnimation(QuickAccessMotion.reflow(reduceMotion: reduceMotion())) {
+            card.pointSize = thumbnail.pointSize
+        }
         card.backgroundApplied = thumbnail.backgroundApplied
         let height = QuickAccessLayout.cardHeight(pointSize: thumbnail.pointSize, size: settings.size)
         let closed = stack.setHeight(height, for: id)
@@ -332,14 +398,14 @@ public final class QuickAccessController {
     private func removeModels(for closures: [QuickAccessStack.Closure]) {
         guard !closures.isEmpty else { return }
         let ids = Set(closures.map(\.id))
-        let animation: Animation = reduceMotion()
-            ? .easeOut(duration: Theme.Motion.reducedMotionFade)
-            : Theme.Motion.exit(Theme.Motion.dismiss)
-        withAnimation(animation) {
+        // The closing cards carry their own exit curve in the removal transition (M6); the ones
+        // that stay close the gap on the spring (M2).
+        withAnimation(QuickAccessMotion.reflow(reduceMotion: reduceMotion())) {
             cards.removeAll { ids.contains($0.id) }
         }
         for closure in closures {
             copiedUntil[closure.id] = nil
+            noteUntil[closure.id] = nil
             confirmedUntil[closure.id] = nil
             actions.closed(closure.id, closure.reason)
         }
@@ -411,6 +477,14 @@ public final class QuickAccessController {
     public func swipeEnded(_ id: String, translation: Double, velocity: Double) -> Bool {
         guard let card = card(id) else { return false }
         if swipeRule.shouldDismiss(translation: translation, velocity: velocity) {
+            // M7: the release velocity carries the card on toward the edge while it fades.
+            if !reduceMotion() {
+                let edge = swipeRule.edgeSign
+                card.swipeDismissed = true
+                withAnimation(QuickAccessMotion.swipeRelease(velocity: velocity * edge)) {
+                    card.swipeOffset += abs(Theme.Motion.cardDismissOffsetX) * edge
+                }
+            }
             close(id, reason: .dismissed)
             return true
         }
@@ -422,19 +496,21 @@ public final class QuickAccessController {
 
     // MARK: Actions
 
-    /// The action a key performs on the hovered card, if any card is hovered.
+    /// The action a key performs on the hovered card, if any card is hovered and has that action.
     public func handleKey(_ key: QuickAccessKey) -> Bool {
-        guard let card = hoveredCard else { return false }
+        guard let card = hoveredCard, card.allows(key.action) else { return false }
         let id = card.id
         Task { await self.perform(key.action, on: id) }
         return true
     }
 
     public func perform(_ action: QuickAccessCardAction, on id: String) async {
-        guard card(id) != nil else { return }
+        guard let model = card(id), model.allows(action) else { return }
         switch action {
         case .copy, .copyFile:
-            let copied = action == .copyFile ? await actions.copyFile(id) : await actions.copy(id)
+            // A recording is copied as its file URL (design D67), with or without Option.
+            let asFile = action == .copyFile || model.kind.copiesFileURL
+            let copied = asFile ? await actions.copyFile(id) : await actions.copy(id)
             guard copied else { return }
             confirm(id, closeAfter: .copy)
         case .save:
@@ -449,10 +525,40 @@ public final class QuickAccessController {
         case .annotate:
             actions.annotate(id)
         case .reveal:
-            if let url = card(id)?.savedURL { actions.reveal(url) }
+            if let url = revealURL(for: id) { actions.reveal(url) }
         case .close:
             close(id, reason: .dismissed)
+        case .pin:
+            // The pin opens from the card thumbnail's frame (M17) while the card leaves with M6.
+            guard await actions.pin(id), let closure = stack.pinned(id) else { return }
+            removeModels(for: [closure])
+        case .open:
+            actions.open(id)
         }
+    }
+
+    /// The saved copy when there is one; a video card also reveals its mp4 in history.
+    public func revealURL(for id: String) -> URL? {
+        guard let model = card(id) else { return nil }
+        if let saved = model.savedURL { return saved }
+        return model.kind == .video ? actions.dragURL(id) : nil
+    }
+
+    /// Where a card's thumbnail is on screen, in `NSScreen` coordinates, while the panel is up:
+    /// the start frame of the pin's grow animation (20.12 M17).
+    public func thumbnailFrame(for id: String) -> CGRect? {
+        guard let visible = lastVisibleFrame, let index = cards.firstIndex(where: { $0.id == id }) else { return nil }
+        let panel = QuickAccessLayout.panelFrame(visibleFrame: visible, corner: settings.corner, size: settings.size)
+        let margin = QuickAccessLayout.shadowMargin
+        let gap = Theme.QuickAccess.cardGap
+        let before = cards[..<index].reduce(0) { $0 + $1.cardSize.height + gap }
+        let card = cards[index].cardSize
+        let left = settings.corner == .bottomLeft || settings.corner == .topLeft
+        let bottom = settings.corner == .bottomLeft || settings.corner == .bottomRight
+        let x = left ? panel.minX + margin : panel.maxX - margin - card.width
+        let y = bottom ? panel.minY + margin + before : panel.maxY - margin - before - card.height
+        let padding = Theme.QuickAccess.cardPadding
+        return CGRect(x: x, y: y, width: card.width, height: card.height).insetBy(dx: padding, dy: padding)
     }
 
     /// The pressed button shows a check for 900 ms (17.7 M5b); then the card closes when the
@@ -498,6 +604,13 @@ public final class QuickAccessController {
         if !expired.isEmpty {
             removeModels(for: expired)
             return
+        }
+
+        for (id, until) in noteUntil where until <= now {
+            noteUntil[id] = nil
+            if let card = card(id) {
+                withAnimation(.easeOut(duration: Theme.Motion.copiedChip)) { card.note = nil }
+            }
         }
 
         for (id, until) in copiedUntil where until <= now {
@@ -556,6 +669,7 @@ public final class QuickAccessController {
             }
         }
         deadlines.append(contentsOf: copiedUntil.values)
+        deadlines.append(contentsOf: noteUntil.values)
         deadlines.append(contentsOf: confirmedUntil.values)
         if let hidePanelAt { deadlines.append(hidePanelAt) }
         return deadlines.min().map { max($0 - now, 0) }

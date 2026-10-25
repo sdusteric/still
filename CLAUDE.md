@@ -30,24 +30,44 @@ swift scripts/winlist.swift <pid>                     # on-screen windows of one
 
 ## Layout
 
-- `SnapCore`: Foundation, CoreGraphics, ImageIO, CoreImage. No AppKit. Shared types in `Model/`
-  (`DisplayInfo`, `WindowInfo`, `CapturedImage`, `CaptureMode`, `CaptureItem`, `SnapPaths`,
-  `Settings`, `SettingsStore`, `StateStore`, `DocumentStore`, `AtomicFile`, `Log`), protocols in
-  `Pipeline/` (`CaptureSource`, `WindowSource`, `OverlayPresenter`, `Clock`) and fakes in `Fakes/`
-  (`FakeCaptureSource`, `FakeWindowSource`, `FakeClock`, `SyntheticImages`, `SyntheticFixture`).
+- `SnapCore`: Foundation, CoreGraphics, ImageIO, CoreImage, and AVFoundation for the recording
+  fakes, probe, poster and audio mix export (never `AVCaptureDevice`). No AppKit. Shared types in
+  `Model/` (`DisplayInfo`, `WindowInfo`, `CapturedImage`, `CaptureMode` with `CaptureKind`,
+  `CaptureState`, `HUDMode` and `PixelSize`, `CaptureItem`, `SnapPaths`, `Settings` with
+  `SettingsMigration`, `SettingsStore`, `StateStore`, `DocumentStore`, `AtomicFile`, `HistoryStore`,
+  `Log`), protocols in `Pipeline/` (`CaptureSource`, `WindowSource`, `OverlayPresenter`, `Clock`),
+  pure logic in `Logic/` (`PinBoard`, `HistoryQuery`, `AllInOneState`, `MenuModel`, ...), recording
+  in `Recording/` (`RecordingPlan`, `RecordingSource`, `RecordingController`, `VideoProbe`, ...)
+  and fakes in `Fakes/` (`FakeCaptureSource`, `FakeWindowSource`, `FakeClock`, `SyntheticImages`,
+  `SyntheticFixture`, `HistoryFixture`, `FakeTrasher`, `FakeRecordingSource`, ...).
   `Clock` shadows `Swift.Clock` in modules that import SnapCore.
-- `SnapSystem`: live ScreenCaptureKit, CGWindowList, Carbon hotkeys, pasteboard and permission
-  probe. Nonisolated by default. The only target that may mention ScreenCaptureKit,
-  `SCShareableContent`, `SCScreenshotManager` or `CGRequestScreenCaptureAccess` (swiftlint).
+- History (design 20.4): the folder is the database. `item.json` is version 2 (kind, state, screen
+  rect, pixel size, video fields), and version 1 files still read as complete screenshots. A
+  recording writes `item.json` in state `recording` before its first frame; `markInterrupted()`
+  at launch turns leftovers into `interrupted`. `sweep(skipping:)` skips in-use ids. Move to Trash
+  goes through an injected `HistoryTrasher`: tests use `FakeTrasher`, never the real Trash.
+- `SnapSystem`: live ScreenCaptureKit (screenshots, and `SCStream` with `SCRecordingOutput` for
+  recordings), CGWindowList, Carbon hotkeys, pasteboard, permission probe and microphone
+  authorization. Nonisolated by default. The only target that may mention ScreenCaptureKit,
+  `SCShareableContent`, `SCScreenshotManager`, `SCStream`, `SCRecordingOutput`,
+  `SCStreamConfiguration`, `SCContentFilter`, `AVCaptureDevice` or `CGRequestScreenCaptureAccess`
+  (swiftlint `screen_capture_only_in_system`).
 - `SnapUI`: AppKit and SwiftUI, `@MainActor` by default, depends on `SnapCore` only. Every color,
-  type size, spacing, radius and motion value comes from `Shared/Theme.swift`.
+  type size, spacing, radius and motion value comes from `Shared/Theme.swift` (17 and the M2
+  tokens of 20.11: `Theme.Pin`, `Theme.History`, `Theme.HUD`, `Theme.Countdown`,
+  `Theme.Recording`, ...). Folders per surface: `Overlay/` (with the HUD toolbar, countdown and
+  recording outline), `QuickAccess/`, `Pin/`, `History/`, `Background/`, `Annotate/`,
+  `Settings/`, `Menu/`, `Shared/`.
 - `Snap`: the app executable (`@MainActor` by default). `--shot` runs the headless shot mode.
   The only target that links Sparkle (exact 2.10.0, app-updates `CONTRACT.md`): `Updater`
   wraps `SPUStandardUpdaterController` behind SnapUI's `UpdaterControlling`, and
   `UpdaterPolicy` returns no updater in shot mode, with `SNAP_NO_UPDATES=1` or outside a `.app`.
-- `snapctl`: the headless CLI. Depends on `SnapCore` only, so it never links ScreenCaptureKit
-  (`check.sh` verifies with `otool -L`). Subcommands live in `<Name>Command.swift` files with
-  `static func run(_ arguments: [String]) async -> Int32`.
+- `snapctl`: the headless CLI. Depends on `SnapCore` only, so it never links ScreenCaptureKit or
+  Sparkle (`check.sh` verifies with `otool -L`); it links AVFoundation through SnapCore for the
+  fake recorder and probe. Subcommands live in `<Name>Command.swift` files with
+  `static func run(_ arguments: [String]) async -> Int32`: `gen-fixture`, `beautify`, `preset`,
+  `history gen|list|sweep|recover`, `record --fake`, `probe` and `annotate`. `history gen`,
+  `sweep` and `recover` refuse the default SNAP_HOME.
 - `snapbench`: the AC05 latency bench (`snapbench latency --fake ...`). Depends on SnapCore and
   SnapUI so it drives the real overlay and Quick Access controllers without panels; never
   SnapSystem, so it does not link ScreenCaptureKit either (`check.sh` verifies).
@@ -57,9 +77,11 @@ swift scripts/winlist.swift <pid>                     # on-screen windows of one
 
 1. Never show a window, take focus, capture the screen or trigger a permission dialog. Never run
    `open`, `screencapture` or osascript, and never launch CleanShot X or any GUI app.
-2. Never call ScreenCaptureKit, `CGRequestScreenCaptureAccess`, `CGWindowListCreateImage` or
-   register a global hotkey from a test, tool or probe. Live system code is compiled, and tested
-   only through fakes.
+2. Never call ScreenCaptureKit (`SCStream`, `SCRecordingOutput`, `SCShareableContent`,
+   `SCScreenshotManager`), `CGRequestScreenCaptureAccess`, `CGWindowListCreateImage` or
+   `AVCaptureDevice`, never record the screen or open the microphone, and never register a global
+   hotkey from a test, tool or probe. Live system code is compiled, and tested only through fakes
+   (`FakeRecordingSource` writes real mp4 files from synthetic frames, never from a device).
 3. The Snap binary runs only in `--shot` mode (no `NSApplication.run`, no on-screen window, no
    status item, no hotkeys, no updater) or as `snapctl`, always with `SNAP_HOME` set to a temp
    dir and `SNAP_NO_UPDATES=1`. Compare `lsappinfo front` before and after any Snap launch.

@@ -7,8 +7,18 @@ import SnapCore
 let usage = """
     usage: snapctl gen-fixture <name> --out <png>
            snapctl beautify <in.png> --out <out.png> [--preset default|<json>]
-                    [--background solid:#RRGGBB|gradient:<name>|none] [--ratio W:H] [--no-autobalance] [--report]
+                    [--background solid:#RRGGBB|gradient:<name>|mesh:<name>|blurred|image:<path>|none]
+                    [--ratio W:H] [--no-autobalance] [--report]
            snapctl preset --default --json
+           snapctl history gen --items N --days D [--seed S] [--now <ISO date>] [--json]
+           snapctl history list [--query q] [--kind image|video] [--runs R] [--now <ISO date>] --json
+           snapctl history sweep [--now <ISO date>] [--skip id,...] --json
+           snapctl history recover --json
+           snapctl record --fake --target area|window|fullscreen --display WxH@S [--rect x,y,w,h] --frames N
+                    --fps F [--codec h264|hevc] [--audio system,microphone] [--kill-after-frames K]
+                    [--countdown S] [--runs R] --json
+           snapctl probe <file.mp4> --json
+           snapctl annotate --in <png> --doc <json|path> --out <png> [--report]
     """
 
 /// A usage mistake: printed with the usage text, exit status 64.
@@ -21,6 +31,11 @@ struct UsageError: Error, CustomStringConvertible {
 struct CommandArguments {
     static let valueOptions: Set<String> = [
         "--out", "--preset", "--background", "--ratio",
+        // history
+        "--items", "--days", "--seed", "--now", "--query", "--kind", "--runs", "--skip",
+        // record, probe and annotate
+        "--target", "--display", "--rect", "--frames", "--fps", "--codec", "--audio", "--kill-after-frames",
+        "--countdown", "--in", "--doc",
     ]
 
     var positional: [String] = []
@@ -61,10 +76,10 @@ func exitStatus(for error: any Error) -> Int32 {
     return 1
 }
 
-/// Subcommands that are not built yet print this and exit 2.
+/// Subcommands that are not built yet print this and exit 64.
 func notImplemented(_ command: String) -> Int32 {
-    FileHandle.standardError.write(Data("snapctl: \(command) is not implemented\n".utf8))
-    return 2
+    FileHandle.standardError.write(Data("snapctl: \(command): not implemented\n".utf8))
+    return 64
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())
@@ -82,6 +97,14 @@ case "beautify":
     status = await BeautifyCommand.run(rest)
 case "preset":
     status = await PresetCommand.run(rest)
+case "history":
+    status = await HistoryCommand.run(rest)
+case "record":
+    status = await RecordCommand.run(rest)
+case "probe":
+    status = await ProbeCommand.run(rest)
+case "annotate":
+    status = await AnnotateCommand.run(rest)
 case "latency":
     FileHandle.standardError.write(Data("snapctl: latency moved to snapbench latency (it drives the SnapUI controllers)\n".utf8))
     status = 64

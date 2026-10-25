@@ -121,12 +121,12 @@ public actor LiveCaptureSource: CaptureSource {
         }
     }
 
-    private func cachedContent() async throws -> SCShareableContent {
+    func cachedContent() async throws -> SCShareableContent {
         if let content { return content }
         return try await fetchContent()
     }
 
-    private func fetchContent() async throws -> SCShareableContent {
+    func fetchContent() async throws -> SCShareableContent {
         do {
             let fresh = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
             content = fresh
@@ -176,7 +176,7 @@ public actor LiveCaptureSource: CaptureSource {
     /// Finder's desktop-icon windows on `display` (design 6.3): matched by bundle id and the
     /// `.desktopIconWindow` level, or, if `SCWindow.windowLayer` reports something else, by the
     /// window number CGWindowList lists at that level.
-    private func desktopIconWindows(in content: SCShareableContent, display: SCDisplay) -> [SCWindow] {
+    func desktopIconWindows(in content: SCShareableContent, display: SCDisplay) -> [SCWindow] {
         let iconLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
         let finderWindows = content.windows.filter {
             $0.owningApplication?.bundleIdentifier == LiveCaptureSource.finderBundleID && $0.frame.intersects(display.frame)
@@ -201,7 +201,7 @@ public actor LiveCaptureSource: CaptureSource {
         return ids
     }
 
-    private static func containsAll(_ ids: [WindowID], in content: SCShareableContent) -> Bool {
+    static func containsAll(_ ids: [WindowID], in content: SCShareableContent) -> Bool {
         guard !ids.isEmpty else { return true }
         let known = Set(content.windows.map(\.windowID))
         return ids.allSatisfy { known.contains($0) }

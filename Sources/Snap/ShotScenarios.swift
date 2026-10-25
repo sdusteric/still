@@ -4,8 +4,8 @@ import SnapCore
 import SnapUI
 import SwiftUI
 
-/// The background screenshot scenarios (design 16): each surface built from the SnapUI demo
-/// builders and fakes only. Nothing here creates a window or a panel, reads or writes Snap's
+/// The background screenshot scenarios (design 16 and 20.11): each surface built from the SnapUI
+/// demo builders and fakes only. Nothing here creates a window or a panel, reads or writes Snap's
 /// state, or touches a SnapSystem type.
 enum ShotScenario: String, CaseIterable, Sendable {
     case overlayArea = "overlay-area"
@@ -20,9 +20,27 @@ enum ShotScenario: String, CaseIterable, Sendable {
     case onboarding
     case onboardingGranted = "onboarding-granted"
     case permissionHint = "permission-hint"
+    // M2 (design 20.11), checked by AC-M2-9 and AC-M2-10.
+    case pin
+    case history
+    case historyEmpty = "history-empty"
+    case hud
+    case recordingCountdown = "recording-countdown"
+    case recording
+    case quickAccessVideo = "quick-access-video"
+    case annotateTools = "annotate-tools"
+    case backgroundMesh = "background-mesh"
+    case settingsRecording = "settings-recording"
+    case menuM2 = "menu-m2"
 
     /// What `scripts/shots.sh` renders by default and acceptance AC04 checks.
     static let acceptance: [ShotScenario] = [.overlayArea, .quickAccess, .backgroundEditor, .annotate, .menu, .settings]
+
+    /// What `scripts/shots.sh m2` renders: the eleven surfaces of design 20.11.
+    static let milestone2: [ShotScenario] = [
+        .pin, .history, .historyEmpty, .hud, .recordingCountdown, .recording, .quickAccessVideo, .annotateTools,
+        .backgroundMesh, .settingsRecording, .menuM2,
+    ]
 
     /// The size in points (design 16 table); the PNG is this times the scale.
     var pointSize: CGSize {
@@ -36,6 +54,14 @@ enum ShotScenario: String, CaseIterable, Sendable {
         case .onboarding: OnboardingDemo.size(granted: false)
         case .onboardingGranted: OnboardingDemo.size(granted: true)
         case .permissionHint: ShotScenario.hintSceneSize
+        case .pin: PinDemo.sceneSize
+        case .history, .historyEmpty: HistoryDemo.size
+        case .hud, .recordingCountdown, .recording: HUDDemo.sceneSize
+        case .quickAccessVideo: QuickAccessDemo.videoSceneSize
+        case .annotateTools: AnnotateDemo.size
+        case .backgroundMesh: BackgroundEditorDemo.size
+        case .settingsRecording: SettingsDemo.size
+        case .menuM2: MenuM2Demo.size
         }
     }
 
@@ -77,6 +103,28 @@ enum ShotScenario: String, CaseIterable, Sendable {
             .view(OnboardingDemo.makeView(granted: true, dark: dark))
         case .permissionHint:
             .image(QuickAccessDemo.render(hintScene(dark: dark), size: pointSize, dark: dark, scale: scale))
+        case .pin:
+            .image(PinDemo.renderScene(dark: dark, scale: scale))
+        case .history:
+            .view(HistoryDemo.makeView(empty: false, dark: dark))
+        case .historyEmpty:
+            .view(HistoryDemo.makeView(empty: true, dark: dark))
+        case .hud:
+            .image(HUDDemo.renderHUD(dark: dark, scale: scale))
+        case .recordingCountdown:
+            .image(HUDDemo.renderCountdown(dark: dark, scale: scale))
+        case .recording:
+            .image(HUDDemo.renderRecording(dark: dark, scale: scale))
+        case .quickAccessVideo:
+            .image(QuickAccessDemo.renderVideoScene(dark: dark, scale: scale))
+        case .annotateTools:
+            .view(AnnotateDemo.makeToolsView(dark: dark))
+        case .backgroundMesh:
+            .view(BackgroundEditorDemo.makeMeshView(dark: dark))
+        case .settingsRecording:
+            .view(SettingsDemo.makeView(tab: .recording, dark: dark))
+        case .menuM2:
+            .image(MenuM2Demo.renderScene(dark: dark, scale: scale))
         }
     }
 
