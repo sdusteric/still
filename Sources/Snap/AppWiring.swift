@@ -144,6 +144,7 @@ final class AppWiring: CaptureResultPresenter {
             options: OverlayController.Options(settings: settings.capture),
             cursor: SystemOverlayCursor(),
             pointerLocation: { AppWiring.globalPointer() },
+            visibleDisplays: { _ in ScreenSpace.visibleDisplays() },
             makeSurface: { display, all, sink in
                 OverlayPanel.makeSurface(display: display, allDisplays: all, eventSink: sink)
             }
