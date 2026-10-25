@@ -269,10 +269,13 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
     }
 
     /// A 32 x 32 pt thumbnail with radius 6, aspect-fill; a neutral tile when there is no image.
-    static func thumbnailImage(_ image: CGImage?) -> NSImage {
+    /// AppKit may run an NSImage drawing handler on any thread, so this and `dotImage` build theirs
+    /// nonisolated (a main-actor handler traps in dispatch_assert_queue there).
+    nonisolated static func thumbnailImage(_ image: CGImage?) -> NSImage {
         let side = Theme.Menu.thumbnailSize
-        return NSImage(size: CGSize(width: side, height: side), flipped: false) { rect in
-            let path = NSBezierPath(roundedRect: rect, xRadius: Theme.Menu.thumbnailRadius, yRadius: Theme.Menu.thumbnailRadius)
+        let radius = Theme.Menu.thumbnailRadius
+        return NSImage(size: CGSize(width: side, height: side), flipped: false) { @Sendable rect in
+            let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
             path.addClip()
             NSColor.quaternaryLabelColor.setFill()
             rect.fill()
@@ -290,9 +293,9 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         }
     }
 
-    static func dotImage(color: NSColor) -> NSImage {
+    nonisolated static func dotImage(color: NSColor) -> NSImage {
         let side = Theme.Menu.statusDotSize
-        return NSImage(size: CGSize(width: side, height: side), flipped: false) { rect in
+        return NSImage(size: CGSize(width: side, height: side), flipped: false) { @Sendable rect in
             color.setFill()
             NSBezierPath(ovalIn: rect).fill()
             return true

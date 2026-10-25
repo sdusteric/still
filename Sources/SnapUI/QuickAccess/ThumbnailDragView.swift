@@ -159,17 +159,19 @@ final class ThumbnailDragSourceView: NSView, NSDraggingSource {
     }
 
     /// The thumbnail at 0.45 scale, radius 6, rotated -2 degrees, with a lifted shadow (17.6).
-    static func dragImage(from image: CGImage?, displaySize: CGSize) -> NSImage {
+    /// Nonisolated because AppKit may run an NSImage drawing handler on any thread.
+    nonisolated static func dragImage(from image: CGImage?, displaySize: CGSize) -> NSImage {
         let scale = Theme.QuickAccess.dragImageScale
+        let rotation = Theme.QuickAccess.dragImageRotationDegrees
+        let radius = Theme.QuickAccess.dragImageRadius
         let content = CGSize(width: max(displaySize.width * scale, 40), height: max(displaySize.height * scale, 30))
         let margin = 24.0
         let canvas = CGSize(width: content.width + 2 * margin, height: content.height + 2 * margin)
-        return NSImage(size: canvas, flipped: false) { _ in
+        return NSImage(size: canvas, flipped: false) { @Sendable _ in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
             context.translateBy(x: canvas.width / 2, y: canvas.height / 2)
-            context.rotate(by: -Theme.QuickAccess.dragImageRotationDegrees * .pi / 180)
+            context.rotate(by: -rotation * .pi / 180)
             let rect = CGRect(x: -content.width / 2, y: -content.height / 2, width: content.width, height: content.height)
-            let radius = Theme.QuickAccess.dragImageRadius
             let path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
             context.setShadow(offset: CGSize(width: 0, height: -12), blur: 28, color: CGColor(gray: 0, alpha: 0.4))
             context.addPath(path)
