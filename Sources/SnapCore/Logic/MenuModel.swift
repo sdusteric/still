@@ -43,6 +43,7 @@ public enum MenuItemID: Sendable, Hashable {
     case noRecentCaptures
     case openHistoryFolder
     case status
+    case checkForUpdates
     case settings, quit
     case separator(Int)
 
@@ -132,6 +133,8 @@ public struct MenuInput: Sendable {
     public var hasLastCapture: Bool
     public var permissionNeeded: Bool
     public var plan: HotkeyPlan?
+    /// Shows "Check for Updates..." above Settings. Only the app's updater turns it on.
+    public var offersUpdates: Bool
     public var now: Date
     public var timeZone: TimeZone
 
@@ -141,6 +144,7 @@ public struct MenuInput: Sendable {
         hasLastCapture: Bool? = nil,
         permissionNeeded: Bool = false,
         plan: HotkeyPlan? = nil,
+        offersUpdates: Bool = false,
         now: Date = Date(),
         timeZone: TimeZone = .current
     ) {
@@ -149,6 +153,7 @@ public struct MenuInput: Sendable {
         self.hasLastCapture = hasLastCapture ?? !recentCaptures.isEmpty
         self.permissionNeeded = permissionNeeded
         self.plan = plan
+        self.offersUpdates = offersUpdates
         self.now = now
         self.timeZone = timeZone
     }
@@ -184,6 +189,9 @@ public struct MenuModel: Sendable, Hashable {
         if let status {
             items.append(MenuItem(id: .status, kind: .status, title: status.title, isEnabled: status.isClickable))
             items.append(MenuItem(id: .separator(4), kind: .separator, title: ""))
+        }
+        if input.offersUpdates {
+            items.append(MenuItem(id: .checkForUpdates, title: "Check for Updates\u{2026}"))
         }
         items.append(MenuItem(
             id: .settings, title: "Settings\u{2026}",

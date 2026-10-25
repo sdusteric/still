@@ -19,6 +19,8 @@
 # process ever owns an on-screen window). Only that PID is ever stopped, and the only thing
 # deleted is the exact mktemp directory.
 set -euo pipefail
+# Shot mode never starts Sparkle; this keeps it off even if that ever changes.
+export SNAP_NO_UPDATES=1
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 APP="${SNAP_APP:-$REPO/build/bundle/Snap.app}"

@@ -14,6 +14,7 @@ swift test --scratch-path "$TMPDIR/snap-<task>" --filter <Suite>
 swiftlint lint --strict
 SNAP_SCRATCH="$TMPDIR/snap-check" scripts/check.sh   # every gate, logs in build/check/
 scripts/bundle.sh --release                           # build/bundle/Snap.app, signed, never launched
+scripts/release.sh [--notes <file.md>] [--dry-run <dir>]   # check.sh, release bundle, app-updates publish.sh
 swift scripts/shot-stats.swift <png> [x y w h]        # size, luminance and mean RGBA of a region
 swift scripts/winlist.swift <pid>                     # on-screen windows of one PID (exit 1 if any)
 ```
@@ -23,6 +24,9 @@ swift scripts/winlist.swift <pid>                     # on-screen windows of one
 - Use `caffeinate -i` for long runs.
 - Set `SNAP_HOME` to a fresh `mktemp -d` dir for every test, shot or `snapctl` run. With a
   non-default `SNAP_HOME` the default save folder is `$SNAP_HOME/Saved`, never ~/Downloads.
+  Also set `SNAP_NO_UPDATES=1` (check.sh and shots.sh export it).
+- `scripts/release.sh` publishes a real update for the user. Agents run it only with
+  `--dry-run <dir>`, and only when asked.
 
 ## Layout
 
@@ -38,6 +42,9 @@ swift scripts/winlist.swift <pid>                     # on-screen windows of one
 - `SnapUI`: AppKit and SwiftUI, `@MainActor` by default, depends on `SnapCore` only. Every color,
   type size, spacing, radius and motion value comes from `Shared/Theme.swift`.
 - `Snap`: the app executable (`@MainActor` by default). `--shot` runs the headless shot mode.
+  The only target that links Sparkle (exact 2.10.0, app-updates `CONTRACT.md`): `Updater`
+  wraps `SPUStandardUpdaterController` behind SnapUI's `UpdaterControlling`, and
+  `UpdaterPolicy` returns no updater in shot mode, with `SNAP_NO_UPDATES=1` or outside a `.app`.
 - `snapctl`: the headless CLI. Depends on `SnapCore` only, so it never links ScreenCaptureKit
   (`check.sh` verifies with `otool -L`). Subcommands live in `<Name>Command.swift` files with
   `static func run(_ arguments: [String]) async -> Int32`.
@@ -54,10 +61,11 @@ swift scripts/winlist.swift <pid>                     # on-screen windows of one
    register a global hotkey from a test, tool or probe. Live system code is compiled, and tested
    only through fakes.
 3. The Snap binary runs only in `--shot` mode (no `NSApplication.run`, no on-screen window, no
-   status item, no hotkeys) or as `snapctl`, always with `SNAP_HOME` set to a temp dir. Compare
-   `lsappinfo front` before and after any Snap launch. Run shot mode only from the bundle
-   (`build/bundle/Snap.app/Contents/MacOS/Snap`): its `LSUIElement` keeps the process a
-   UIElement, and a bare `.build` binary refuses with exit 78 instead of registering as an app.
+   status item, no hotkeys, no updater) or as `snapctl`, always with `SNAP_HOME` set to a temp
+   dir and `SNAP_NO_UPDATES=1`. Compare `lsappinfo front` before and after any Snap launch.
+   Run shot mode only from the bundle (`build/bundle/Snap.app/Contents/MacOS/Snap`): its
+   `LSUIElement` keeps the process a UIElement, and a bare `.build` binary refuses with exit 78
+   instead of registering as an app.
 4. No sound: no afplay, no say, nothing in tests plays audio.
 5. Never read the user's private folders (~/Downloads, ~/Desktop, ~/Pictures, ~/Movies,
    ~/Documents outside this repo, /Volumes, ~/Library/Containers, Mail, Messages, Safari, iCloud
@@ -68,8 +76,10 @@ swift scripts/winlist.swift <pid>                     # on-screen windows of one
 7. Track every process you start by PID and stop it by PID. Never kill or signal anything else,
    and never signal CleanShot X.
 8. No network. No `URLSession`, `NWConnection` or `import Network` in `Sources/` (swiftlint
-   enforces it). Install nothing, change no system or app settings (no `defaults write`, no
-   symbolic hotkey edits, no `tccutil`). Never run `scripts/bundle.sh --install`.
+   enforces it). The one exception is Sparkle in the installed app; no test, shot or tool ever
+   creates an `Updater` or makes Sparkle fetch the feed. Install nothing, change no system or
+   app settings (no `defaults write`, no symbolic hotkey edits, no `tccutil`). Never run
+   `scripts/bundle.sh --install`.
 
 ## Style
 

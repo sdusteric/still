@@ -43,6 +43,15 @@ import Testing
         ])
     }
 
+    @Test func checkForUpdatesSitsAboveSettingsOnlyWithAnUpdater() {
+        #expect(model().item(.checkForUpdates) == nil)
+        let menu = MenuModel(MenuInput(offersUpdates: true, now: now, timeZone: Self.zone))
+        let ids = menu.items.map(\.id)
+        #expect(Array(ids.suffix(3)) == [.checkForUpdates, .settings, .quit])
+        #expect(menu.item(.checkForUpdates)?.title == "Check for Updates\u{2026}")
+        #expect(menu.item(.checkForUpdates)?.keyEquivalent == nil)
+    }
+
     @Test func titlesAndKeyEquivalents() {
         let menu = model()
         #expect(menu.item(.captureArea)?.title == "Capture Area")

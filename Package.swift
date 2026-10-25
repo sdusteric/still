@@ -13,6 +13,10 @@ let package = Package(
         .executable(name: "snapctl", targets: ["snapctl"]),
         .executable(name: "snapbench", targets: ["snapbench"]),
     ],
+    dependencies: [
+        // Auto-update (app-updates CONTRACT.md). Only the Snap app target links it.
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
+    ],
     targets: [
         .target(name: "SnapCore"),
         .target(
@@ -26,7 +30,7 @@ let package = Package(
         .target(name: "SnapUI", dependencies: ["SnapCore"], swiftSettings: mainActorByDefault),
         .executableTarget(
             name: "Snap",
-            dependencies: ["SnapUI", "SnapSystem", "SnapCore"],
+            dependencies: ["SnapUI", "SnapSystem", "SnapCore", .product(name: "Sparkle", package: "Sparkle")],
             swiftSettings: mainActorByDefault
         ),
         .executableTarget(name: "snapctl", dependencies: ["SnapCore"]),

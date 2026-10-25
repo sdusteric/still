@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let sweepInterval: TimeInterval = 60 * 60
 
     private var wiring: AppWiring?
+    private var updater: Updater?
     private var menu: StatusMenuController?
     private var hotkeys: HotkeyCenter?
     private let conflictingApps = ConflictingApps()
@@ -28,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menu bar only: no Dock icon, and launching never takes focus.
         NSApp.setActivationPolicy(.accessory)
+        updater = Updater.make()
         let wiring = AppWiring()
         self.wiring = wiring
         wiring.onSettingsChanged = { [weak self] settings in self?.settingsModel?.settings = settings }
@@ -73,7 +75,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             recentCaptures: wiring.recentCaptures(),
             hasLastCapture: wiring.hasLastCapture,
             permissionNeeded: wiring.permission.needsAttention,
-            plan: plan
+            plan: plan,
+            offersUpdates: updater != nil
         ))
     }
 
@@ -93,6 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 openSettings(tab: .shortcuts)
             }
+        case .checkForUpdates: updater?.checkForUpdates()
         case .settings: openSettings(tab: nil)
         case .quit: NSApp.terminate(nil)
         case .recentCapturesHeader, .noRecentCaptures, .separator: break
@@ -183,6 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 presets: wiring.presetStore.presets, starredPresetID: wiring.presetStore.starredID, actions: actions
             )
             let controller = SettingsWindowController(model: model)
+            model.updates = updater.map { UpdateSettingsModel(updater: $0) }
             controller.onOpen = { [weak self] in self?.settingsWillOpen() }
             settingsModel = model
             settingsWindow = controller

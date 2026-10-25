@@ -89,6 +89,8 @@ public final class SettingsModel {
     public var presets: [BackgroundPreset]
     public var starredPresetID: String
     public internal(set) var launchAtLoginError: String?
+    /// The Updates group in General. Nil in tests, shots and when `SNAP_NO_UPDATES=1`.
+    public var updates: UpdateSettingsModel?
 
     @ObservationIgnored public var actions: SettingsActions
 
@@ -386,6 +388,25 @@ private struct GeneralTab: View {
         SettingsGroup(title: "Sound") {
             SwitchRow(title: "Sound on capture", subtitle: "A quiet shutter.", divider: false,
                       isOn: $model.settings.general.playSound)
+        }
+        if let updates = model.updates {
+            UpdatesGroup(updates: updates)
+        }
+    }
+}
+
+private struct UpdatesGroup: View {
+    @Bindable var updates: UpdateSettingsModel
+
+    var body: some View {
+        SettingsGroup(title: "Updates") {
+            SwitchRow(
+                title: "Automatically install updates", subtitle: "Checks once a day.", divider: false,
+                isOn: $updates.automaticallyInstallsUpdates
+            )
+            SettingsRow(title: "Check now") {
+                Button("Check for Updates\u{2026}") { updates.checkForUpdates() }
+            }
         }
     }
 }

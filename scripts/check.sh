@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # All gates (design section 16). Exits 0 only when every gate passes.
 #   swift build -c release -> swift test -> swiftlint --strict -> snapctl and snapbench do not
-#   link ScreenCaptureKit -> scripts/bundle.sh --release -> codesign --verify --strict -> plutil -lint,
-#   bundle id and LSUIElement -> designated requirement -> no em or en dashes
+#   link ScreenCaptureKit -> snapctl and snapbench do not link Sparkle -> scripts/bundle.sh
+#   --release -> codesign --verify --deep --strict -> plutil -lint, bundle id and LSUIElement ->
+#   Sparkle in the bundle (framework, feed, key, @rpath link) -> designated requirement -> no em
+#   or en dashes
 #
 # Env: SNAP_SCRATCH  SwiftPM scratch path (default <repo>/.build). Agents building in parallel
 #                    pass their own, e.g. SNAP_SCRATCH=$TMPDIR/snap-check.
@@ -20,9 +22,14 @@ TMP_HOME="$(mktemp -d "${TMP_BASE%/}/snap-check-home.XXXXXX")"
 cleanup() { [ -n "${TMP_HOME:-}" ] && [ -d "$TMP_HOME" ] && rm -rf "$TMP_HOME"; }
 trap cleanup EXIT
 export SNAP_HOME="$TMP_HOME"
+# Sparkle never starts under the gates (app-updates CONTRACT.md).
+export SNAP_NO_UPDATES=1
 
 BUNDLE_ID="dev.sdusteric.snap"
 APP="$ROOT/build/bundle/Snap.app"
+# app-updates CONTRACT.md
+FEED_URL="https://sdusteric.github.io/app-updates/snap/appcast.xml"
+ED_KEY="PMaW+8sZRzOkfIwy1KBGk0CHTVoN49FE9o8gUlNGdZc="
 
 gate() { # gate <name> <command...>: runs the command, output to build/check/<name>.log
   local name="$1"; shift
@@ -70,12 +77,24 @@ snapctl_no_sck() {
   done
 }
 
+cli_no_sparkle() {
+  local dir bin name linked
+  dir="$(swift build -c release --package-path "$ROOT" --scratch-path "$SCRATCH" --show-bin-path)"
+  for name in snapctl snapbench; do
+    bin="$dir/$name"
+    [ -x "$bin" ] || { echo "missing $bin"; return 1; }
+    linked="$(otool -L "$bin")"
+    if grep -qi sparkle <<<"$linked"; then echo "$linked"; echo "$name links Sparkle"; return 1; fi
+    echo "$name does not link Sparkle"
+  done
+}
+
 bundle_app() {
   SNAP_SCRATCH="$SCRATCH" caffeinate -i "$ROOT/scripts/bundle.sh" --release
 }
 
 codesign_check() {
-  codesign --verify --strict --verbose=2 "$APP"
+  codesign --verify --deep --strict --verbose=2 "$APP"
 }
 
 plist_check() {
@@ -86,6 +105,20 @@ plist_check() {
   ui="$(plutil -extract LSUIElement raw -o - "$plist")"
   [ "$ui" = true ] || { echo "LSUIElement is $ui"; return 1; }
   echo "CFBundleIdentifier $id, LSUIElement $ui"
+}
+
+sparkle_check() {
+  local plist="$APP/Contents/Info.plist" feed key linked
+  [ -d "$APP/Contents/Frameworks/Sparkle.framework" ] || { echo "Sparkle.framework missing from the bundle"; return 1; }
+  feed="$(plutil -extract SUFeedURL raw -o - "$plist" 2>/dev/null || true)"
+  [ "$feed" = "$FEED_URL" ] || { echo "SUFeedURL is '$feed', expected $FEED_URL"; return 1; }
+  key="$(plutil -extract SUPublicEDKey raw -o - "$plist" 2>/dev/null || true)"
+  [ "$key" = "$ED_KEY" ] || { echo "SUPublicEDKey is '$key', expected $ED_KEY"; return 1; }
+  linked="$(otool -L "$APP/Contents/MacOS/Snap")"
+  grep -q '@rpath/Sparkle.framework' <<<"$linked" || { echo "$linked"; echo "Snap does not link @rpath/Sparkle.framework"; return 1; }
+  otool -l "$APP/Contents/MacOS/Snap" | grep -q 'path @executable_path/../Frameworks ' \
+    || { echo "Snap lacks rpath @executable_path/../Frameworks"; return 1; }
+  echo "Sparkle.framework bundled, SUFeedURL $feed, SUPublicEDKey matches, Snap links @rpath/Sparkle.framework"
 }
 
 requirement_check() {
@@ -112,9 +145,11 @@ gate build build_release
 gate test run_tests
 gate lint run_lint
 gate snapctl-no-sck snapctl_no_sck
+gate cli-no-sparkle cli_no_sparkle
 gate bundle bundle_app
 gate codesign codesign_check
 gate plist plist_check
+gate sparkle sparkle_check
 gate requirement requirement_check
 gate dashes dash_check
 echo "all gates passed ($(( $(date +%s) - T0 )) s)"

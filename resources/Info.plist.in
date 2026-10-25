@@ -19,5 +19,12 @@
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSSupportsAutomaticTermination</key><false/>
   <key>NSSupportsSuddenTermination</key><false/>
+
+  <!-- Sparkle auto-update (app-updates CONTRACT.md). -->
+  <key>SUFeedURL</key><string>https://sdusteric.github.io/app-updates/snap/appcast.xml</string>
+  <key>SUPublicEDKey</key><string>PMaW+8sZRzOkfIwy1KBGk0CHTVoN49FE9o8gUlNGdZc=</string>
+  <key>SUEnableAutomaticChecks</key><true/>
+  <key>SUAutomaticallyUpdate</key><true/>
+  <key>SUScheduledCheckInterval</key><integer>86400</integer>
 </dict>
 </plist>
