@@ -46,6 +46,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showOnboardingIfNeeded(wiring)
     }
 
+    /// Opening Snap again from Finder, Spotlight or Launchpad shows Settings, so the app never
+    /// seems to do nothing when its menu bar icon is hidden by macOS or behind other items.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        openSettings(tab: nil)
+        return false
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         hotkeys?.unregisterAll()
         conflictingApps.stopObserving()
