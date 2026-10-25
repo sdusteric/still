@@ -2,7 +2,12 @@
 # Release Snap through app-updates (CONTRACT.md): every check.sh gate, a fresh release bundle,
 # then app-updates/tools/publish.sh. Usage: scripts/release.sh [--notes <file.md>] [--dry-run <dir>]
 #
-# --dry-run <dir> is passed to publish.sh, which then writes into <dir> and publishes nothing.
+# --dry-run <dir> is passed to publish.sh, which then writes into <dir> and publishes nothing, and
+# makes tools/notarize.sh print its commands instead of submitting.
+#
+# With a Developer ID Application certificate in the keychain and the notarytool keychain profile
+# sdusteric-notary, the bundle is notarized and stapled before it is published (see
+# app-updates/docs/notarization.md).
 #
 # Env (all optional):
 #   SNAP_SCRATCH  SwiftPM scratch path, passed to check.sh and bundle.sh
@@ -34,8 +39,26 @@ done
 # A fresh bundle after the gates, so its CFBundleVersion is the newest build time.
 "$ROOT/scripts/bundle.sh" --release
 codesign --verify --deep --strict "$APP"
+# Hardened runtime, entitlements, one team for every Mach-O.
+"$ROOT/scripts/check-signing.sh" "$APP"
+
+# Notarize and staple when the bundle is signed with Developer ID (tools/notarize.sh). With the
+# Apple Development fallback it warns and the release goes on. --dry-run prints the notarization
+# commands and does not submit.
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/snap-release.XXXXXX")"
+trap '[ -n "${WORK:-}" ] && [ -d "$WORK" ] && rm -rf "$WORK"' EXIT
+FINAL_ZIP="$WORK/final.zip"
+nargs=(--bundle "$APP" --final-zip "$FINAL_ZIP")
+[ -z "$DRY_RUN" ] || nargs+=(--dry-run)
+rc=0
+"$APP_UPDATES/tools/notarize.sh" "${nargs[@]}" || rc=$?
 
 args=(--app snap --bundle "$APP")
 [ -z "$NOTES" ] || args+=(--notes "$NOTES")
 [ -z "$DRY_RUN" ] || args+=(--dry-run "$DRY_RUN")
+case "$rc" in
+  0) args+=(--zip "$FINAL_ZIP") ;; # the stapled app, zipped after stapling: the Sparkle signature covers it
+  10) ;;                           # not notarized (fallback certificate or dry run): publish.sh zips the bundle
+  *) exit "$rc" ;;
+esac
 "$PUBLISH" "${args[@]}"

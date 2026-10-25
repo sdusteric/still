@@ -11,7 +11,9 @@
 #   SNAP_BUNDLE_BIN  use this binary instead of running swift build (Sparkle.framework is taken
 #                    from the same directory)
 #   SNAP_BUNDLE_ID   CFBundleIdentifier (default dev.sdusteric.snap)
-#   SIGN_ID          signing identity SHA-1 (default: the Apple Development cert)
+#   SIGN_ID          signing identity SHA-1 or name (default: the Developer ID Application cert of
+#                    team 8N9KUZLT8N when the keychain has one, else the Apple Development cert)
+#   SNAP_BUNDLE_OUT  output bundle path, must end in bundle/Snap.app (default <repo>/build/bundle/Snap.app)
 #   INSTALL_DIR      install target for --install (default: $HOME/Applications)
 #
 # --install copies the bundle to ~/Applications with ditto. Agents and acceptance never use it.
@@ -31,10 +33,18 @@ for a in "$@"; do
 done
 
 BUNDLE_ID="${SNAP_BUNDLE_ID:-dev.sdusteric.snap}"
-# SHA-1 of the cert, not the name: several certs can share the CN and some are expired.
-SIGN_ID="${SIGN_ID:-1EDDD87FAAACC222585E8C76E983DB798EC38331}"
+# Signing identity. SIGN_ID (a SHA-1 or a name) overrides. Otherwise: the Developer ID Application
+# certificate of team 8N9KUZLT8N when it is in the keychain, else the Apple Development
+# certificate. Picked by SHA-1, not name: several certs can share the CN and some are expired.
+TEAM_ID=8N9KUZLT8N
+APPLE_DEV_SHA=1EDDD87FAAACC222585E8C76E983DB798EC38331
+IDENTITIES="$(security find-identity -v -p codesigning)"
+if [ -z "${SIGN_ID:-}" ]; then
+  SIGN_ID="$(awk -v team="($TEAM_ID)" '/"Developer ID Application: / && index($0, team) { print $2; exit }' <<<"$IDENTITIES")"
+  SIGN_ID="${SIGN_ID:-$APPLE_DEV_SHA}"
+fi
 SCRATCH="${SNAP_SCRATCH:-$REPO/.build}"
-OUT="$REPO/build/bundle/Snap.app"
+OUT="${SNAP_BUNDLE_OUT:-$REPO/build/bundle/Snap.app}"
 
 VERSION="$(tr -d '[:space:]' <"$REPO/VERSION")"
 [ -n "$VERSION" ] || { echo "VERSION file is empty" >&2; exit 1; }
@@ -42,10 +52,18 @@ VERSION="$(tr -d '[:space:]' <"$REPO/VERSION")"
 BUILD="$(date -u +%Y%m%d%H%M)"
 
 # Check the signing identity before spending time on a build.
-if ! security find-identity -v -p codesigning | grep -q "$SIGN_ID"; then
-  echo "signing identity not valid; renew the Apple Development certificate in Xcode" >&2
+SIGN_LINE="$(grep -F -- "$SIGN_ID" <<<"$IDENTITIES" | head -n 1 || true)"
+if [ -z "$SIGN_LINE" ]; then
+  echo "signing identity $SIGN_ID is not valid; renew the Apple Development certificate in Xcode" >&2
   exit 1
 fi
+# A secure timestamp needs the network and Apple's server; notarization requires it. The Apple
+# Development fallback skips it so a build works offline.
+case "$SIGN_LINE" in
+  *'"Developer ID Application: '*) TIMESTAMP=--timestamp ;;
+  *) TIMESTAMP=--timestamp=none ;;
+esac
+echo "signing with:${SIGN_LINE#*)}"
 
 if [ -n "${SNAP_BUNDLE_BIN:-}" ]; then
   BIN="$SNAP_BUNDLE_BIN"
@@ -55,8 +73,8 @@ else
 fi
 [ -x "$BIN" ] || { echo "missing binary $BIN" >&2; exit 1; }
 
-# Only ever delete the bundle dir inside this repo's build dir.
-case "$OUT" in */build/bundle/Snap.app) ;; *) echo "refusing odd output path $OUT" >&2; exit 1 ;; esac
+# Only ever delete a bundle dir named bundle/Snap.app (the repo's build dir, or SNAP_BUNDLE_OUT).
+case "$OUT" in */bundle/Snap.app) ;; *) echo "refusing odd output path $OUT" >&2; exit 1 ;; esac
 [ -d "$OUT" ] && rm -rf "$OUT"
 mkdir -p "$OUT/Contents/MacOS" "$OUT/Contents/Resources"
 cp "$BIN" "$OUT/Contents/MacOS/Snap"
@@ -93,20 +111,21 @@ for s in 16 32 128 256 512; do
 done
 iconutil -c icns "$SET" -o "$OUT/Contents/Resources/AppIcon.icns"
 
-# Sparkle is signed inside-out first, as Sparkle documents: its helpers keep the hardened runtime
-# they ship with, and Downloader.xpc keeps its entitlements.
+# Everything is signed with the hardened runtime and the same identity, inside out, never with
+# --deep. Sparkle's parts first, as Sparkle documents: its helpers keep their own signing and
+# Downloader.xpc keeps its entitlements.
+sign() { codesign --force --sign "$SIGN_ID" "$TIMESTAMP" --options runtime "$@"; }
 SPARKLE="$OUT/Contents/Frameworks/Sparkle.framework"
-sign_sparkle() { codesign --force --sign "$SIGN_ID" --timestamp=none -o runtime "$@"; }
-sign_sparkle "$SPARKLE/Versions/B/XPCServices/Installer.xpc"
-sign_sparkle --preserve-metadata=entitlements "$SPARKLE/Versions/B/XPCServices/Downloader.xpc"
-sign_sparkle "$SPARKLE/Versions/B/Autoupdate"
-sign_sparkle "$SPARKLE/Versions/B/Updater.app"
-sign_sparkle "$SPARKLE"
+sign "$SPARKLE/Versions/B/XPCServices/Installer.xpc"
+sign --preserve-metadata=entitlements "$SPARKLE/Versions/B/XPCServices/Downloader.xpc"
+sign "$SPARKLE/Versions/B/Autoupdate"
+sign "$SPARKLE/Versions/B/Updater.app"
+sign "$SPARKLE"
 
-# Then the app with the Apple Development cert: no hardened runtime, no entitlements, no --deep.
-# --timestamp=none needs no network. The designated requirement keys on the bundle id and the
-# cert, so the Screen Recording grant survives rebuilds (design section 13).
-codesign --force --sign "$SIGN_ID" --timestamp=none "$OUT"
+# Then the app, with its entitlements (resources/Snap.entitlements). The designated requirement
+# keys on the bundle id and the certificate, so permission grants survive rebuilds with the same
+# certificate. They reset once when the certificate changes.
+sign --entitlements "$REPO/resources/Snap.entitlements" "$OUT"
 codesign --verify --deep --strict --verbose=2 "$OUT"
 
 if [ "$INSTALL" = 1 ]; then

@@ -2,7 +2,7 @@
 # All gates (design section 16). Exits 0 only when every gate passes.
 #   swift build -c release -> swift test -> swiftlint --strict -> snapctl and snapbench do not
 #   link ScreenCaptureKit -> snapctl and snapbench do not link Sparkle -> scripts/bundle.sh
-#   --release -> codesign --verify --deep --strict -> plutil -lint, bundle id, LSUIElement and the
+#   --release -> codesign --verify --deep --strict -> signing (hardened runtime, entitlements, team) -> plutil -lint, bundle id, LSUIElement and the
 #   microphone usage string ->
 #   Sparkle in the bundle (framework, feed, key, @rpath link) -> designated requirement -> no em
 #   or en dashes
@@ -126,12 +126,18 @@ sparkle_check() {
   echo "Sparkle.framework bundled, SUFeedURL $feed, SUPublicEDKey matches, Snap links @rpath/Sparkle.framework"
 }
 
+signing_check() {
+  # Hardened runtime, entitlements equal to resources/Snap.entitlements, one team for every Mach-O.
+  "$ROOT/scripts/check-signing.sh" "$APP"
+}
+
 requirement_check() {
   local requirement
   requirement="$(codesign -d -r- "$APP" 2>&1)"
   echo "$requirement"
   grep -q "identifier \"$BUNDLE_ID\"" <<<"$requirement" || { echo "designated requirement lacks $BUNDLE_ID"; return 1; }
-  grep -q 'Apple Development' <<<"$requirement" || { echo "designated requirement lacks Apple Development"; return 1; }
+  grep -Eq 'Apple Development|Developer ID Application|1\.2\.840\.113635\.100\.6\.1\.13' <<<"$requirement" \
+    || { echo "designated requirement lacks an Apple Development or Developer ID certificate"; return 1; }
 }
 
 dash_check() {
@@ -153,6 +159,7 @@ gate snapctl-no-sck snapctl_no_sck
 gate cli-no-sparkle cli_no_sparkle
 gate bundle bundle_app
 gate codesign codesign_check
+gate signing signing_check
 gate plist plist_check
 gate sparkle sparkle_check
 gate requirement requirement_check
