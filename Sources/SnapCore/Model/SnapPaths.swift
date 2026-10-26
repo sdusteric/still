@@ -48,6 +48,15 @@ public struct SnapPaths: Sendable, Hashable {
         return home.appending(path: "ShelfStatus", directoryHint: .isDirectory)
     }
 
+    /// Where Snap writes its Recall entries for Shelf search (Recall design 6). The default
+    /// SNAP_HOME uses Shelf's own folder; any other keeps it inside itself, as for the status file.
+    public var recallDirectory: URL {
+        let root = isDefaultHome
+            ? userHome.appending(path: "Library/Application Support/Shelf/recall", directoryHint: .isDirectory)
+            : home.appending(path: "ShelfRecall", directoryHint: .isDirectory)
+        return root.appending(path: "snap", directoryHint: .isDirectory)
+    }
+
     /// `history/<id>/` for one capture.
     public func historyDirectory(for id: String) -> URL {
         historyDirectory.appending(path: id, directoryHint: .isDirectory)

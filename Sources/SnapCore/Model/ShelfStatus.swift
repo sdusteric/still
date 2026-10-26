@@ -107,17 +107,17 @@ public struct ShelfStatusWriter: Sendable {
     }
 
     /// A JPEG at most 240 px wide and 30 KB, or nil when the image cannot be read or made that small.
-    static func previewData(for url: URL) -> Data? {
+    static func previewData(for url: URL, maxPixels: Int = maxPreviewWidth, maxBytes: Int = maxPreviewBytes) -> Data? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPreviewWidth,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixels,
             kCGImageSourceCreateThumbnailWithTransform: true,
         ]
         guard var image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
         for _ in 0..<4 {
             for quality in [0.7, 0.55, 0.4, 0.3, 0.2] {
-                if let data = jpeg(image, quality: quality), data.count <= maxPreviewBytes { return data }
+                if let data = jpeg(image, quality: quality), data.count <= maxBytes { return data }
             }
             // Still too big: halve the size and try again.
             let width = max(image.width / 2, 1)
