@@ -63,7 +63,10 @@ import Testing
         #expect(try store.sweep(now: Self.now, imageRetention: ScreenshotRetention.threeDays.interval) == [image.id])
     }
 
-    @Test func listing1500ItemsWithinBudget() throws {
+    /// A timing budget: run alone (`SNAP_BENCH=1`), since a parallel suite skews it and the 1,500
+    /// folders it writes slow the suite's other timing tests.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["SNAP_BENCH"] == "1"))
+    func listing1500ItemsWithinBudget() throws {
         let home = try scratch()
         defer { RecallTestSupport.remove(home) }
         let store = HistoryStore(directory: home.appending(path: "history"), clock: FakeClock(startDate: Self.now))
@@ -81,3 +84,4 @@ import Testing
         #expect(p95 < 50)
     }
 }
+
