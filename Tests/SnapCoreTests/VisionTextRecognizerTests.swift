@@ -39,7 +39,9 @@ import Testing
         #expect(VisionTextRecognizer.keep(lines).map(\.text) == ["kept line"])
     }
 
-    @Test func fullDisplayTiming() async throws {
+    /// Spike S2 timing on a full 5K screenshot; run alone (`SNAP_BENCH=1`), as it loads the suite.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["SNAP_BENCH"] == "1"))
+    func fullDisplayTiming() async throws {
         let lines = (1...40).map { "Line \($0): release notes for Snap and Shelf, build \($0 * 37)" }
         let (home, url) = try image(lines, width: 5120, height: 2880, fontSize: 40)
         defer { RecallTestSupport.remove(home) }
