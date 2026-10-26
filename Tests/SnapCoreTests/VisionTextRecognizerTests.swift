@@ -2,7 +2,10 @@ import Foundation
 @testable import SnapCore
 import Testing
 
-@Suite struct VisionTextRecognizerTests {
+/// Real Vision runs only with SNAP_VISION=1: its first use loads models for about 20 s, which slows
+/// the timing tests that run beside it. `snapctl recall build` covers it end to end as well.
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["SNAP_VISION"] == "1"))
+struct VisionTextRecognizerTests {
     private func image(_ lines: [String], width: Int = 1600, height: Int = 400, fontSize: CGFloat = 36) throws -> (URL, URL) {
         let home = try RecallTestSupport.makeHome()
         let url = home.appending(path: "text.png")
@@ -30,18 +33,8 @@ import Testing
         #expect(result.lines.map(\.text).joined().contains("错误"))
     }
 
-    @Test func dropsShortAndLowConfidence() {
-        let lines = [
-            OCRResult.Line(text: "a", confidence: 0.9, box: [0, 0, 0.1, 0.1]),
-            OCRResult.Line(text: "faint words", confidence: 0.2, box: [0, 0, 0.1, 0.1]),
-            OCRResult.Line(text: "kept line", confidence: 0.8, box: [0, 0, 0.1, 0.1]),
-        ]
-        #expect(VisionTextRecognizer.keep(lines).map(\.text) == ["kept line"])
-    }
-
-    /// Spike S2 timing on a full 5K screenshot; run alone (`SNAP_BENCH=1`), as it loads the suite.
-    @Test(.enabled(if: ProcessInfo.processInfo.environment["SNAP_BENCH"] == "1"))
-    func fullDisplayTiming() async throws {
+    /// Spike S2 timing on a full 5K screenshot.
+    @Test func fullDisplayTiming() async throws {
         let lines = (1...40).map { "Line \($0): release notes for Snap and Shelf, build \($0 * 37)" }
         let (home, url) = try image(lines, width: 5120, height: 2880, fontSize: 40)
         defer { RecallTestSupport.remove(home) }
@@ -52,6 +45,18 @@ import Testing
         #expect(elapsed < .seconds(5))
         #expect(result.lines.count >= 30)
     }
+}
+
+@Suite struct VisionLineFilterTests {
+    @Test func dropsShortAndLowConfidence() {
+        let lines = [
+            OCRResult.Line(text: "a", confidence: 0.9, box: [0, 0, 0.1, 0.1]),
+            OCRResult.Line(text: "faint words", confidence: 0.2, box: [0, 0, 0.1, 0.1]),
+            OCRResult.Line(text: "kept line", confidence: 0.8, box: [0, 0, 0.1, 0.1]),
+        ]
+        #expect(VisionTextRecognizer.keep(lines).map(\.text) == ["kept line"])
+    }
+
 }
 
 @Suite struct OCRStoreTests {
