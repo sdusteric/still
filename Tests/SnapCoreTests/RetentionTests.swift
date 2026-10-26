@@ -85,3 +85,37 @@ import Testing
     }
 }
 
+
+@Suite struct HistoryRecentTests {
+    let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3])
+    static let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    @Test func recentReturnsTheNewestFirst() throws {
+        let home = try RecallTestSupport.makeHome()
+        defer { RecallTestSupport.remove(home) }
+        let store = HistoryStore(directory: home.appending(path: "history"), clock: FakeClock(startDate: Self.now))
+        let ids = try (0..<20).map { index in
+            try store.add(pngData: png, fileName: "\(index).png", mode: .area, scale: 2, createdAt: Self.now.addingTimeInterval(-Double(index) * 3_600)).id
+        }
+        #expect(try store.recent(limit: 3).map(\.id) == Array(ids.prefix(3)))
+        #expect(try store.recent(limit: 50).count == 20)
+    }
+
+    /// The Shelf status reads `recent(limit: 12)` on the main actor after every capture.
+    @Test func recentReadsOnlyTheNewestItems() throws {
+        let home = try RecallTestSupport.makeHome()
+        defer { RecallTestSupport.remove(home) }
+        let store = HistoryStore(directory: home.appending(path: "history"), clock: FakeClock(startDate: Self.now))
+        _ = try HistoryFixture.generate(into: store, options: .init(items: 1_000, days: 300, now: Self.now))
+        var times: [Double] = []
+        for _ in 0..<10 {
+            let start = ContinuousClock.now
+            _ = try store.recent(limit: 12)
+            let elapsed = ContinuousClock.now - start
+            times.append(Double(elapsed.components.seconds) * 1_000 + Double(elapsed.components.attoseconds) / 1e15)
+        }
+        #expect(times.sorted()[8] < 8, "recent(limit: 12) p90 \(times.sorted()[8]) ms")
+        let all = try store.allItems()
+        #expect(try store.recent(limit: 12).map(\.id) == Array(all.prefix(12)).map(\.id))
+    }
+}

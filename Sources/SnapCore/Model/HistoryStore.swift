@@ -349,9 +349,37 @@ public final class HistoryStore: Sendable {
 
     /// The newest `limit` items, newest first. A folder with an unreadable `item.json` is logged
     /// and skipped.
+    ///
+    /// Item ids start with their local creation time, so only the newest folders by name are read
+    /// (with a margin for clock changes), not the whole history: the Shelf status calls this on the
+    /// main actor after every capture.
     public func recent(limit: Int) throws -> [CaptureItem] {
-        Array(try allItems().prefix(max(limit, 0)))
+        guard limit > 0 else { return [] }
+        let path = directory.path(percentEncoded: false)
+        guard FileManager.default.fileExists(atPath: path) else { return [] }
+        // Names only: asking for attributes of every folder costs more than reading the few needed.
+        let folders = try FileManager.default.contentsOfDirectory(atPath: path)
+            .filter { !$0.hasPrefix(".") }
+            .sorted(by: >)
+            .map { directory.appending(path: $0, directoryHint: .isDirectory) }
+        let decoder = HistoryStore.makeDecoder()
+        var items: [CaptureItem] = []
+        for folder in folders where items.count < limit + Self.recentMargin {
+            do {
+                let record = try lock.withLock { _ in try readRecord(in: folder, decoder: decoder) }
+                if let record { items.append(item(from: record)) }
+            } catch {
+                log?.warning("history: skipped \(folder.lastPathComponent): \(error)")
+            }
+        }
+        let sorted = items.sorted { lhs, rhs in
+            lhs.createdAt == rhs.createdAt ? lhs.id > rhs.id : lhs.createdAt > rhs.createdAt
+        }
+        return Array(sorted.prefix(limit))
     }
+
+    /// Extra folders `recent` reads, so a clock change (a DST hour) cannot hide a newer item.
+    static let recentMargin = 8
 
     /// Every item, newest first.
     public func allItems() throws -> [CaptureItem] {
