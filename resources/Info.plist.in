@@ -33,7 +33,7 @@
     </dict>
   </array>
   <key>SDShelfActions</key>
-  <array><string>capture-area</string><string>capture-window</string><string>check-for-updates</string></array>
+  <array><string>capture-area</string><string>capture-window</string><string>open-item</string><string>check-for-updates</string></array>
 
   <!-- Sparkle auto-update (app-updates CONTRACT.md). -->
   <key>SUFeedURL</key><string>https://sdusteric.github.io/app-updates/snap/appcast.xml</string>

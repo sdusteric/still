@@ -316,3 +316,24 @@ final class HistoryActionLog {
         #expect(NSApplication.shared.windows.isEmpty, "rendering must not create a window")
     }
 }
+
+extension HistoryWindowModelTests {
+    @Test func revealSelectsAndClearsSearch() {
+        let model = makeModel()
+        model.searchText = "terminal"
+        model.filter = .videos
+        model.reveal("d")
+        #expect(model.searchText.isEmpty)
+        #expect(model.filter == .all)
+        #expect(model.selection == ["d"])
+        #expect(model.scrollTarget == "d")
+    }
+
+    @Test func revealUnknownIDSelectsNothing() {
+        let model = makeModel()
+        model.select("a")
+        model.reveal("zzz")
+        #expect(model.selection.isEmpty)
+        #expect(model.scrollTarget == nil)
+    }
+}

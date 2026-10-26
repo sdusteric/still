@@ -5,7 +5,9 @@ import Testing
 @MainActor
 private final class FakeHandler: ShelfActionHandling {
     var performed: [ShelfAction] = []
+    var opened: [String] = []
     func perform(_ action: ShelfAction) { performed.append(action) }
+    func openItem(id: String) { opened.append(id) }
 }
 
 @MainActor
@@ -23,7 +25,7 @@ private final class FakeHandler: ShelfActionHandling {
     }
 
     @Test func advertisedActionsMatchTheAllowlist() {
-        #expect(ShelfURL.advertisedActions == ["capture-area", "capture-window", "check-for-updates"])
+        #expect(ShelfURL.advertisedActions == ["capture-area", "capture-window", "open-item", "check-for-updates"])
     }
 
     @Test func rejectsUnknownHostsAndOtherSchemes() {
@@ -61,5 +63,44 @@ private final class FakeHandler: ShelfActionHandling {
         #expect(handler.performed.isEmpty)
         #expect(lines.count == 2)
         #expect(lines.allSatisfy { !$0.contains("hunter2") && !$0.contains("secret") })
+    }
+}
+
+@MainActor
+@Suite struct ShelfOpenItemTests {
+    private func request(_ text: String) -> ShelfRequest? {
+        ShelfURL.request(URL(string: text)!)
+    }
+
+    @Test func parsesOpenItem() {
+        #expect(request("snap://open-item?id=20261024-140322-3f9a1c2e") == .openItem(id: "20261024-140322-3f9a1c2e"))
+        #expect(request("snap://capture-area") == .action(.captureArea))
+    }
+
+    @Test func ignoresUnknownParameters() {
+        #expect(request("snap://open-item?id=abc-1&t=4&x=y") == .openItem(id: "abc-1"))
+    }
+
+    @Test func refusesBadOpenItemIDs() {
+        #expect(request("snap://open-item") == nil)
+        #expect(request("snap://open-item?id=") == nil)
+        #expect(request("snap://open-item?id=../x") == nil)
+        #expect(request("snap://open-item?id=\(String(repeating: "a", count: 65))") == nil)
+        #expect(request("snap://open-item/extra?id=abc") == nil)
+        #expect(request("snap://open-item?id=a%20b") == nil)
+        #expect(request("snap://open-item?id=abc#frag") == nil)
+    }
+
+    @Test func plainActionsUnchanged() {
+        #expect(request("snap://capture-area?x=1") == nil)
+        #expect(ShelfURL.parse(URL(string: "snap://open-item?id=abc")!) == nil)
+    }
+
+    @Test func routerOpensItems() {
+        let handler = FakeHandler()
+        let router = ShelfRouter(handler: handler) { _ in }
+        #expect(router.handle(URL(string: "snap://open-item?id=abc-1")!))
+        #expect(handler.opened == ["abc-1"])
+        #expect(handler.performed.isEmpty)
     }
 }

@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
     private var sweepTimer: Timer?
     /// Shelf actions that arrived before the capture graph existed.
     private var pendingShelfActions: [ShelfAction] = []
+    private var pendingOpenItem: String?
     /// Quit waits this long for a recording to finish its file (design 20.6).
     private static let quitFinishTimeout: TimeInterval = 5
 
@@ -49,6 +50,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
         let pending = pendingShelfActions
         pendingShelfActions = []
         pending.forEach(perform)
+        if let id = pendingOpenItem {
+            pendingOpenItem = nil
+            openItem(id: id)
+        }
     }
 
     // MARK: Shelf quick actions
@@ -71,6 +76,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
         case .captureWindow: wiring.capture(.window)
         case .checkForUpdates: updater?.checkForUpdates()
         }
+    }
+
+    func openItem(id: String) {
+        guard let wiring else {
+            pendingOpenItem = id
+            return
+        }
+        wiring.revealInHistory(id)
     }
 
     /// Opening Snap again from Finder, Spotlight or Launchpad shows Settings, so the app never

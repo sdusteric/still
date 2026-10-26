@@ -157,6 +157,8 @@ public final class HistoryWindowModel {
     public private(set) var anchorID: String?
     /// Grid columns at the current width; the view sets it.
     public var columns = 4
+    /// The tile the view scrolls to, set by `reveal`.
+    public private(set) var scrollTarget: String?
     /// Bumped by Cmd+F; the view focuses the search field when it changes.
     public private(set) var searchFocusRequest = 0
     public private(set) var loadError: String?
@@ -187,6 +189,20 @@ public final class HistoryWindowModel {
     // MARK: Loading
 
     /// Reads the folder again: on open, on becoming key and on the history-changed notification.
+    /// Shows one capture from a Shelf search result: clears the search and the filter, selects
+    /// it and asks the view to scroll to it. An unknown id selects nothing.
+    public func reveal(_ id: String) {
+        searchText = ""
+        filter = .all
+        guard items.contains(where: { $0.id == id }) else {
+            clearSelection()
+            scrollTarget = nil
+            return
+        }
+        select(id)
+        scrollTarget = id
+    }
+
     public func reload() {
         do {
             let snapshot = try load()

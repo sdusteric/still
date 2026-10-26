@@ -112,7 +112,7 @@ plist_check() {
   scheme="$(plutil -extract CFBundleURLTypes.0.CFBundleURLSchemes.0 raw -o - "$plist" 2>/dev/null || true)"
   [ "$scheme" = snap ] || { echo "CFBundleURLTypes scheme is '$scheme', expected snap"; return 1; }
   actions="$(plutil -extract SDShelfActions json -o - "$plist" 2>/dev/null || true)"
-  [ "$actions" = '["capture-area","capture-window","check-for-updates"]' ] || { echo "SDShelfActions is '$actions'"; return 1; }
+  [ "$actions" = '["capture-area","capture-window","open-item","check-for-updates"]' ] || { echo "SDShelfActions is '$actions'"; return 1; }
   echo "CFBundleIdentifier $id, LSUIElement $ui, NSMicrophoneUsageDescription matches, URL scheme snap, SDShelfActions $actions"
 }
 

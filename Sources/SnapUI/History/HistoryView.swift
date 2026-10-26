@@ -122,7 +122,7 @@ public struct HistoryView: View {
     private var grid: some View {
         let context = model.context
         let columns = max(model.columns, 1)
-        return ScrollView {
+        return ScrollViewReader { proxy in ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(model.sections) { section in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -142,6 +142,7 @@ public struct HistoryView: View {
                     HistoryTileGrid(columns: columns) {
                         ForEach(section.items) { item in
                             tile(item, context: context)
+                                .id(item.id)
                                 .transition(HistoryMotion.tileRemoval(reduceMotion: reduceMotion))
                         }
                     }
@@ -153,6 +154,11 @@ public struct HistoryView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollIndicators(.automatic)
+        // A Shelf search result: jump to the tile, no animation.
+        .onChange(of: model.scrollTarget, initial: true) { _, target in
+            if let target { proxy.scrollTo(target, anchor: .center) }
+        }
+        }
         .onGeometryChange(for: Int.self) { proxy in
             HistoryWindowModel.columns(forWidth: proxy.size.width)
         } action: { columns in

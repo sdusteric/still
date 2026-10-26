@@ -1105,6 +1105,12 @@ final class AppWiring: CaptureResultPresenter {
         controller.show()
     }
 
+    /// A Shelf search result: History opens with the capture selected (Recall design 7.5a).
+    func revealInHistory(_ id: String) {
+        openHistoryWindow()
+        historyWindow?.model.reveal(id)
+    }
+
     private func makeHistoryWindow() -> HistoryWindowController {
         let history = history
         let model = HistoryWindowModel(
