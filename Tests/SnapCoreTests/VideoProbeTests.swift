@@ -200,7 +200,8 @@ private func makeVideo(
         await #expect(throws: WriterFailed.self) { try await failing.value }
         await #expect(throws: AudioMixExportError.cannotWrite("the other track failed")) { try await stuck.value }
         #expect(abort.isSet)
-        #expect(Date().timeIntervalSince(started) < 2)
+        // Well under the 30 s append timeout; 2 s failed under a loaded parallel suite (2.7 to 3.2 s).
+        #expect(Date().timeIntervalSince(started) < 10)
     }
 
     @Test func theFakeVideoAppendGivesUpWhenTheWriterHoldsFramesBack() async throws {
