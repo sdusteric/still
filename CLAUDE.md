@@ -30,7 +30,7 @@ swift scripts/winlist.swift <pid>                     # on-screen windows of one
 
 ## Layout
 
-- `SnapCore`: Foundation, CoreGraphics, ImageIO, CoreImage, and AVFoundation for the recording
+- `SnapCore`: Foundation, CoreGraphics, ImageIO, CoreImage, Vision (offline OCR for Recall, `Recall/`), and AVFoundation for the recording
   fakes, probe, poster and audio mix export (never `AVCaptureDevice`). No AppKit. Shared types in
   `Model/` (`DisplayInfo`, `WindowInfo`, `CapturedImage`, `CaptureMode` with `CaptureKind`,
   `CaptureState`, `HUDMode` and `PixelSize`, `CaptureItem`, `SnapPaths`, `Settings` with
