@@ -38,6 +38,16 @@ public struct SnapPaths: Sendable, Hashable {
     public var logsDirectory: URL { home.appending(path: "logs", directoryHint: .isDirectory) }
     public var logFile: URL { logsDirectory.appending(path: "snap.log", directoryHint: .notDirectory) }
 
+    /// Where Snap writes its Shelf status file. The default SNAP_HOME uses Shelf's own folder
+    /// (`~/Library/Application Support/Shelf/status`); any other SNAP_HOME keeps it inside itself,
+    /// so no test, shot or tool can write into the real one.
+    public var shelfStatusDirectory: URL {
+        if isDefaultHome {
+            return userHome.appending(path: "Library/Application Support/Shelf/status", directoryHint: .isDirectory)
+        }
+        return home.appending(path: "ShelfStatus", directoryHint: .isDirectory)
+    }
+
     /// `history/<id>/` for one capture.
     public func historyDirectory(for id: String) -> URL {
         historyDirectory.appending(path: id, directoryHint: .isDirectory)

@@ -464,6 +464,13 @@ private struct GeneralTab: View {
             SwitchRow(title: "Sound on capture", subtitle: "A quiet shutter.", divider: false,
                       isOn: $model.settings.general.playSound)
         }
+        SettingsGroup(title: "Shelf") {
+            SwitchRow(
+                title: "Show in Shelf",
+                subtitle: "Shelf shows small previews of your last 3 captures. Screenshots can contain private content.",
+                divider: false, isOn: $model.settings.general.showInShelf
+            )
+        }
         if let updates = model.updates {
             UpdatesGroup(updates: updates)
         }

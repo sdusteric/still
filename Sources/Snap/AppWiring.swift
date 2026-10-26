@@ -71,6 +71,8 @@ final class AppWiring: CaptureResultPresenter {
 
     let paths: SnapPaths
     let log: Log
+    private let shelfStatus: ShelfStatusWriter
+    private let shelfQueue = DispatchQueue(label: "dev.sdusteric.snap.shelf-status", qos: .utility)
     let settingsStore: SettingsStore
     let stateStore: StateStore
     let presetStore: PresetStore
@@ -137,6 +139,10 @@ final class AppWiring: CaptureResultPresenter {
         self.stateStore = stateStore
         self.presetStore = presetStore
         history = HistoryStore(paths: paths, clock: clock, log: log)
+        shelfStatus = ShelfStatusWriter(
+            directory: paths.shelfStatusDirectory,
+            appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        )
         captureSource = LiveCaptureSource(log: log)
 
         let settings = settingsStore.settings
@@ -202,6 +208,7 @@ final class AppWiring: CaptureResultPresenter {
         log.info("launch: SNAP_HOME \(paths.home.path(percentEncoded: false)), permission \(permission.status)")
         persistMigratedSettings()
         sweepHistory(markInterruptedFirst: true)
+        publishShelfStatus()
         if permission.status == .granted {
             Task { await refreshDisplays() }
         }
@@ -303,6 +310,30 @@ final class AppWiring: CaptureResultPresenter {
         NotificationCenter.default.post(name: HistoryWindowController.historyDidChange, object: nil)
     }
 
+    /// Writes the Shelf status file for the newest 3 complete captures, off the main thread.
+    func publishShelfStatus() {
+        let captures: [ShelfCapture]
+        do {
+            captures = try history.recent(limit: 12).lazy
+                .filter { $0.state == .complete }
+                .compactMap { item in item.thumbnailURL.map { ShelfCapture(takenAt: item.createdAt, imageURL: $0) } }
+                .prefix(ShelfStatusWriter.maxCaptures).map { $0 }
+        } catch {
+            log.warning("shelf: cannot read history: \(error)")
+            return
+        }
+        let writer = shelfStatus
+        let showPreviews = settings.general.showInShelf
+        let log = log
+        shelfQueue.async {
+            do {
+                try writer.write(captures: captures, showPreviews: showPreviews)
+            } catch {
+                log.warning("shelf: status write failed: \(error)")
+            }
+        }
+    }
+
     // MARK: Settings
 
     var settings: SnapCore.Settings { settingsStore.settings }
@@ -310,6 +341,8 @@ final class AppWiring: CaptureResultPresenter {
     /// Stores new settings and applies them to the overlay and the Quick Access stack.
     func replaceSettings(_ new: SnapCore.Settings) {
         guard new != settingsStore.settings else { return }
+        let shelfChanged = new.general.showInShelf != settingsStore.settings.general.showInShelf
+        defer { if shelfChanged { publishShelfStatus() } }
         do {
             try settingsStore.update { $0 = new }
         } catch {
@@ -379,6 +412,7 @@ final class AppWiring: CaptureResultPresenter {
         record.item = stored.item
         if let saved = stored.savedURL { quickAccess.markSaved(record.cardID, url: saved) }
         historyChanged()
+        publishShelfStatus()
 
         let wasLapsed = permission.status != .granted
         permission.captureSucceeded()

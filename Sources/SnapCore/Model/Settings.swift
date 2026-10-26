@@ -94,17 +94,22 @@ public struct GeneralSettings: Codable, Sendable, Hashable {
     public var fileNamePattern: String
     /// Sound on capture (design D29: off).
     public var playSound: Bool
+    /// Write small previews of the last 3 captures for Shelf (default off: a screenshot can show
+    /// private content on a shared screen).
+    public var showInShelf: Bool
 
     public init(
         launchAtLogin: Bool = false,
         saveFolderPath: String? = nil,
         fileNamePattern: String = GeneralSettings.defaultFileNamePattern,
-        playSound: Bool = false
+        playSound: Bool = false,
+        showInShelf: Bool = false
     ) {
         self.launchAtLogin = launchAtLogin
         self.saveFolderPath = saveFolderPath
         self.fileNamePattern = fileNamePattern
         self.playSound = playSound
+        self.showInShelf = showInShelf
     }
 
     public init(from decoder: any Decoder) throws {
@@ -115,6 +120,7 @@ public struct GeneralSettings: Codable, Sendable, Hashable {
         let pattern = try container.value(.fileNamePattern, default: defaults.fileNamePattern)
         fileNamePattern = pattern.isEmpty ? defaults.fileNamePattern : pattern
         playSound = try container.value(.playSound, default: defaults.playSound)
+        showInShelf = try container.value(.showInShelf, default: defaults.showInShelf)
     }
 }
 
