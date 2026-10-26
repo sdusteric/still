@@ -77,6 +77,11 @@ final class AppWiring: CaptureResultPresenter {
     let stateStore: StateStore
     let presetStore: PresetStore
     let history: HistoryStore
+    /// Reads screenshots for Shelf search (Recall design 7).
+    let recall: RecallIndexer
+    private var recallPending = 0
+    private var lastStatusWrite = Date.distantPast
+    private var statusWriteScheduled = false
     let clock = SystemClock()
     let captureSource: LiveCaptureSource
     private let windowSource = LiveWindowSource()
@@ -139,6 +144,10 @@ final class AppWiring: CaptureResultPresenter {
         self.stateStore = stateStore
         self.presetStore = presetStore
         history = HistoryStore(paths: paths, clock: clock, log: log)
+        recall = RecallIndexer(
+            history: history, ocr: OCRStore(history: history), recognizer: VisionTextRecognizer(),
+            writer: RecallWriter(directory: paths.recallDirectory), options: RecallOptions(settingsStore.settings.general), log: log
+        )
         shelfStatus = ShelfStatusWriter(
             directory: paths.shelfStatusDirectory,
             appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
@@ -209,6 +218,11 @@ final class AppWiring: CaptureResultPresenter {
         persistMigratedSettings()
         sweepHistory(markInterruptedFirst: true)
         publishShelfStatus()
+        let (counts, continuation) = AsyncStream<Int>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        Task { [recall] in await recall.setOnPendingChange { continuation.yield($0) } }
+        Task { [weak self] in
+            for await count in counts { self?.recallPendingChanged(count) }
+        }
         if permission.status == .granted {
             Task { await refreshDisplays() }
         }
@@ -286,6 +300,9 @@ final class AppWiring: CaptureResultPresenter {
                 }
             }.value
             if !removed.isEmpty || markInterruptedFirst { historyChanged() }
+            await recall.remove(removed)
+            // At launch, after the sweep: repair the recall folder both ways.
+            if markInterruptedFirst { await recall.reconcile() }
         }
     }
 
@@ -325,13 +342,29 @@ final class AppWiring: CaptureResultPresenter {
         }
         let writer = shelfStatus
         let showPreviews = settings.general.showInShelf
+        let recallStatus = RecallStatus(enabled: settings.general.searchInShelf, pending: recallPending)
         let log = log
+        lastStatusWrite = Date()
         shelfQueue.async {
             do {
-                try writer.write(captures: captures, showPreviews: showPreviews)
+                try writer.write(captures: captures, showPreviews: showPreviews, recall: recallStatus)
             } catch {
                 log.warning("shelf: status write failed: \(error)")
             }
+        }
+    }
+
+    /// The OCR queue changed size: tell Shelf, at most once a second.
+    private func recallPendingChanged(_ count: Int) {
+        recallPending = count
+        let wait = 1 - Date().timeIntervalSince(lastStatusWrite)
+        guard wait > 0 else { return publishShelfStatus() }
+        guard !statusWriteScheduled else { return }
+        statusWriteScheduled = true
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(wait))
+            self?.statusWriteScheduled = false
+            self?.publishShelfStatus()
         }
     }
 
@@ -342,8 +375,13 @@ final class AppWiring: CaptureResultPresenter {
     /// Stores new settings and applies them to the overlay and the Quick Access stack.
     func replaceSettings(_ new: SnapCore.Settings) {
         guard new != settingsStore.settings else { return }
-        let shelfChanged = new.general.showInShelf != settingsStore.settings.general.showInShelf
+        let old = settingsStore.settings.general
+        let shelfChanged = new.general.showInShelf != old.showInShelf || new.general.searchInShelf != old.searchInShelf
         defer { if shelfChanged { publishShelfStatus() } }
+        let recallOptions = RecallOptions(new.general)
+        if recallOptions != RecallOptions(old) {
+            Task { [recall] in await recall.update(options: recallOptions) }
+        }
         do {
             try settingsStore.update { $0 = new }
         } catch {
@@ -414,6 +452,8 @@ final class AppWiring: CaptureResultPresenter {
         if let saved = stored.savedURL { quickAccess.markSaved(record.cardID, url: saved) }
         historyChanged()
         publishShelfStatus()
+        let id = stored.item.id
+        Task { [recall] in await recall.enqueue(id) }
 
         let wasLapsed = permission.status != .granted
         permission.captureSucceeded()
@@ -640,6 +680,7 @@ final class AppWiring: CaptureResultPresenter {
         if let updated {
             record.item = updated
             historyChanged()
+            Task { [recall] in await recall.enqueue(id, force: true) }
         }
     }
 
@@ -1123,6 +1164,8 @@ final class AppWiring: CaptureResultPresenter {
             }
         }
         if !trashed.isEmpty { historyChanged() }
+        let removed = Array(trashed)
+        Task { [recall] in await recall.remove(removed) }
         return trashed
     }
 

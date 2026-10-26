@@ -5,7 +5,7 @@ import Foundation
 // fakes and the UI controllers run without panels.
 
 let usage = """
-    usage: snapbench latency --fake [--mode area|hud] [--record] --runs N --display WxH@S [--capture-delay-ms D] [--json]
+    usage: snapbench latency --fake [--mode area|hud] [--record] [--recall] --runs N --display WxH@S [--capture-delay-ms D] [--json]
     """
 
 /// A usage mistake: printed with the usage text, exit status 64.

@@ -201,3 +201,42 @@ import UniformTypeIdentifiers
         #expect(try JSONDecoder().decode(Settings.self, from: old).general.showInShelf == false)
     }
 }
+
+@Suite struct ShelfStatusRecallTests {
+    private func object(_ writer: ShelfStatusWriter) throws -> [String: Any] {
+        try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: writer.statusFile)) as? [String: Any])
+    }
+
+    @Test func statusCarriesRecallFields() throws {
+        let home = try RecallTestSupport.makeHome()
+        defer { RecallTestSupport.remove(home) }
+        let writer = ShelfStatusWriter(directory: home.appending(path: "status"), appVersion: "1.5.0")
+        try writer.write(captures: [], showPreviews: false, recall: RecallStatus(enabled: true, pending: 3))
+        let json = try object(writer)
+        #expect(json["recall"] as? String == "on")
+        #expect(json["recall_pending"] as? Int == 3)
+    }
+
+    @Test func zeroPendingIsOmitted() throws {
+        let home = try RecallTestSupport.makeHome()
+        defer { RecallTestSupport.remove(home) }
+        let writer = ShelfStatusWriter(directory: home.appending(path: "status"), appVersion: "1.5.0")
+        try writer.write(captures: [], showPreviews: false, recall: RecallStatus(enabled: false, pending: 0))
+        let json = try object(writer)
+        #expect(json["recall"] as? String == "off")
+        #expect(json["recall_pending"] == nil)
+        try writer.write(captures: [], showPreviews: false, recall: nil)
+        #expect(try object(writer)["recall"] == nil)
+    }
+
+    @Test func statusStaysUnder16KB() throws {
+        let home = try RecallTestSupport.makeHome()
+        defer { RecallTestSupport.remove(home) }
+        let png = try RecallTestSupport.writePNG(in: home, width: 900, height: 600)
+        let captures = (0..<3).map { ShelfCapture(takenAt: Date(timeIntervalSince1970: 1_800_000_000 - Double($0)), imageURL: png) }
+        let writer = ShelfStatusWriter(directory: home.appending(path: "status"), appVersion: "1.5.0")
+        try writer.write(captures: captures, showPreviews: true, recall: RecallStatus(enabled: true, pending: 120))
+        let size = try #require(try FileManager.default.attributesOfItem(atPath: writer.statusFile.path(percentEncoded: false))[.size] as? Int)
+        #expect(size <= ShelfStatusWriter.maxFileBytes)
+    }
+}

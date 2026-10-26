@@ -30,11 +30,12 @@ enum LatencyBench {
             let delayMS = try parsed.double("--capture-delay-ms", default: 0)
             let mode = parsed.options["--mode"] ?? "area"
             let record = parsed.flags.contains("--record")
+            let recall = parsed.flags.contains("--recall")
             let summary: LatencyReport
             switch mode {
             case "area":
                 guard !record else { throw UsageError("--record needs --mode hud") }
-                let report = try await measure(runs: runs, display: display, captureDelay: delayMS / 1000)
+                let report = try await measure(runs: runs, display: display, captureDelay: delayMS / 1000, recall: recall)
                 summary = LatencyReport(
                     mode: CaptureMode.area.rawValue, display: spec, runs: runs, warmupRuns: warmupRuns,
                     captureDelayMs: delayMS, expectedOrder: LatencyLog.fullOrder.map(\.rawValue), runDetails: report
@@ -68,7 +69,9 @@ enum LatencyBench {
     /// One untimed run first, so one-time setup (image caches, the PNG encoder) is not counted.
     static let warmupRuns = 1
 
-    private static func measure(runs: Int, display: DisplayInfo, captureDelay: TimeInterval) async throws -> [RunDetail] {
+    /// `recall`: every stored capture goes to a RecallIndexer whose fake OCR takes 300 ms, as in the
+    /// app, to show that reading text never delays the card (Recall AC-R4).
+    private static func measure(runs: Int, display: DisplayInfo, captureDelay: TimeInterval, recall: Bool = false) async throws -> [RunDetail] {
         let home = FileManager.default.temporaryDirectory
             .appending(path: "snapbench-latency-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
@@ -96,9 +99,16 @@ enum LatencyBench {
             optionHeld: { false }
         )
         let results = BenchResults(quickAccess: quickAccess)
-        let stage = CaptureOutputStage(
-            history: HistoryStore(paths: SnapPaths(home: home), clock: clock), clipboard: DiscardingClipboard(), clock: clock
-        )
+        let history = HistoryStore(paths: SnapPaths(home: home), clock: clock)
+        if recall {
+            let indexer = RecallIndexer(
+                history: history, ocr: OCRStore(history: history), recognizer: FakeTextRecognizer(delay: .milliseconds(300)),
+                writer: RecallWriter(directory: SnapPaths(home: home).recallDirectory),
+                options: RecallOptions(enabled: true, previews: true, excludedApps: []), log: nil
+            )
+            results.onStored = { stored in Task { await indexer.enqueue(stored.item.id) } }
+        }
+        let stage = CaptureOutputStage(history: history, clipboard: DiscardingClipboard(), clock: clock)
         let coordinator = CaptureCoordinator(
             captureSource: source, windowSource: FakeWindowSource(), overlay: user, results: results,
             output: stage, clock: clock
@@ -368,7 +378,9 @@ private final class BenchResults: CaptureResultPresenter {
         ))
     }
 
-    func captureStored(_ stored: StoredCapture) {}
+    var onStored: (StoredCapture) -> Void = { _ in }
+
+    func captureStored(_ stored: StoredCapture) { onStored(stored) }
     func captureFailed(_ failure: CaptureFailure) { lastFailure = failure.message }
 }
 

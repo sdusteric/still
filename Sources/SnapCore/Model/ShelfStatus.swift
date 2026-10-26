@@ -15,6 +15,17 @@ public struct ShelfCapture: Sendable, Hashable {
     }
 }
 
+/// Whether Snap adds screenshots to Shelf search, and how many wait for OCR (Recall design 7.8).
+public struct RecallStatus: Sendable, Equatable {
+    public var enabled: Bool
+    public var pending: Int
+
+    public init(enabled: Bool, pending: Int) {
+        self.enabled = enabled
+        self.pending = pending
+    }
+}
+
 /// The JSON Shelf reads (Shelf design section 14): common fields plus `captures`.
 struct ShelfStatusDocument: Codable, Equatable {
     struct Entry: Codable, Equatable {
@@ -32,11 +43,15 @@ struct ShelfStatusDocument: Codable, Equatable {
     var appVersion: String
     var updatedAt: Date
     var captures: [Entry]
+    var recall: String?
+    /// Left out when nothing waits.
+    var recallPending: Int?
 
     enum CodingKeys: String, CodingKey {
-        case schema, app, captures
+        case schema, app, captures, recall
         case appVersion = "app_version"
         case updatedAt = "updated_at"
+        case recallPending = "recall_pending"
     }
 }
 
@@ -65,7 +80,7 @@ public struct ShelfStatusWriter: Sendable {
 
     /// Writes the status for the newest-first `captures` (extra ones are dropped). With
     /// `showPreviews` off no preview is written and any left over is deleted.
-    public func write(captures: [ShelfCapture], showPreviews: Bool, now: Date = Date()) throws {
+    public func write(captures: [ShelfCapture], showPreviews: Bool, recall: RecallStatus? = nil, now: Date = Date()) throws {
         let kept = Array(captures.prefix(Self.maxCaptures))
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
@@ -84,7 +99,9 @@ public struct ShelfStatusWriter: Sendable {
         let document = ShelfStatusDocument(
             appVersion: appVersion,
             updatedAt: now,
-            captures: zip(kept, names).map { .init(takenAt: $0.takenAt, preview: $1) }
+            captures: zip(kept, names).map { .init(takenAt: $0.takenAt, preview: $1) },
+            recall: recall.map { $0.enabled ? "on" : "off" },
+            recallPending: recall.flatMap { $0.enabled && $0.pending > 0 ? $0.pending : nil }
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
