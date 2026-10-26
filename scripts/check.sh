@@ -101,7 +101,7 @@ codesign_check() {
 }
 
 plist_check() {
-  local plist="$APP/Contents/Info.plist" id ui mic
+  local plist="$APP/Contents/Info.plist" id ui mic scheme actions
   plutil -lint "$plist" || return 1
   id="$(plutil -extract CFBundleIdentifier raw -o - "$plist")"
   [ "$id" = "$BUNDLE_ID" ] || { echo "bundle id is $id"; return 1; }
@@ -109,7 +109,11 @@ plist_check() {
   [ "$ui" = true ] || { echo "LSUIElement is $ui"; return 1; }
   mic="$(plutil -extract NSMicrophoneUsageDescription raw -o - "$plist" 2>/dev/null || true)"
   [ "$mic" = "$MIC_USAGE" ] || { echo "NSMicrophoneUsageDescription is '$mic', expected '$MIC_USAGE'"; return 1; }
-  echo "CFBundleIdentifier $id, LSUIElement $ui, NSMicrophoneUsageDescription matches"
+  scheme="$(plutil -extract CFBundleURLTypes.0.CFBundleURLSchemes.0 raw -o - "$plist" 2>/dev/null || true)"
+  [ "$scheme" = snap ] || { echo "CFBundleURLTypes scheme is '$scheme', expected snap"; return 1; }
+  actions="$(plutil -extract SDShelfActions json -o - "$plist" 2>/dev/null || true)"
+  [ "$actions" = '["capture-area","capture-window","check-for-updates"]' ] || { echo "SDShelfActions is '$actions'"; return 1; }
+  echo "CFBundleIdentifier $id, LSUIElement $ui, NSMicrophoneUsageDescription matches, URL scheme snap, SDShelfActions $actions"
 }
 
 sparkle_check() {

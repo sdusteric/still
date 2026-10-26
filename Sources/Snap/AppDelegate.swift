@@ -9,7 +9,7 @@ import SwiftUI
 /// the recording timer, settings, global hotkeys with the CleanShot X hand-over, the first-run
 /// window, and finishing a recording on quit and sleep. The capture graph lives in `AppWiring`.
 /// Only the installed app runs this; tests, tools and the shot mode never do.
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
     private static let sweepInterval: TimeInterval = 60 * 60
 
     private var wiring: AppWiring?
@@ -27,6 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var observers: [any NSObjectProtocol] = []
     private var workspaceObservers: [any NSObjectProtocol] = []
     private var sweepTimer: Timer?
+    /// Shelf actions that arrived before the capture graph existed.
+    private var pendingShelfActions: [ShelfAction] = []
     /// Quit waits this long for a recording to finish its file (design 20.6).
     private static let quitFinishTimeout: TimeInterval = 5
 
@@ -44,6 +46,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installHotkeys(wiring)
         observeSystem(wiring)
         showOnboardingIfNeeded(wiring)
+        let pending = pendingShelfActions
+        pendingShelfActions = []
+        pending.forEach(perform)
+    }
+
+    // MARK: Shelf quick actions
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        let router = ShelfRouter(handler: self) { [weak self] message in
+            self?.wiring?.log.info(message)
+        }
+        for url in urls where ShelfURL.isShelfURL(url) { router.handle(url) }
+    }
+
+    /// The same calls the hotkeys and the menu make.
+    func perform(_ action: ShelfAction) {
+        guard let wiring else {
+            pendingShelfActions.append(action)
+            return
+        }
+        switch action {
+        case .captureArea: wiring.capture(.area)
+        case .captureWindow: wiring.capture(.window)
+        case .checkForUpdates: updater?.checkForUpdates()
+        }
     }
 
     /// Opening Snap again from Finder, Spotlight or Launchpad shows Settings, so the app never

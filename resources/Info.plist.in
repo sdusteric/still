@@ -22,6 +22,19 @@
   <!-- Design D79: asked once, only when the user turns the microphone on for recordings. -->
   <key>NSMicrophoneUsageDescription</key><string>Snap records your microphone only during a screen recording you start with the microphone turned on.</string>
 
+  <!-- Shelf quick actions (shelf design, section 11): snap://<action>, allowlisted in ShelfURL. -->
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>@BUNDLE_ID@.shelf</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>CFBundleURLSchemes</key>
+      <array><string>snap</string></array>
+    </dict>
+  </array>
+  <key>SDShelfActions</key>
+  <array><string>capture-area</string><string>capture-window</string><string>check-for-updates</string></array>
+
   <!-- Sparkle auto-update (app-updates CONTRACT.md). -->
   <key>SUFeedURL</key><string>https://sdusteric.github.io/app-updates/snap/appcast.xml</string>
   <key>SUPublicEDKey</key><string>PMaW+8sZRzOkfIwy1KBGk0CHTVoN49FE9o8gUlNGdZc=</string>

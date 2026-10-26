@@ -91,6 +91,10 @@ fi
 
 sed -e "s|@BUNDLE_ID@|$BUNDLE_ID|" -e "s|@VERSION@|$VERSION|" -e "s|@BUILD@|$BUILD|" \
   "$REPO/resources/Info.plist.in" >"$OUT/Contents/Info.plist"
+# The snap:// scheme belongs to the installed bundle id only (shelf design, section 11).
+if [ "$BUNDLE_ID" != dev.sdusteric.snap ]; then
+  plutil -remove CFBundleURLTypes "$OUT/Contents/Info.plist"
+fi
 printf 'APPL????' >"$OUT/Contents/PkgInfo"
 plutil -lint "$OUT/Contents/Info.plist"
 
