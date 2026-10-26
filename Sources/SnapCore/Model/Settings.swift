@@ -84,7 +84,32 @@ private struct VersionOneShortcuts: Decodable {
 }
 
 /// General tab.
+/// How long screenshots stay in history (Recall design 7.4). Recordings always keep 3 days.
+public enum ScreenshotRetention: String, Codable, Sendable, CaseIterable {
+    case threeDays = "3d"
+    case thirtyDays = "30d"
+    case oneYear = "1y"
+
+    public var interval: TimeInterval {
+        switch self {
+        case .threeDays: 3 * 86_400
+        case .thirtyDays: 30 * 86_400
+        case .oneYear: 365 * 86_400
+        }
+    }
+
+    public var label: String {
+        switch self {
+        case .threeDays: "3 days"
+        case .thirtyDays: "30 days"
+        case .oneYear: "1 year"
+        }
+    }
+}
+
 public struct GeneralSettings: Codable, Sendable, Hashable {
+    public static let defaultExcludedApps = ["Passwords", "Keychain Access", "1Password", "Bitwarden"]
+
     public static let defaultFileNamePattern = "Snap {yyyy}-{MM}-{dd} at {HH}.{mm}.{ss}"
 
     /// Launch at login through `SMAppService.mainApp`. Off by default and never touched by tests.
@@ -97,19 +122,34 @@ public struct GeneralSettings: Codable, Sendable, Hashable {
     /// Write small previews of the last 3 captures for Shelf (default off: a screenshot can show
     /// private content on a shared screen).
     public var showInShelf: Bool
+    /// A settings file from before this setting reads as 30 days: there was no choice to keep.
+    public var screenshotRetention: ScreenshotRetention
+    /// Read the text in screenshots and write Recall entries for Shelf search.
+    public var searchInShelf: Bool
+    public var searchPreviews: Bool
+    /// Screenshots of these apps are never read.
+    public var searchExcludedApps: [String]
 
     public init(
         launchAtLogin: Bool = false,
         saveFolderPath: String? = nil,
         fileNamePattern: String = GeneralSettings.defaultFileNamePattern,
         playSound: Bool = false,
-        showInShelf: Bool = false
+        showInShelf: Bool = false,
+        screenshotRetention: ScreenshotRetention = .thirtyDays,
+        searchInShelf: Bool = true,
+        searchPreviews: Bool = true,
+        searchExcludedApps: [String] = GeneralSettings.defaultExcludedApps
     ) {
         self.launchAtLogin = launchAtLogin
         self.saveFolderPath = saveFolderPath
         self.fileNamePattern = fileNamePattern
         self.playSound = playSound
         self.showInShelf = showInShelf
+        self.screenshotRetention = screenshotRetention
+        self.searchInShelf = searchInShelf
+        self.searchPreviews = searchPreviews
+        self.searchExcludedApps = searchExcludedApps
     }
 
     public init(from decoder: any Decoder) throws {
@@ -121,6 +161,11 @@ public struct GeneralSettings: Codable, Sendable, Hashable {
         fileNamePattern = pattern.isEmpty ? defaults.fileNamePattern : pattern
         playSound = try container.value(.playSound, default: defaults.playSound)
         showInShelf = try container.value(.showInShelf, default: defaults.showInShelf)
+        let retention = try? container.decodeIfPresent(String.self, forKey: .screenshotRetention)
+        screenshotRetention = retention.flatMap(ScreenshotRetention.init(rawValue:)) ?? defaults.screenshotRetention
+        searchInShelf = try container.value(.searchInShelf, default: defaults.searchInShelf)
+        searchPreviews = try container.value(.searchPreviews, default: defaults.searchPreviews)
+        searchExcludedApps = try container.value(.searchExcludedApps, default: defaults.searchExcludedApps)
     }
 }
 

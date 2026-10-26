@@ -393,12 +393,16 @@ public final class HistoryStore: Sendable {
     /// direct children of the history folder are ever removed.
     /// - Parameter now: the time to judge against; defaults to the clock's date.
     @discardableResult
-    public func sweep(skipping: Set<String> = [], now: Date? = nil) throws -> [String] {
-        let cutoff = (now ?? clock.date()).addingTimeInterval(-retention)
+    /// `imageRetention` applies to screenshots; recordings always use `retention` (Recall design 7.4).
+    public func sweep(skipping: Set<String> = [], now: Date? = nil, imageRetention: TimeInterval? = nil) throws -> [String] {
+        let now = now ?? clock.date()
+        let videoCutoff = now.addingTimeInterval(-retention)
+        let imageCutoff = now.addingTimeInterval(-(imageRetention ?? retention))
         var expired: [(id: String, created: Date, folder: URL)] = []
         for folder in try itemFolders() {
             let id = folder.lastPathComponent
-            guard !skipping.contains(id), let created = createdDate(of: folder), created < cutoff else { continue }
+            guard !skipping.contains(id), let (created, kind) = createdDateAndKind(of: folder) else { continue }
+            guard created < (kind == .video ? videoCutoff : imageCutoff) else { continue }
             expired.append((id, created, folder))
         }
         expired.sort { $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created }
@@ -445,6 +449,15 @@ public final class HistoryStore: Sendable {
             options: [.skipsHiddenFiles]
         )
         return try entries.filter { try $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true }
+    }
+
+    private func createdDateAndKind(of folder: URL) -> (Date, CaptureKind)? {
+        do {
+            if let record = try readRecord(in: folder) { return (record.createdAt, record.kind ?? .image) }
+        } catch {
+            log?.warning("history: unreadable item.json in \(folder.lastPathComponent): \(error)")
+        }
+        return createdDate(of: folder).map { ($0, .image) }
     }
 
     private func createdDate(of folder: URL) -> Date? {

@@ -265,6 +265,7 @@ final class AppWiring: CaptureResultPresenter {
         let history = history
         let log = log
         let inUse = inUseItemIDs()
+        let imageRetention = settings.general.screenshotRetention.interval
         Task {
             let removed = await Task.detached(priority: .utility) { () -> [String] in
                 if markInterruptedFirst {
@@ -276,7 +277,7 @@ final class AppWiring: CaptureResultPresenter {
                     }
                 }
                 do {
-                    let removed = try history.sweep(skipping: inUse)
+                    let removed = try history.sweep(skipping: inUse, imageRetention: imageRetention)
                     if !removed.isEmpty { log.info("history: swept \(removed.count) items, skipped \(inUse.count) in use") }
                     return removed
                 } catch {
