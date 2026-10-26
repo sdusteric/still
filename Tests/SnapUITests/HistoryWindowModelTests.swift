@@ -125,6 +125,8 @@ final class HistoryActionLog {
     @Test func emptyNoResultsAndEmptyFilterStates() {
         let empty = makeModel([], bytes: 0)
         #expect(empty.content == .empty)
+        #expect(empty.footerParts == ["0 captures", "screenshots kept for 30 days"])
+        empty.retention = .threeDays
         #expect(empty.footerParts == ["0 captures", "kept for 3 days"])
         let model = makeModel([item("a", hoursAgo: 1)])
         model.searchText = "  notes2 "
@@ -137,7 +139,7 @@ final class HistoryActionLog {
     @Test func footerShowsCountSizeAndRetention() {
         let model = makeModel()
         let size = ByteCountFormatter.string(fromByteCount: 41_000_000, countStyle: .file)
-        #expect(model.footerParts == ["7 captures", size, "kept for 3 days"])
+        #expect(model.footerParts == ["7 captures", size, "screenshots kept for 30 days"])
         #expect(size.contains("41"))
         #expect(makeModel([item("a", hoursAgo: 1)], bytes: 2048).footerParts.first == "1 capture")
     }

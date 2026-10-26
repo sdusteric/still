@@ -92,7 +92,7 @@ public enum HistoryKey: Sendable, Hashable {
 /// What the grid area shows.
 public enum HistoryContent: Sendable, Hashable {
     case grid
-    /// No captures at all in the last 3 days.
+    /// No captures at all in the kept period.
     case empty
     /// The search matched nothing: `No captures match “notes”`.
     case noResults(String)
@@ -162,6 +162,8 @@ public final class HistoryWindowModel {
     /// Bumped by Cmd+F; the view focuses the search field when it changes.
     public private(set) var searchFocusRequest = 0
     public private(set) var loadError: String?
+    /// How long screenshots are kept, for the subtitle, footer and empty states.
+    public var retention: ScreenshotRetention = .thirtyDays
     /// The Capture Area shortcut for the empty state's key cap, nil when unset.
     public var captureAreaShortcut: String?
 
@@ -262,7 +264,7 @@ public final class HistoryWindowModel {
         let count = items.count
         var parts = ["\(count) \(count == 1 ? "capture" : "captures")"]
         if count > 0 { parts.append(ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)) }
-        parts.append("kept for 3 days")
+        parts.append(HistoryCopy.footerKept(retention))
         return parts
     }
 

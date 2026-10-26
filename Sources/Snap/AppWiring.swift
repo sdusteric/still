@@ -1102,6 +1102,7 @@ final class AppWiring: CaptureResultPresenter {
         let controller = historyWindow ?? makeHistoryWindow()
         historyWindow = controller
         controller.model.captureAreaShortcut = settings.shortcuts.captureArea.map { HotkeyCombo($0).displayString }
+        controller.model.retention = settings.general.screenshotRetention
         controller.show()
     }
 

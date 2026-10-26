@@ -73,6 +73,8 @@ public struct SettingsActions {
     public var requestMicrophoneAccess: () async -> MicrophoneAccess
     /// "Open Privacy Settings": Privacy & Security > Microphone.
     public var openMicrophonePrivacySettings: () -> Void
+    /// Names of the running apps, for "Don't read screenshots of".
+    public var runningAppNames: () -> [String] = { [] }
 
     public init(
         settingsChanged: @escaping (SnapCore.Settings) -> Void = { _ in },
@@ -464,16 +466,123 @@ private struct GeneralTab: View {
             SwitchRow(title: "Sound on capture", subtitle: "A quiet shutter.", divider: false,
                       isOn: $model.settings.general.playSound)
         }
+        SettingsGroup(title: "History") {
+            SettingsRow(title: "Keep screenshots for", subtitle: HistoryCopy.recordingsNote, divider: false) {
+                Picker("Keep screenshots for", selection: $model.settings.general.screenshotRetention) {
+                    ForEach(ScreenshotRetention.allCases, id: \.self) { retention in
+                        Text(retention.label).tag(retention)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+        }
         SettingsGroup(title: "Shelf") {
             SwitchRow(
                 title: "Show in Shelf",
                 subtitle: "Shelf shows small previews of your last 3 captures. Screenshots can contain private content.",
-                divider: false, isOn: $model.settings.general.showInShelf
+                isOn: $model.settings.general.showInShelf
             )
+        }
+        SettingsGroup(title: "Search in Shelf") {
+            SwitchRow(title: "Make screenshots searchable in Shelf", subtitle: HistoryCopy.searchHelp,
+                      isOn: $model.settings.general.searchInShelf)
+            SwitchRow(title: "Show previews in Shelf search", isOn: $model.settings.general.searchPreviews)
+            ExcludedAppsRow(model: model)
         }
         if let updates = model.updates {
             UpdatesGroup(updates: updates)
         }
+    }
+}
+
+/// "Don't read screenshots of": the excluded apps as removable tokens, and a menu of running apps.
+private struct ExcludedAppsRow: View {
+    @Bindable var model: SettingsModel
+
+    private var excluded: [String] { model.settings.general.searchExcludedApps }
+
+    var body: some View {
+        SettingsRow(title: "Don't read screenshots of", divider: false) {
+            Menu("Add App") {
+                let choices = model.actions.runningAppNames().filter { !excluded.contains($0) }.sorted()
+                if choices.isEmpty { Text("No other apps are open") }
+                ForEach(choices, id: \.self) { name in
+                    Button(name) { model.settings.general.searchExcludedApps.append(name) }
+                }
+            }
+            .fixedSize()
+        }
+        FlowTokens(names: excluded) { name in
+            model.settings.general.searchExcludedApps.removeAll { $0 == name }
+        }
+        .padding(.leading, Theme.Settings.rowPadding.left)
+        .padding(.trailing, Theme.Settings.rowPadding.right)
+        .padding(.bottom, Theme.Settings.rowPadding.bottom)
+    }
+}
+
+private struct FlowTokens: View {
+    let names: [String]
+    let remove: (String) -> Void
+
+    var body: some View {
+        WrapLayout(spacing: 6) {
+            ForEach(names, id: \.self) { name in
+                HStack(spacing: 4) {
+                    Text(name).font(Theme.Typography.captionSmall.font).foregroundStyle(Theme.Colors.deskText.color)
+                    Button { remove(name) } label: {
+                        Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.Colors.deskText2.color)
+                    .accessibilityLabel("Read screenshots of \(name) again")
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Theme.Colors.deskFill.color))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Lays tokens out left to right and wraps to a new line when the next one does not fit.
+private struct WrapLayout: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = rows(width: proposal.width ?? .infinity, subviews: subviews)
+        let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0))
+        return CGSize(width: proposal.width ?? rows.map(\.width).max() ?? 0, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in rows(width: bounds.width, subviews: subviews) {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private func rows(width: CGFloat, subviews: Subviews) -> [(indices: [Int], width: CGFloat, height: CGFloat)] {
+        var rows: [(indices: [Int], width: CGFloat, height: CGFloat)] = []
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            if let last = rows.last, last.width + spacing + size.width <= width {
+                rows[rows.count - 1].indices.append(index)
+                rows[rows.count - 1].width += spacing + size.width
+                rows[rows.count - 1].height = max(last.height, size.height)
+            } else {
+                rows.append(([index], size.width, size.height))
+            }
+        }
+        return rows
     }
 }
 
@@ -754,6 +863,8 @@ private struct ShortcutsTab: View {
 /// tests and shots. Nothing is read from or written to disk.
 public enum SettingsDemo {
     public static let size = CGSize(width: Theme.Settings.width, height: 690)
+    /// The whole General tab without scrolling, so the Search in Shelf group is in the shot.
+    public static let fullGeneralSize = CGSize(width: Theme.Settings.width, height: 1210)
 
     /// The Recording tab shot (design 20.11 `settings-recording`): the microphone on and access
     /// denied, so the warning row shows.
@@ -776,7 +887,7 @@ public enum SettingsDemo {
         return model
     }
 
-    public static func makeView(tab: SettingsTab = .capture, dark: Bool = false) -> NSView {
+    public static func makeView(tab: SettingsTab = .capture, dark: Bool = false, size: CGSize = SettingsDemo.size) -> NSView {
         let view = NSHostingView(rootView: SettingsView(model: makeModel(tab: tab)).frame(height: size.height, alignment: .top))
         view.frame = CGRect(origin: .zero, size: size)
         view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)

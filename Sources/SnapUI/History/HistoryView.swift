@@ -63,7 +63,7 @@ public struct HistoryView: View {
                 Text("History")
                     .font(Theme.History.titleStyle.font)
                     .foregroundStyle(Theme.Colors.deskText.color)
-                Text("Last 3 days")
+                Text(HistoryCopy.subtitle(model.retention))
                     .font(Theme.History.subtitleStyle.font)
                     .foregroundStyle(Theme.Colors.deskText2.color)
             }
@@ -113,7 +113,7 @@ public struct HistoryView: View {
         case .emptyFilter(let filter):
             message(
                 symbol: filter == .videos ? "record.circle" : "photo",
-                title: filter == .videos ? "No recordings in the last 3 days" : "No screenshots in the last 3 days",
+                title: HistoryCopy.filterEmpty(videos: filter == .videos, model.retention),
                 text: nil, button: nil
             )
         }
@@ -184,12 +184,12 @@ public struct HistoryView: View {
     // MARK: Empty states
 
     private var emptyState: some View {
-        message(symbol: "clock.arrow.circlepath", title: "No captures in the last 3 days", text: emptyText, button: nil)
+        message(symbol: "clock.arrow.circlepath", title: HistoryCopy.emptyTitle(model.retention), text: emptyText, button: nil)
     }
 
     /// The shortcut is a key cap, the real current one, or the menu item when it is unset.
     private var emptyText: AttributedString {
-        var text = AttributedString("Snap keeps every screenshot and recording here for 3 days. ")
+        var text = AttributedString(HistoryCopy.emptyBody(model.retention))
         if let shortcut = model.captureAreaShortcut {
             text += AttributedString("Press ")
             var key = AttributedString("\u{2009}\(shortcut)\u{2009}")

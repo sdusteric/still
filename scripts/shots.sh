@@ -9,7 +9,7 @@
 #        m2-polish: recording-stalled quick-access-audio annotate-reopened menu-permission
 #            (design 20.16)
 #        each scenario in light and dark -> build/shots/<scenario>-<light|dark>.png (2x points)
-#        other scenarios: overlay-before overlay-window settings-shortcuts settings-general onboarding
+#        other scenarios: overlay-before overlay-window settings-shortcuts settings-general settings-general-full onboarding
 #                         onboarding-granted permission-hint
 # Env:   SNAP_APP  bundle to run (default build/bundle/Snap.app, from scripts/bundle.sh)
 #        OUT       where the PNGs go (default build/shots)

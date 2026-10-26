@@ -281,7 +281,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
     private func openSettings(tab: SettingsTab?) {
         guard let wiring else { return }
         if settingsWindow == nil {
-            let actions = SettingsActions(
+            var actions = SettingsActions(
                 settingsChanged: { [weak self] settings in self?.settingsChanged(settings) },
                 setLaunchAtLogin: { enabled in AppDelegate.setLaunchAtLogin(enabled) },
                 chooseSaveFolder: { AppDelegate.chooseFolder() },
@@ -300,6 +300,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
                     if let url = MicrophoneAuthorization.privacySettingsURL { NSWorkspace.shared.open(url) }
                 }
             )
+            actions.runningAppNames = {
+                NSWorkspace.shared.runningApplications
+                    .filter { $0.activationPolicy == .regular }.compactMap(\.localizedName)
+            }
             let model = SettingsModel(
                 settings: wiring.settings, tab: tab ?? .general, plan: plan, registrationErrors: registrationErrors,
                 presets: wiring.presetStore.presets, starredPresetID: wiring.presetStore.starredID,
