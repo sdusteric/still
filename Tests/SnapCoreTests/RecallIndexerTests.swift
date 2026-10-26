@@ -212,3 +212,29 @@ final class IndexerRig: Sendable {
         #expect(await rig.indexer.pending == 0)
     }
 }
+
+@Suite struct RecallIndexerReviewTests {
+    @Test func noPreviewWhenASecretWasHidden() async throws {
+        let rig = try await IndexerRig(
+            results: ["a.png": ["key sk_live_51HxQe2LkS8vA0bC9dEfGh12"], "b.png": ["plain words"]],
+            options: RecallOptions(enabled: true, previews: true, excludedApps: []))
+        let png = try RecallTestSupport.writePNG(in: rig.home, width: 400, height: 300)
+        let data = try Data(contentsOf: png)
+        let secret = try rig.history.add(pngData: data, fileName: "a.png", mode: .area, scale: 2)
+        let plain = try rig.history.add(pngData: data, fileName: "b.png", mode: .area, scale: 2)
+        await rig.indexer.enqueue(secret.id)
+        await rig.indexer.enqueue(plain.id)
+        await rig.indexer.drain()
+        #expect(try rig.entry(secret.id)?.preview == nil)
+        #expect(try rig.entry(plain.id)?.preview != nil)
+    }
+
+    @Test func ocrRunsAtUtilityPriority() async throws {
+        let rig = try await IndexerRig(results: ["a.png": ["x"]])
+        let item = try rig.add("a.png")
+        await Task(priority: .userInitiated) { await rig.indexer.enqueue(item.id) }.value
+        // Wait without awaiting the worker: awaiting a task raises it to the waiter's priority.
+        await rig.waitForCalls(1)
+        #expect(rig.recognizer.priorities == [.utility])
+    }
+}

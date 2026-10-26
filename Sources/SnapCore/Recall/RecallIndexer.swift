@@ -154,7 +154,8 @@ public actor RecallIndexer {
     private func startWorker() {
         reportPending()
         guard worker == nil, !queue.isEmpty else { return }
-        worker = Task { [weak self] in await self?.run() }
+        // OCR is background work: never at the priority of the capture that queued it.
+        worker = Task(priority: .utility) { [weak self] in await self?.run() }
     }
 
     private func run() async {
@@ -189,13 +190,16 @@ public actor RecallIndexer {
               fresh.currentURL.lastPathComponent == result.imageName else { return }
         do {
             try ocr.save(result, id: id)
-            let lines = SecretFilter.redact(result.lines.map(\.text))
+            let raw = result.lines.map(\.text)
+            let lines = SecretFilter.redact(raw)
             var context: [String: String] = [:]
             if let app = fresh.sourceApp { context["source_app"] = app }
             let entry = RecallEntry(
                 id: id, title: fresh.sourceApp ?? "Screenshot", createdAt: fresh.createdAt, updatedAt: now(),
                 language: result.language, context: context, segments: lines.map(RecallEntry.Segment.init(text:)))
-            try writer.write(entry, previewFrom: options.previews ? fresh.currentURL : nil)
+            // A preview of a capture with a hidden secret could show it, so it gets none.
+            let showPreview = options.previews && lines == raw
+            try writer.write(entry, previewFrom: showPreview ? fresh.currentURL : nil)
         } catch {
             log?.warning("recall: cannot write the entry for \(id): \(error)")
         }
