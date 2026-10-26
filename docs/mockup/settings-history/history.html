@@ -1,0 +1,26 @@
+<!doctype html><meta charset=utf-8><title>Snap history mockup</title><link rel=stylesheet href=base.css>
+<style>
+.win{width:760px;height:560px;background:var(--desk);display:flex;flex-direction:column}
+.tb{height:52px;background:var(--bar);border-bottom:1px solid var(--sep);display:flex;align-items:center;gap:12px;padding:0 18px}
+.tb .t{font-size:17px;line-height:20px;margin-left:14px}.tb .s{font-size:11px;line-height:14px;color:var(--text2)}
+.seg{margin-left:auto;display:flex;background:var(--fill);border-radius:9px;padding:2px;gap:1px;font-size:12px}.seg span{padding:2px 10px;border-radius:7px;line-height:18px}.seg .on{background:var(--group);font-weight:500;box-shadow:0 0 0 .5px var(--sep)}
+.q{width:190px;height:28px;border-radius:8px;background:var(--fill);color:var(--text2);padding:5px 9px}
+.body{flex:1;overflow:hidden;padding:4px 28px}
+.day{display:flex;align-items:baseline;gap:8px;margin:16px 0 10px}.day .display{font-size:16px;line-height:20px}
+.day .c{font-size:11px;line-height:16px;padding:0 7px;border-radius:8px;background:var(--fill);color:var(--text2)}
+.grid{display:flex;flex-wrap:wrap;gap:14px 16px}
+.tile{width:164px}.tile .b{height:112px;border-radius:8px;background:var(--back);box-shadow:0 0 0 .5px rgba(0,0,0,.18) inset;position:relative;overflow:hidden}
+.tile .b i{position:absolute;inset:10px 14px;background:var(--group);border-radius:3px;opacity:.96}
+.tile.sel .b{outline:2px solid var(--brand);outline-offset:3px;border-radius:8px}
+.cap{display:flex;gap:6px;margin-top:6px;padding:0 2px;font-size:12px;line-height:16px}.cap b{font-weight:600;font-variant-numeric:tabular-nums}.cap span{color:var(--text2)}
+.ft{height:48px;background:var(--bar);border-top:1px solid var(--sep);display:flex;align-items:center;gap:8px;padding:0 16px 0 20px;font-size:12px;color:var(--text2)}
+.ft .dot{width:3px;height:3px;border-radius:2px;background:var(--text2);margin:0 4px}
+.btn{margin-left:auto;display:flex;gap:8px}.btn span{padding:3px 12px;border-radius:12px;background:var(--btn);box-shadow:0 0 0 .5px var(--btnEdge);color:var(--text)}.btn .p{background:var(--brand);color:#fff;font-weight:500}
+</style><body><script>
+function tile(t,a,s){return `<div class="tile ${s?'sel':''}"><div class=b><i></i></div><div class=cap><b>${t}</b><span>${a}</span></div></div>`}
+function make(cls){return `<div class="${cls}" style="padding:28px;background:var(--stage);color:var(--text)"><div class="win"><div class=tb><div class=tl><i style=background:#FF5F57></i><i style=background:#FEBC2E></i><i style=background:#28C840></i></div><div><div class="t display">History</div><div class=s>Last 3 days</div></div><div class=seg><span class=on>All</span><span>Screenshots</span><span>Recordings</span></div><div class=q>Search by app or date</div></div>
+<div class=body><div class=day><span class=display>Today</span><span class="c num">5</span></div><div class=grid>${tile('14:03','Notes',1)}${tile('13:41','Notes')}${tile('11:48','Terminal')}${tile('09:15','Figma')}${tile('08:52','Messages')}</div>
+<div class=day><span class=display>Yesterday</span><span class="c num">3</span></div><div class=grid>${tile('17:20','Snap')}${tile('16:02','Safari')}</div></div>
+<div class=ft><span class=num>12 captures</span><span class=dot></span><span class=num>41 MB</span><span class=dot></span><span>kept for 3 days</span><div class=btn><span>Pin</span><span>Copy</span><span class=p>Show in Quick Access</span></div></div></div></div>`}
+document.body.innerHTML=make('')+make('dark');
+</script>

@@ -38,12 +38,12 @@ public struct HistoryView: View {
             hairline
             footer
         }
-        .background(Theme.Colors.window.color)
+        .background(Theme.Colors.desk.color)
         .onChange(of: model.searchFocusRequest) { searchFocused = true }
     }
 
     private var hairline: some View {
-        Rectangle().fill(Theme.Colors.separator.color).frame(height: 1)
+        Rectangle().fill(Theme.Colors.deskSeparator.color).frame(height: 1)
     }
 
     // MARK: Toolbar
@@ -62,10 +62,10 @@ public struct HistoryView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text("History")
                     .font(Theme.History.titleStyle.font)
-                    .foregroundStyle(Theme.Colors.text.color)
+                    .foregroundStyle(Theme.Colors.deskText.color)
                 Text("Last 3 days")
                     .font(Theme.History.subtitleStyle.font)
-                    .foregroundStyle(Theme.Colors.text2.color)
+                    .foregroundStyle(Theme.Colors.deskText2.color)
             }
             .padding(.leading, Theme.History.titleLeadingInset)
             Spacer(minLength: 0)
@@ -75,14 +75,14 @@ public struct HistoryView: View {
         .padding(.horizontal, 18)
         // The hairline under it is part of the 52 pt.
         .frame(height: Theme.History.toolbarHeight - 1)
-        .background(Theme.Colors.window.color)
+        .background(Theme.Colors.deskBar.color)
     }
 
     private var searchField: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.Colors.text2.color)
+                .foregroundStyle(Theme.Colors.deskText2.color)
             TextField("Search by app or date", text: $model.searchText)
                 .textFieldStyle(.plain)
                 .font(Theme.Typography.body.font)
@@ -93,7 +93,7 @@ public struct HistoryView: View {
         .frame(width: Theme.History.searchFieldSize.width, height: Theme.History.searchFieldSize.height)
         .background(
             RoundedRectangle(cornerRadius: Theme.History.searchFieldRadius, style: .continuous)
-                .fill(Theme.Colors.fill.color)
+                .fill(Theme.Colors.deskFill.color)
         )
     }
 
@@ -128,10 +128,12 @@ public struct HistoryView: View {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(section.title)
                             .font(Theme.History.sectionHeadingStyle.font)
-                            .foregroundStyle(Theme.Colors.text.color)
+                            .foregroundStyle(Theme.Colors.deskText.color)
                         Text("\(section.items.count)")
                             .font(Theme.History.sectionCountStyle.font)
-                            .foregroundStyle(Theme.Colors.text2.color)
+                            .foregroundStyle(Theme.Colors.deskText2.color)
+                            .padding(.horizontal, Theme.History.sectionCountPadding)
+                            .background(Capsule().fill(Theme.Colors.deskFill.color))
                     }
                     .padding(.top, Theme.History.sectionTopSpacing)
                     .padding(.bottom, Theme.History.sectionBottomSpacing)
@@ -186,8 +188,8 @@ public struct HistoryView: View {
             text += AttributedString("Press ")
             var key = AttributedString("\u{2009}\(shortcut)\u{2009}")
             key.font = .system(size: 12, weight: .semibold)
-            key.foregroundColor = Theme.Colors.text.color
-            key.backgroundColor = Theme.Colors.fill.color
+            key.foregroundColor = Theme.Colors.deskText.color
+            key.backgroundColor = Theme.Colors.deskFill.color
             text += key
             text += AttributedString(" to take one.")
         } else {
@@ -200,20 +202,20 @@ public struct HistoryView: View {
         VStack(spacing: 0) {
             Image(systemName: symbol)
                 .font(.system(size: 24, weight: .regular))
-                .foregroundStyle(Theme.Colors.text2.color)
+                .foregroundStyle(Theme.Colors.deskText2.color)
                 .frame(width: Theme.History.emptyIconSize, height: Theme.History.emptyIconSize)
                 .background(
                     RoundedRectangle(cornerRadius: Theme.History.emptyIconRadius, style: .continuous)
-                        .fill(Theme.Colors.fill.color)
+                        .fill(Theme.Colors.deskFill.color)
                 )
                 .padding(.bottom, Theme.History.emptyIconGap)
             Text(title)
                 .font(Theme.History.emptyTitleStyle.font)
-                .foregroundStyle(Theme.Colors.text.color)
+                .foregroundStyle(Theme.Colors.deskText.color)
             if let text {
                 Text(text)
                     .font(Theme.Typography.body.font)
-                    .foregroundStyle(Theme.Colors.text2.color)
+                    .foregroundStyle(Theme.Colors.deskText2.color)
                     .multilineTextAlignment(.center)
                     .lineSpacing(Theme.Typography.body.lineSpacing)
                     .frame(maxWidth: Theme.History.emptyTextMaxWidth)
@@ -246,7 +248,7 @@ public struct HistoryView: View {
                 }
             }
             .font(Theme.History.footerStyle.font)
-            .foregroundStyle(Theme.Colors.text2.color)
+            .foregroundStyle(Theme.Colors.deskText2.color)
             .lineLimit(1)
             Spacer(minLength: 0)
             if model.items.isEmpty {
@@ -255,7 +257,7 @@ public struct HistoryView: View {
                         .font(Theme.Typography.button.font)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Theme.Colors.text2.color)
+                .foregroundStyle(Theme.Colors.deskText2.color)
                 .help("Open the history folder in Finder")
             } else {
                 Button { model.actions.openFolder() } label: {
@@ -263,7 +265,7 @@ public struct HistoryView: View {
                         .font(.system(size: 13))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Theme.Colors.text2.color)
+                .foregroundStyle(Theme.Colors.deskText2.color)
                 .help("Open History Folder")
                 .accessibilityLabel("Open History Folder")
                 .padding(.trailing, Theme.Spacing.xxs)
@@ -279,6 +281,7 @@ public struct HistoryView: View {
                 .help("Copy (\u{2318}C)")
                 Button("Show in Quick Access") { model.perform(.showInQuickAccess) }
                     .buttonStyle(.borderedProminent)
+                    .tint(Theme.Colors.brand.color)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!model.canShowInQuickAccess)
             }
@@ -288,7 +291,7 @@ public struct HistoryView: View {
         .padding(.leading, Theme.History.footerLeadingPadding)
         .padding(.trailing, Theme.History.footerTrailingPadding)
         .frame(height: Theme.History.footerHeight - 1)
-        .background(Theme.Colors.window.color)
+        .background(Theme.Colors.deskBar.color)
     }
 }
 
@@ -305,13 +308,13 @@ struct HistoryFilterControl: View {
                 Button { selection = filter } label: {
                     Text(filter.title)
                         .font(.system(size: Theme.Typography.caption.size, weight: selected ? .medium : .regular))
-                        .foregroundStyle(Theme.Colors.text.color)
+                        .foregroundStyle(Theme.Colors.deskText.color)
                         .padding(.horizontal, 10)
                         .frame(height: Theme.Controls.segmentedHeight)
                         .background {
                             if selected {
                                 RoundedRectangle(cornerRadius: Theme.HUD.segmentRadius, style: .continuous)
-                                    .fill(colorScheme == .dark ? Color.white.opacity(0.16) : Color.white)
+                                    .fill(Theme.Colors.deskGroup.color)
                                     .shadow(color: .black.opacity(colorScheme == .dark ? 0 : 0.12), radius: 1, y: 1)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: Theme.HUD.segmentRadius, style: .continuous)
@@ -328,7 +331,7 @@ struct HistoryFilterControl: View {
         .padding(2)
         .background(
             RoundedRectangle(cornerRadius: Theme.HUD.segmentTrackRadius, style: .continuous)
-                .fill(Theme.Colors.fill.color)
+                .fill(Theme.Colors.deskFill.color)
         )
         .fixedSize()
         .accessibilityElement(children: .contain)

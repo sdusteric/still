@@ -54,7 +54,7 @@ struct ShortcutRecorder: View {
             } label: {
                 Text(label)
                     .font(shortcut == nil || isRecording ? Theme.Typography.caption.font : Theme.Typography.bodyEmphasis.font.monospacedDigit())
-                    .foregroundStyle(shortcut == nil || isRecording ? Theme.Colors.text2.color : Theme.Colors.text.color)
+                    .foregroundStyle(shortcut == nil || isRecording ? Theme.Colors.deskText2.color : Theme.Colors.deskText.color)
                     .padding(.horizontal, 8)
                     .frame(minWidth: 52, minHeight: Theme.Controls.buttonHeight)
                     .background(

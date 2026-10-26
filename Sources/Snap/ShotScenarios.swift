@@ -17,6 +17,7 @@ enum ShotScenario: String, CaseIterable, Sendable {
     case menu
     case settings
     case settingsShortcuts = "settings-shortcuts"
+    case settingsGeneral = "settings-general"
     case onboarding
     case onboardingGranted = "onboarding-granted"
     case permissionHint = "permission-hint"
@@ -58,7 +59,7 @@ enum ShotScenario: String, CaseIterable, Sendable {
         case .backgroundEditor: BackgroundEditorDemo.size
         case .annotate: AnnotateDemo.size
         case .menu: MenuDemo.size
-        case .settings, .settingsShortcuts: SettingsDemo.size
+        case .settings, .settingsShortcuts, .settingsGeneral: SettingsDemo.size
         case .onboarding: OnboardingDemo.size(granted: false)
         case .onboardingGranted: OnboardingDemo.size(granted: true)
         case .permissionHint: ShotScenario.hintSceneSize
@@ -109,6 +110,8 @@ enum ShotScenario: String, CaseIterable, Sendable {
             .view(SettingsDemo.makeView(tab: .capture, dark: dark))
         case .settingsShortcuts:
             .view(SettingsDemo.makeView(tab: .shortcuts, dark: dark))
+        case .settingsGeneral:
+            .view(SettingsDemo.makeView(tab: .general, dark: dark))
         case .onboarding:
             .view(OnboardingDemo.makeView(granted: false, dark: dark))
         case .onboardingGranted:

@@ -965,6 +965,28 @@ The badge clears on the next capture that works, or when the preflight says yes 
 
 Rejected (motion gate): a pulsing amber timer while stalled (rare, but a looping animation in the menu bar is a nag; the color and glyph already carry the state); a badge that scales in (state indication in peripheral vision; a scale makes it read as a notification count); a slide-in for the audio pill (it appears with the card, which already enters with M1).
 
+### 20.17 Settings and History look
+
+Mode: Operate. Scanability and native behavior outrank expression, so the look lives in ground color, one accent, heading type and counts, and every control stays system-drawn. Mockups: `docs/mockup/settings-history/` (`settings-mockup.png`, `history-mockup.png`, light and dark).
+
+Direction, "Proof sheet": cool blue-gray paper under white screenshots, like a contact sheet on a light table. One signal color, frame blue, marks the selected thing (switches, default button, selected tab, the selection ring). Headings and day counts use Avenir Next Demi Bold (the family Booth and Tidy use for display), body text stays SF Pro.
+
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `desk` | #E9ECF1 | #111317 | Settings form and History grid ground |
+| `deskBar` | #F8F9FB | #181B20 | Settings tab bar, History toolbar and footer |
+| `deskGroup` | #FFFFFF | #1D2026 | Settings groups, selected segment |
+| `deskText` / `deskText2` | #14171C / #4F5663 | #F1F3F7 / #A4ACB9 | Text on the three grounds above |
+| `brand` | #2457F5 | #3E67F0 | Fills; white on it is 5.6:1 and 4.8:1 |
+| `brandText` | #1F4BD8 | #8EA9FF | Blue text and icons |
+| `brandWash` | brand at 12% | #7896FF at 16% | Selected tab fill |
+
+Contrast (checked by `ThemeTests.documentedContrastRatiosHold`, all at least 4.5:1): `deskText` on desk 15.2 and 16.7; `deskText2` on desk 6.2 and 8.1, on group 7.4 and 7.1, on bar 7.0 and 7.6; `brandText` on group 6.9 and 7.2, on desk 5.8 and 8.2, on the tab wash 5.4 and 6.0 or more; selection ring on desk 3.9 (non-text, 3:1).
+
+Changes: Settings groups get an Avenir heading (no accent tick: a side stripe reads as decoration) and the tab bar its own tone; the selected tab is a blue-washed capsule. History gets a 17 pt Avenir title, 16 pt day headings with the count in a tabular capsule, a darker desk so white screenshots stand out, a blue selection ring and blue "Show in Quick Access". No setting, shortcut, key command or accessibility label changed. The `settings-general` shot scenario was added.
+
+Motion gate: no new motion. The existing M26 and M28 history transitions are unchanged (occasional, feedback, 120 ms, tokens `historyTileExit` and `reducedMotionFade`).
+
 ## Decisions to review
 
 All mine, made while the user was away.

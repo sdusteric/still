@@ -204,6 +204,23 @@ nonisolated public enum Theme {
         public static let historyFooterDot = ThemeColor(
             light: .init(hex: 0x8A8A8F), dark: .init(hex: 0x8E8E93), system: .tertiaryLabel
         )
+        // Proof sheet (Settings and History look, design 20.17). Cool paper under white screenshots.
+        /// Settings form and History grid ground.
+        public static let desk = ThemeColor(light: .init(hex: 0xE9ECF1), dark: .init(hex: 0x111317))
+        /// Settings tab bar, History toolbar and footer.
+        public static let deskBar = ThemeColor(light: .init(hex: 0xF8F9FB), dark: .init(hex: 0x181B20))
+        public static let deskGroup = ThemeColor(light: .init(hex: 0xFFFFFF), dark: .init(hex: 0x1D2026))
+        public static let deskText = ThemeColor(light: .init(hex: 0x14171C), dark: .init(hex: 0xF1F3F7))
+        /// Secondary text on desk, bar and group: 6.2:1 or more in both appearances.
+        public static let deskText2 = ThemeColor(light: .init(hex: 0x4F5663), dark: .init(hex: 0xA4ACB9))
+        public static let deskSeparator = ThemeColor(light: .init(hex: 0x14171C, alpha: 0.09), dark: .white(0.09))
+        public static let deskFill = ThemeColor(light: .init(hex: 0x14171C, alpha: 0.06), dark: .white(0.08))
+        /// Frame blue: switches, default buttons, the selection ring. White on it is 5.6:1 and 4.8:1.
+        public static let brand = ThemeColor(light: .init(hex: 0x2457F5), dark: .init(hex: 0x3E67F0))
+        /// Blue text and icons on desk, bar and group.
+        public static let brandText = ThemeColor(light: .init(hex: 0x1F4BD8), dark: .init(hex: 0x8EA9FF))
+        /// Selected tab fill.
+        public static let brandWash = ThemeColor(light: .init(hex: 0x2457F5, alpha: 0.12), dark: .init(hex: 0x7896FF, alpha: 0.16))
         /// Redact black-out fill.
         public static let blackout = ThemeColor(both: .init(hex: 0x000000))
     }
@@ -217,8 +234,14 @@ nonisolated public enum Theme {
         public let weight: NSFont.Weight
         public let tracking: Double
         public let tabular: Bool
+        /// Avenir Next for headings and counts on Settings and History; the system font if missing.
+        public let display: Bool
 
-        public init(size: Double, lineHeight: Double, weight: NSFont.Weight, tracking: Double = 0, tabular: Bool = false) {
+        public init(
+            size: Double, lineHeight: Double, weight: NSFont.Weight, tracking: Double = 0, tabular: Bool = false,
+            display: Bool = false
+        ) {
+            self.display = display
             self.size = size
             self.lineHeight = lineHeight
             self.weight = weight
@@ -227,10 +250,20 @@ nonisolated public enum Theme {
         }
 
         public var nsFont: NSFont {
-            tabular ? .monospacedDigitSystemFont(ofSize: size, weight: weight) : .systemFont(ofSize: size, weight: weight)
+            if display, let face = TextStyle.displayFont(size: size, weight: weight) { return face }
+            return tabular ? .monospacedDigitSystemFont(ofSize: size, weight: weight) : .systemFont(ofSize: size, weight: weight)
+        }
+
+        static func displayFont(size: Double, weight: NSFont.Weight) -> NSFont? {
+            let face = weight >= .semibold ? "AvenirNext-DemiBold" : weight >= .medium ? "AvenirNext-Medium" : "AvenirNext-Regular"
+            return NSFont(name: face, size: size)
         }
 
         public var font: Font {
+            if display, let face = TextStyle.displayFont(size: size, weight: weight) {
+                let base = Font(face)
+                return tabular ? base.monospacedDigit() : base
+            }
             let base = Font.system(size: size, weight: Font.Weight(weight))
             return tabular ? base.monospacedDigit() : base
         }
@@ -393,6 +426,7 @@ nonisolated public enum Theme {
         public static let groupSpacing: Double = 16
         public static let headingTopSpacing: Double = 6
         public static let headingBottomSpacing: Double = 8
+        public static let headingStyle = TextStyle(size: 14, lineHeight: 18, weight: .semibold, display: true)
     }
 
     public enum Onboarding {
@@ -474,14 +508,15 @@ nonisolated public enum Theme {
         public static let windowSize = CGSize(width: 760, height: 560)
         public static let minimumSize = CGSize(width: 560, height: 400)
         public static let toolbarHeight: Double = 52
-        public static let titleStyle = TextStyle(size: 15, lineHeight: 19, weight: .semibold)
+        public static let titleStyle = TextStyle(size: 17, lineHeight: 20, weight: .semibold, display: true)
         public static let subtitleStyle = TextStyle(size: 11, lineHeight: 15, weight: .regular)
         public static let titleLeadingInset: Double = 14
         public static let toolbarSpacing: Double = 12
         public static let searchFieldSize = CGSize(width: 190, height: 28)
         public static let searchFieldRadius: Double = 8
-        public static let sectionHeadingStyle = TextStyle(size: 13, lineHeight: 18, weight: .semibold)
-        public static let sectionCountStyle = TextStyle(size: 12, lineHeight: 16, weight: .regular, tabular: true)
+        public static let sectionHeadingStyle = TextStyle(size: 16, lineHeight: 20, weight: .semibold, display: true)
+        public static let sectionCountStyle = TextStyle(size: 11, lineHeight: 16, weight: .medium, tabular: true)
+        public static let sectionCountPadding: Double = 7
         public static let sectionTopSpacing: Double = 16
         public static let sectionBottomSpacing: Double = 10
         public static let bodyTopPadding: Double = 4
@@ -514,7 +549,7 @@ nonisolated public enum Theme {
         public static let emptyIconSize: Double = 56
         public static let emptyIconRadius: Double = 16
         public static let emptyIconGap: Double = 14
-        public static let emptyTitleStyle = TextStyle(size: 14, lineHeight: 20, weight: .semibold)
+        public static let emptyTitleStyle = TextStyle(size: 15, lineHeight: 20, weight: .semibold, display: true)
         public static let emptyTextMaxWidth: Double = 340
         public static let emptyTextGap: Double = 4
         public static let keyCapRadius: Double = 5

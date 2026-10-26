@@ -1,0 +1,9 @@
+:root{--desk:#E9ECF1;--bar:#F8F9FB;--group:#FFFFFF;--text:#14171C;--text2:#4F5663;--brand:#2457F5;--brandText:#1F4BD8;--wash:rgba(36,87,245,.12);--sep:rgba(20,23,28,.09);--fill:rgba(20,23,28,.06);--back:#F0F0F2;--stage:#C9CED8;--btn:#fff;--btnEdge:rgba(0,0,0,.2)}
+.dark{--desk:#111317;--bar:#181B20;--group:#1D2026;--text:#F1F3F7;--text2:#A4ACB9;--brand:#3E67F0;--brandText:#8EA9FF;--wash:rgba(120,150,255,.16);--sep:rgba(255,255,255,.09);--fill:rgba(255,255,255,.08);--back:#2E2E31;--stage:#07080A;--btn:rgba(255,255,255,.13);--btnEdge:rgba(255,255,255,.06)}
+*{box-sizing:border-box;margin:0}
+body{margin:0;font:13px/18px -apple-system,"SF Pro Text",system-ui;display:flex;gap:0;background:#888}
+.stage{padding:28px;background:var(--stage);color:var(--text);display:flex;gap:24px;align-items:flex-start}
+.win{border-radius:12px;overflow:hidden;box-shadow:0 0 0 .5px rgba(0,0,0,.3),0 18px 40px -10px rgba(0,0,0,.4);position:relative}
+.display{font-family:"Avenir Next","SF Pro Display",system-ui;font-weight:600}
+.tl{display:flex;gap:8px}.tl i{width:12px;height:12px;border-radius:6px;display:block}
+.num{font-variant-numeric:tabular-nums}

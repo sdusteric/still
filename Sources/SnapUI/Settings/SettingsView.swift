@@ -254,7 +254,7 @@ public struct SettingsView: View {
     public var body: some View {
         VStack(spacing: 0) {
             SettingsTabBar(selection: $model.tab)
-            Rectangle().fill(Theme.Colors.separator.color).frame(height: 1)
+            Rectangle().fill(Theme.Colors.deskSeparator.color).frame(height: 1)
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: Theme.Settings.groupSpacing) {
                     switch model.tab {
@@ -269,11 +269,12 @@ public struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollBounceBehavior(.basedOnSize)
-            .background(Theme.Colors.settingsBackground.color)
+            .background(Theme.Colors.desk.color)
         }
         .frame(width: Theme.Settings.width)
-        .background(Theme.Colors.settingsBackground.color)
+        .background(Theme.Colors.desk.color)
         .font(Theme.Typography.body.font)
+        .tint(Theme.Colors.brand.color)
     }
 }
 
@@ -295,12 +296,12 @@ private struct SettingsTabBar: View {
                             .frame(height: 22)
                         Text(tab.title).font(Theme.Typography.captionSmall.font)
                     }
-                    .foregroundStyle(selected ? Theme.Colors.accentText.color : Theme.Colors.text2.color)
+                    .foregroundStyle(selected ? Theme.Colors.brandText.color : Theme.Colors.deskText2.color)
                     .frame(width: Theme.Settings.tabSize.width, height: Theme.Settings.tabSize.height)
                     .background {
                         if selected {
                             RoundedRectangle(cornerRadius: Theme.Settings.tabRadius, style: .continuous)
-                                .fill(Theme.Colors.fill.color)
+                                .fill(Theme.Colors.brandWash.color)
                         }
                     }
                     .contentShape(Rectangle())
@@ -312,7 +313,7 @@ private struct SettingsTabBar: View {
         }
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity)
-        .background(Theme.Colors.window.color)
+        .background(Theme.Colors.deskBar.color)
     }
 }
 
@@ -326,24 +327,24 @@ private struct SettingsGroup<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
-                .font(Theme.Typography.groupHeading.font)
-                .foregroundStyle(Theme.Colors.text.color)
-                .padding(.top, Theme.Settings.headingTopSpacing)
-                .padding(.bottom, Theme.Settings.headingBottomSpacing)
-                .padding(.leading, 4)
+                .font(Theme.Settings.headingStyle.font)
+                .foregroundStyle(Theme.Colors.deskText.color)
                 .accessibilityAddTraits(.isHeader)
+            .padding(.top, Theme.Settings.headingTopSpacing)
+            .padding(.bottom, Theme.Settings.headingBottomSpacing)
+            .padding(.leading, 4)
             VStack(spacing: 0) {
                 content
             }
             .background(
                 RoundedRectangle(cornerRadius: Theme.Settings.groupRadius, style: .continuous)
-                    .fill(Theme.Colors.group.color)
+                    .fill(Theme.Colors.deskGroup.color)
             )
             // A tinted last row (the microphone warning) follows the group's rounded corners.
             .clipShape(RoundedRectangle(cornerRadius: Theme.Settings.groupRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Settings.groupRadius, style: .continuous)
-                    .strokeBorder(Theme.Colors.separator.color, lineWidth: 0.5)
+                    .strokeBorder(Theme.Colors.deskSeparator.color, lineWidth: 0.5)
             )
         }
     }
@@ -360,15 +361,15 @@ private struct SettingsRow<Control: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             if divider {
-                Rectangle().fill(Theme.Colors.separator.color).frame(height: 1).padding(.leading, Theme.Settings.rowPadding.left)
+                Rectangle().fill(Theme.Colors.deskSeparator.color).frame(height: 1).padding(.leading, Theme.Settings.rowPadding.left)
             }
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(Theme.Typography.body.font).foregroundStyle(Theme.Colors.text.color)
+                    Text(title).font(Theme.Typography.body.font).foregroundStyle(Theme.Colors.deskText.color)
                     if let subtitle {
                         Text(subtitle)
                             .font(Theme.Typography.captionSmall.font)
-                            .foregroundStyle(Theme.Colors.text2.color)
+                            .foregroundStyle(Theme.Colors.deskText2.color)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     ForEach(warning, id: \.self) { message in
@@ -434,13 +435,13 @@ private struct GeneralTab: View {
                 Button("Choose\u{2026}") { model.chooseSaveFolder() }
             }
             VStack(alignment: .leading, spacing: 6) {
-                Rectangle().fill(Theme.Colors.separator.color).frame(height: 1)
+                Rectangle().fill(Theme.Colors.deskSeparator.color).frame(height: 1)
                 HStack(alignment: .firstTextBaseline) {
                     Text("File name").font(Theme.Typography.body.font)
                     Spacer(minLength: 8)
                     Text(model.fileNamePreview)
                         .font(Theme.Typography.captionSmall.font)
-                        .foregroundStyle(Theme.Colors.text2.color)
+                        .foregroundStyle(Theme.Colors.deskText2.color)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -456,7 +457,7 @@ private struct GeneralTab: View {
         }
         Text("Tokens: {yyyy} {MM} {dd} {HH} {mm} {ss} {counter} {app}")
             .font(Theme.Typography.captionSmall.font)
-            .foregroundStyle(Theme.Colors.text2.color)
+            .foregroundStyle(Theme.Colors.deskText2.color)
             .padding(.leading, 4)
             .padding(.top, -8)
         SettingsGroup(title: "Sound") {
@@ -549,7 +550,7 @@ private struct QuickAccessTab: View {
                 HStack(spacing: 6) {
                     Text("\(model.settings.quickAccess.autoCloseSeconds) s")
                         .font(Theme.Typography.body.font.monospacedDigit())
-                        .foregroundStyle(Theme.Colors.text2.color)
+                        .foregroundStyle(Theme.Colors.deskText2.color)
                     Stepper(
                         "Seconds",
                         value: $model.settings.quickAccess.autoCloseSeconds,
@@ -648,7 +649,7 @@ private struct MicrophoneWarningRow: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Rectangle().fill(Theme.Colors.separator.color).frame(height: 1)
+            Rectangle().fill(Theme.Colors.deskSeparator.color).frame(height: 1)
             HStack(alignment: .center, spacing: 12) {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
@@ -685,7 +686,7 @@ private struct ShortcutsTab: View {
                     .padding(.top, 1)
                 Text("\(Text("CleanShot X is running.").fontWeight(.semibold)) Snap registers these shortcuts when it quits and never closes it for you.")
                     .font(Theme.Typography.body.font)
-                    .foregroundStyle(Theme.Colors.text.color)
+                    .foregroundStyle(Theme.Colors.deskText.color)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(12)
@@ -714,7 +715,7 @@ private struct ShortcutsTab: View {
         }
         Text(footnote)
             .font(Theme.Typography.captionSmall.font)
-            .foregroundStyle(Theme.Colors.text2.color)
+            .foregroundStyle(Theme.Colors.deskText2.color)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 4)
     }

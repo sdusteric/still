@@ -85,7 +85,7 @@ struct HistoryTile: View {
                 // The swatch ring rule (17.4): 2 pt accent, 4 pt outside the box. No animation (M26).
                 let offset = Theme.History.selectionRingOffset
                 RoundedRectangle(cornerRadius: Theme.History.tileRadius + offset - 1, style: .continuous)
-                    .strokeBorder(Theme.Colors.accent.color, lineWidth: Theme.History.selectionRingWidth)
+                    .strokeBorder(Theme.Colors.brand.color, lineWidth: Theme.History.selectionRingWidth)
                     .padding(-offset)
             }
         }
@@ -100,10 +100,10 @@ struct HistoryTile: View {
         HStack(spacing: 6) {
             Text(time)
                 .font(Theme.History.captionTimeStyle.font)
-                .foregroundStyle(Theme.Colors.text.color)
+                .foregroundStyle(Theme.Colors.deskText.color)
             Text(item.sourceApp ?? (item.kind == .video ? "Recording" : "Screenshot"))
                 .font(Theme.History.captionAppStyle.font)
-                .foregroundStyle(Theme.Colors.text2.color)
+                .foregroundStyle(Theme.Colors.deskText2.color)
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
