@@ -15,6 +15,7 @@ swiftlint lint --strict
 SNAP_SCRATCH="$TMPDIR/snap-check" scripts/check.sh   # every gate, logs in build/check/
 scripts/bundle.sh --release                           # build/bundle/Snap.app, signed, never launched
 scripts/release.sh [--notes <file.md>] [--dry-run <dir>]   # check.sh, release bundle, app-updates publish.sh
+scripts/accept.sh recall                              # Recall: snapctl recall end to end, real Vision (SNAP_VISION=1), listing budget (SNAP_BENCH=1)
 swift scripts/shot-stats.swift <png> [x y w h]        # size, luminance and mean RGBA of a region
 swift scripts/winlist.swift <pid>                     # on-screen windows of one PID (exit 1 if any)
 ```

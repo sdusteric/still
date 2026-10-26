@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Snap acceptance runner: milestone 1 (group offline) and milestone 2 (group m2).
+# Snap acceptance runner: milestone 1 (group offline), milestone 2 (group m2) and Recall (group recall).
 #
 #   scripts/accept.sh offline [AC02 AC05 ...]
 #   scripts/accept.sh m2 [AC-M2-4 AC-M2-10 ...]
+#   scripts/accept.sh recall [AC-R1 AC-R-VISION AC-R-BENCH]
 #
 # With criterion ids after the group, only those run (for iterating on one criterion); the full
 # acceptance is the group alone.
@@ -58,7 +59,7 @@ GROUP=${1:-}
 shift 2>/dev/null || true
 ONLY="$*"
 case "$GROUP" in
-  offline | m2) ;;
+  offline | m2 | recall) ;;
   *)
     usage
     exit 2
@@ -1263,10 +1264,59 @@ group_m2() {
   fi
 }
 
+# ---------------------------------------------------------------------------------------------
+# recall: screenshots for Shelf search (Recall design 7 and 12)
+# ---------------------------------------------------------------------------------------------
+
+# AC-R1 to AC-R3 end to end with real Vision: a fixture with text and a key, a 40-day-old one, build,
+# sweep, build. AC-R-VISION runs the real Vision suite (SNAP_VISION=1) and AC-R-BENCH the history
+# listing budget (SNAP_BENCH=1); both stay out of the parallel suite because they load it.
+group_recall() {
+  echo
+  echo "== recall"
+  CTL="$(snapctl_path)"
+  if wanted AC-R1; then
+    local home out
+    home="$(fresh_home recall)"
+    out="$RUN/acr1"
+    if SNAP_HOME="$home" SNAP_NO_UPDATES=1 "$CTL" recall fixture --line "Quarterly Stripe error 4402" \
+        --line "key sk_live_51HxQe2LkS8vA0bC9dEfGh12" --source-app Notes >"$out-fixture.txt" 2>&1 \
+      && SNAP_HOME="$home" SNAP_NO_UPDATES=1 "$CTL" recall fixture --line "Old screenshot text" --age-days 40 >>"$out-fixture.txt" 2>&1 \
+      && SNAP_HOME="$home" SNAP_NO_UPDATES=1 "$CTL" recall build --json >"$out-build1.json" 2>&1 \
+      && SNAP_HOME="$home" SNAP_NO_UPDATES=1 "$CTL" history sweep --json >"$out-sweep.json" 2>&1 \
+      && SNAP_HOME="$home" SNAP_NO_UPDATES=1 "$CTL" recall build --json >"$out-build2.json" 2>&1 \
+      && [ "$(jq length "$out-build1.json")" = 2 ] && [ "$(jq length "$out-build2.json")" = 1 ] \
+      && jq -e '.[0].segments | index("Quarterly Stripe error 4402") != null' "$out-build2.json" >/dev/null \
+      && ! grep -q sk_live_ "$out-build2.json" \
+      && jq -e '.[0].segments | index("key [hidden]") != null' "$out-build2.json" >/dev/null; then
+      pass AC-R1 "text read, key hidden, swept item's entry gone"
+    else
+      fail AC-R1 "see $out-build1.json and $out-build2.json"
+    fi
+  fi
+  if wanted AC-R-VISION; then
+    if SNAP_VISION=1 run_logged acr-vision caffeinate -i swift test --package-path "$REPO" --scratch-path "$SCRATCH" \
+        --filter VisionTextRecognizerTests; then
+      pass AC-R-VISION "English, Chinese and 5K OCR"
+    else
+      fail AC-R-VISION "see $LAST_LOG"
+    fi
+  fi
+  if wanted AC-R-BENCH; then
+    if SNAP_BENCH=1 run_logged acr-bench caffeinate -i swift test --package-path "$REPO" --scratch-path "$SCRATCH" \
+        --filter "RetentionTests/listing1500ItemsWithinBudget"; then
+      pass AC-R-BENCH "1,500 item listing within 50 ms"
+    else
+      fail AC-R-BENCH "see $LAST_LOG"
+    fi
+  fi
+}
+
 CTL=""
 case "$GROUP" in
   offline) group_offline ;;
   m2) group_m2 ;;
+  recall) group_recall ;;
 esac
 
 echo

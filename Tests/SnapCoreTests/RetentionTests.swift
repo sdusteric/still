@@ -101,21 +101,21 @@ import Testing
         #expect(try store.recent(limit: 50).count == 20)
     }
 
-    /// The Shelf status reads `recent(limit: 12)` on the main actor after every capture.
+    /// The Shelf status reads `recent(limit: 12)` on the main actor after every capture, so it must
+    /// not read the whole history: older items are corrupted here and must never be touched.
     @Test func recentReadsOnlyTheNewestItems() throws {
         let home = try RecallTestSupport.makeHome()
         defer { RecallTestSupport.remove(home) }
-        let store = HistoryStore(directory: home.appending(path: "history"), clock: FakeClock(startDate: Self.now))
-        _ = try HistoryFixture.generate(into: store, options: .init(items: 1_000, days: 300, now: Self.now))
-        var times: [Double] = []
-        for _ in 0..<10 {
-            let start = ContinuousClock.now
-            _ = try store.recent(limit: 12)
-            let elapsed = ContinuousClock.now - start
-            times.append(Double(elapsed.components.seconds) * 1_000 + Double(elapsed.components.attoseconds) / 1e15)
+        let log = Log(paths: SnapPaths(home: home))
+        let store = HistoryStore(directory: home.appending(path: "history"), clock: FakeClock(startDate: Self.now), log: log)
+        let ids = try (0..<40).map { index in
+            try store.add(pngData: png, fileName: "\(index).png", mode: .area, scale: 2, createdAt: Self.now.addingTimeInterval(-Double(index) * 60)).id
         }
-        #expect(times.sorted()[8] < 8, "recent(limit: 12) p90 \(times.sorted()[8]) ms")
-        let all = try store.allItems()
-        #expect(try store.recent(limit: 12).map(\.id) == Array(all.prefix(12)).map(\.id))
+        for id in ids.suffix(20) {
+            try Data("not json".utf8).write(to: store.folder(for: id).appending(path: "item.json"))
+        }
+        #expect(try store.recent(limit: 12).map(\.id) == Array(ids.prefix(12)))
+        let logged = (try? String(contentsOf: SnapPaths(home: home).logFile, encoding: .utf8)) ?? ""
+        #expect(!logged.contains("skipped"))
     }
 }

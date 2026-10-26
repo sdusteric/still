@@ -355,13 +355,7 @@ public final class HistoryStore: Sendable {
     /// main actor after every capture.
     public func recent(limit: Int) throws -> [CaptureItem] {
         guard limit > 0 else { return [] }
-        let path = directory.path(percentEncoded: false)
-        guard FileManager.default.fileExists(atPath: path) else { return [] }
-        // Names only: asking for attributes of every folder costs more than reading the few needed.
-        let folders = try FileManager.default.contentsOfDirectory(atPath: path)
-            .filter { !$0.hasPrefix(".") }
-            .sorted(by: >)
-            .map { directory.appending(path: $0, directoryHint: .isDirectory) }
+        let folders = try candidateFolders().sorted { $0.lastPathComponent > $1.lastPathComponent }
         let decoder = HistoryStore.makeDecoder()
         var items: [CaptureItem] = []
         for folder in folders where items.count < limit + Self.recentMargin {
@@ -385,7 +379,7 @@ public final class HistoryStore: Sendable {
     public func allItems() throws -> [CaptureItem] {
         var items: [CaptureItem] = []
         let decoder = HistoryStore.makeDecoder()
-        for folder in try itemFolders() {
+        for folder in try candidateFolders() {
             do {
                 let record = try lock.withLock { _ in try readRecord(in: folder, decoder: decoder) }
                 if let record { items.append(item(from: record)) }
@@ -468,6 +462,17 @@ public final class HistoryStore: Sendable {
     public static func posterName(for videoName: String) -> String {
         let base = URL(filePath: videoName).deletingPathExtension().lastPathComponent
         return "\(base) poster.png"
+    }
+
+    /// Every visible entry of the history folder, by name only. Listing is the cost at a month or a
+    /// year of captures, so readers skip the per-folder attribute fetch; an entry that is not a
+    /// capture folder has no readable `item.json` and is skipped when read.
+    private func candidateFolders() throws -> [URL] {
+        let path = directory.path(percentEncoded: false)
+        guard FileManager.default.fileExists(atPath: path) else { return [] }
+        return try FileManager.default.contentsOfDirectory(atPath: path)
+            .filter { !$0.hasPrefix(".") }
+            .map { directory.appending(path: $0, directoryHint: .isDirectory) }
     }
 
     private func itemFolders() throws -> [URL] {
