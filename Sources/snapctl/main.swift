@@ -19,6 +19,9 @@ let usage = """
                     [--countdown S] [--runs R] --json
            snapctl probe <file.mp4> --json
            snapctl annotate --in <png> --doc <json|path> --out <png> [--report]
+           snapctl recall fixture --line <text> [--line <text> ...] [--source-app <name>] [--age-days N]
+           snapctl recall build [--fake-ocr <file.json>] [--json]
+           snapctl recall list [--json]
     """
 
 /// A usage mistake: printed with the usage text, exit status 64.
@@ -36,6 +39,8 @@ struct CommandArguments {
         // record, probe and annotate
         "--target", "--display", "--rect", "--frames", "--fps", "--codec", "--audio", "--kill-after-frames",
         "--countdown", "--in", "--doc",
+        // recall
+        "--source-app", "--age-days", "--fake-ocr",
     ]
 
     var positional: [String] = []
@@ -105,6 +110,8 @@ case "probe":
     status = await ProbeCommand.run(rest)
 case "annotate":
     status = await AnnotateCommand.run(rest)
+case "recall":
+    status = await RecallCommand.run(rest)
 case "latency":
     FileHandle.standardError.write(Data("snapctl: latency moved to snapbench latency (it drives the SnapUI controllers)\n".utf8))
     status = 64
