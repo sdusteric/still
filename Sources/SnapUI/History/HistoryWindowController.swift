@@ -10,7 +10,7 @@ public struct HistorySnapshot: Sendable {
     public var items: [CaptureItem]
     public var totalBytes: Int64
 
-    public init(items: [CaptureItem], totalBytes: Int64) {
+    nonisolated public init(items: [CaptureItem], totalBytes: Int64) {
         self.items = items
         self.totalBytes = totalBytes
     }
@@ -91,6 +91,8 @@ public enum HistoryKey: Sendable, Hashable {
 
 /// What the grid area shows.
 public enum HistoryContent: Sendable, Hashable {
+    /// The first read of the folder has not finished; the grid area stays blank.
+    case loading
     case grid
     /// No captures at all in the kept period.
     case empty
@@ -143,7 +145,16 @@ public protocol HistoryPreviewing: AnyObject {
 /// injected loader, dates from an injected context, and every effect goes through `actions`.
 @Observable
 public final class HistoryWindowModel {
-    public private(set) var items: [CaptureItem] = []
+    public private(set) var items: [CaptureItem] = [] {
+        didSet {
+            itemsRevision += 1
+            itemsByID = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        }
+    }
+    /// False until the first read of the folder lands.
+    public private(set) var hasLoaded = false
+    /// A read of the folder is running off the main thread.
+    public private(set) var isLoading = false
     public private(set) var totalBytes: Int64 = 0
     public var filter: HistoryQuery.KindFilter = .all {
         didSet { pruneSelection() }
@@ -171,18 +182,38 @@ public final class HistoryWindowModel {
     /// Reduce Motion, read when a trash removes tiles (M28).
     @ObservationIgnored public var reduceMotion: @MainActor () -> Bool = { false }
     @ObservationIgnored public weak var previewer: (any HistoryPreviewing)?
-    @ObservationIgnored private let load: @MainActor () throws -> HistorySnapshot
+    @ObservationIgnored private let load: @Sendable () async throws -> HistorySnapshot
     @ObservationIgnored private let dateContext: @MainActor () -> HistoryDateContext
+    @ObservationIgnored private let changeStamp: @MainActor () -> Date?
 
+    @ObservationIgnored private var loadTask: Task<Void, Never>?
+    /// A reload was asked while a read ran, so that read's result is already out of date.
+    @ObservationIgnored private var reloadQueued = false
+    @ObservationIgnored private var isStale = true
+    @ObservationIgnored private var loadedStamp: Date?
+    @ObservationIgnored private var pendingReveal: String?
+
+    @ObservationIgnored private var itemsRevision = 0
+    @ObservationIgnored private var itemsByID: [String: CaptureItem] = [:]
+    @ObservationIgnored private var derived: Derived?
+    /// How many times the sections were rebuilt, for tests.
+    @ObservationIgnored private(set) var derivedBuilds = 0
+
+    /// - Parameters:
+    ///   - load: reads the folder; always run off the main thread.
+    ///   - changeStamp: a cheap value that changes when the folder does (its modification date),
+    ///     so becoming key reloads only after a change. Nil means "unknown, never changed".
     public init(
-        load: @escaping @MainActor () throws -> HistorySnapshot,
+        load: @escaping @Sendable () async throws -> HistorySnapshot,
         context: @escaping @MainActor () -> HistoryDateContext,
+        changeStamp: @escaping @MainActor () -> Date? = { nil },
         captureAreaShortcut: String? = "\u{21E7}\u{2318}4",
         actions: HistoryActions = HistoryActions(),
         previewer: (any HistoryPreviewing)? = nil
     ) {
         self.load = load
         self.dateContext = context
+        self.changeStamp = changeStamp
         self.captureAreaShortcut = captureAreaShortcut
         self.actions = actions
         self.previewer = previewer
@@ -190,13 +221,15 @@ public final class HistoryWindowModel {
 
     // MARK: Loading
 
-    /// Reads the folder again: on open, on becoming key and on the history-changed notification.
     /// Shows one capture from a Shelf search result: clears the search and the filter, selects
-    /// it and asks the view to scroll to it. An unknown id selects nothing.
+    /// it and asks the view to scroll to it. While a read runs, an id not listed yet waits for
+    /// it; otherwise an unknown id selects nothing.
     public func reveal(_ id: String) {
         searchText = ""
         filter = .all
-        guard items.contains(where: { $0.id == id }) else {
+        pendingReveal = nil
+        guard itemsByID[id] != nil else {
+            if loadTask != nil { pendingReveal = id }
             clearSelection()
             scrollTarget = nil
             return
@@ -205,15 +238,71 @@ public final class HistoryWindowModel {
         scrollTarget = id
     }
 
-    public func reload() {
-        do {
-            let snapshot = try load()
+    /// Reads the folder again off the main thread; the listed items stay until the result lands.
+    /// A reload asked while one runs drops that one's result and reads once more after it, so
+    /// only the newest read is shown. The returned task ends when no read is left.
+    @discardableResult
+    public func reload() -> Task<Void, Never> {
+        if let loadTask {
+            reloadQueued = true
+            return loadTask
+        }
+        isLoading = true
+        let task = Task { await runLoads() }
+        loadTask = task
+        return task
+    }
+
+    /// Reloads only when something changed since the last read: on open and on becoming key.
+    /// Nil when nothing needed reading.
+    @discardableResult
+    public func reloadIfNeeded() -> Task<Void, Never>? {
+        if let loadTask { return loadTask }
+        guard isStale || changeStamp() != loadedStamp else { return nil }
+        return reload()
+    }
+
+    /// The history changed while the window was hidden: the next open reads the folder.
+    public func markStale() {
+        isStale = true
+    }
+
+    private func runLoads() async {
+        repeat {
+            reloadQueued = false
+            isStale = false
+            let stamp = changeStamp()
+            let load = load
+            let result: Result<HistorySnapshot, any Error> = await Task.detached(priority: .userInitiated) {
+                do {
+                    return .success(try await load())
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+            guard !reloadQueued else { continue }
+            loadedStamp = stamp
+            apply(result)
+        } while reloadQueued
+        loadTask = nil
+        isLoading = false
+        if let id = pendingReveal {
+            pendingReveal = nil
+            if itemsByID[id] != nil { reveal(id) }
+        }
+    }
+
+    /// Shows a read's result. The shot scene calls it directly with its fixed snapshot.
+    func apply(_ result: Result<HistorySnapshot, any Error>) {
+        switch result {
+        case .success(let snapshot):
             items = snapshot.items
             totalBytes = snapshot.totalBytes
             loadError = nil
-        } catch {
+        case .failure(let error):
             loadError = "\(error)"
         }
+        hasLoaded = true
         pruneSelection()
     }
 
@@ -222,13 +311,43 @@ public final class HistoryWindowModel {
     public var query: HistoryQuery { HistoryQuery(kind: filter, text: searchText) }
     public var context: HistoryDateContext { dateContext() }
 
-    public var sections: [HistoryDaySection] {
-        let context = context
-        return HistoryQuery.group(query.filter(items, context: context), context: context)
+    /// What the sections depend on. Dates enter by local day only, since `now` moves on every read.
+    private struct DerivedKey: Equatable {
+        var revision: Int
+        var filter: HistoryQuery.KindFilter
+        var searchText: String
+        var day: Date
+        var calendar: Calendar
     }
 
+    private struct Derived {
+        var key: DerivedKey
+        var sections: [HistoryDaySection]
+        var orderedIDs: [String]
+    }
+
+    /// The sections and order, rebuilt only when the items, filter, search or day change. The view
+    /// reads them several times per pass (content, grid, button states).
+    private var derivedValues: Derived {
+        // Reading the tracked properties keeps observation working for the cached values.
+        _ = items
+        let context = context
+        let key = DerivedKey(
+            revision: itemsRevision, filter: filter, searchText: searchText,
+            day: context.calendar.startOfDay(for: context.now), calendar: context.calendar
+        )
+        if let derived, derived.key == key { return derived }
+        let sections = HistoryQuery.group(query.filter(items, context: context), context: context)
+        let value = Derived(key: key, sections: sections, orderedIDs: sections.flatMap { $0.items.map(\.id) })
+        derived = value
+        derivedBuilds += 1
+        return value
+    }
+
+    public var sections: [HistoryDaySection] { derivedValues.sections }
+
     /// Ids in display order: day by day, newest first.
-    public var orderedIDs: [String] { sections.flatMap { $0.items.map(\.id) } }
+    public var orderedIDs: [String] { derivedValues.orderedIDs }
 
     /// The grid as rows of ids, section by section, at the current column count.
     public var rows: [[String]] {
@@ -249,18 +368,23 @@ public final class HistoryWindowModel {
     }
 
     public var content: HistoryContent {
+        if !hasLoaded { return .loading }
         if items.isEmpty { return .empty }
         if !orderedIDs.isEmpty { return .grid }
         if query.isSearching { return .noResults(searchText.trimmingCharacters(in: .whitespaces)) }
         return .emptyFilter(filter)
     }
 
-    public func item(_ id: String) -> CaptureItem? { items.first { $0.id == id } }
+    public func item(_ id: String) -> CaptureItem? {
+        _ = items
+        return itemsByID[id]
+    }
 
     // MARK: Footer
 
     /// `12 captures`, `41 MB`, `kept for 3 days`; the size is left out when there is nothing.
     public var footerParts: [String] {
+        guard hasLoaded else { return [] }
         let count = items.count
         var parts = ["\(count) \(count == 1 ? "capture" : "captures")"]
         if count > 0 { parts.append(ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)) }
@@ -493,7 +617,7 @@ public final class HistoryWindowController: NSObject, NSWindowDelegate {
     public func show() {
         let window = window ?? makeWindow()
         self.window = window
-        model.reload()
+        model.reloadIfNeeded()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
     }
@@ -531,15 +655,15 @@ public final class HistoryWindowController: NSObject, NSWindowDelegate {
             forName: Self.historyDidChange, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.isVisible else { return }
-                self.model.reload()
+                guard let self else { return }
+                if self.isVisible { self.model.reload() } else { self.model.markStale() }
             }
         }
         return window
     }
 
     public func windowDidBecomeKey(_ notification: Notification) {
-        model.reload()
+        model.reloadIfNeeded()
     }
 
     public func windowDidMove(_ notification: Notification) {

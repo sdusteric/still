@@ -101,6 +101,8 @@ public struct HistoryView: View {
 
     @ViewBuilder private var content: some View {
         switch model.content {
+        case .loading:
+            Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
         case .grid:
             grid
         case .empty:

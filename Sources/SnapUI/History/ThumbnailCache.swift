@@ -15,6 +15,10 @@ public protocol HistoryThumbnailProviding: AnyObject {
 /// History tile thumbnails (design 20.3): `CGImageSourceCreateThumbnailAtIndex` at 328 px on the
 /// long side (164 pt at 2x), made off the main thread and kept in an `NSCache` keyed by path and
 /// modification date, so an edited capture gets a new thumbnail.
+///
+/// `cachedThumbnail` runs in every tile body pass, so it answers from memory with the last key
+/// seen for the path; the file is read (and the key checked) only in `thumbnail(for:)`, off the
+/// main thread.
 public final class ThumbnailCache: HistoryThumbnailProviding {
     private final class Entry {
         let image: CGImage
@@ -24,6 +28,8 @@ public final class ThumbnailCache: HistoryThumbnailProviding {
     public let maxPixelSize: Int
     private let cache = NSCache<NSString, Entry>()
     private var inFlight: [String: Task<CGImage?, Never>] = [:]
+    /// Path to the newest `key(for:)` seen for it.
+    private var latestKey: [String: String] = [:]
 
     public init(maxPixelSize: Int = Theme.History.thumbnailPixels, countLimit: Int = 600) {
         self.maxPixelSize = maxPixelSize
@@ -39,12 +45,17 @@ public final class ThumbnailCache: HistoryThumbnailProviding {
     }
 
     public func cachedThumbnail(for url: URL) -> CGImage? {
-        guard let key = Self.key(for: url) else { return nil }
+        guard let key = latestKey[url.path(percentEncoded: false)] else { return nil }
         return cache.object(forKey: key as NSString)?.image
     }
 
     public func thumbnail(for url: URL) async -> CGImage? {
-        guard let key = Self.key(for: url) else { return nil }
+        let path = url.path(percentEncoded: false)
+        guard let key = await Task.detached(priority: .utility, operation: { Self.key(for: url) }).value else {
+            latestKey[path] = nil
+            return nil
+        }
+        latestKey[path] = key
         if let cached = cache.object(forKey: key as NSString) { return cached.image }
         if let running = inFlight[key] { return await running.value }
         let size = maxPixelSize
@@ -58,6 +69,7 @@ public final class ThumbnailCache: HistoryThumbnailProviding {
 
     public func removeAll() {
         cache.removeAllObjects()
+        latestKey = [:]
     }
 
     /// The downsampled image, with the EXIF orientation applied. Runs on any thread.

@@ -1117,6 +1117,8 @@ final class AppWiring: CaptureResultPresenter {
         let model = HistoryWindowModel(
             load: { HistorySnapshot(items: try history.allItems(), totalBytes: try history.totalBytes()) },
             context: { HistoryDateContext(now: Date()) },
+            // Adding or removing an item folder changes the folder's date; edits post historyDidChange.
+            changeStamp: { Self.modificationDate(of: history.directory) },
             actions: HistoryActions(
                 showInQuickAccess: { [weak self] items in
                     // Oldest first, so the first selected ends up on top of the stack.
@@ -1134,6 +1136,17 @@ final class AppWiring: CaptureResultPresenter {
             model: model, frame: stateStore.state.historyWindowFrame,
             frameChanged: { [weak self] frame in self?.storeHistoryWindowFrame(frame) }
         )
+    }
+
+    /// A folder's modification date, nil when it cannot be read. `FileManager`, not
+    /// `URL.resourceValues`, which caches the value on the URL.
+    private static func modificationDate(of folder: URL) -> Date? {
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: folder.path(percentEncoded: false))
+            return attributes[.modificationDate] as? Date
+        } catch {
+            return nil
+        }
     }
 
     private func storeHistoryWindowFrame(_ frame: CGRect) {

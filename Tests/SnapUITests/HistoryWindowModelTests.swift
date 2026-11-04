@@ -73,44 +73,44 @@ final class HistoryActionLog {
         ]
     }
 
-    func makeModel(_ items: [CaptureItem]? = nil, bytes: Int64 = 41_000_000) -> HistoryWindowModel {
+    func makeModel(_ items: [CaptureItem]? = nil, bytes: Int64 = 41_000_000) async -> HistoryWindowModel {
         let items = items ?? fixture
         let now = now
         let utc = utc
         let log = log
         let model = HistoryWindowModel(
-            load: { HistorySnapshot(items: items.filter { !log.removed.contains($0.id) }, totalBytes: bytes) },
+            load: { @MainActor in HistorySnapshot(items: items.filter { !log.removed.contains($0.id) }, totalBytes: bytes) },
             context: { HistoryDateContext(now: now, calendar: Calendar(identifier: .gregorian), timeZone: utc) },
             actions: log.actions(),
             previewer: previewer
         )
-        model.reload()
+        await model.reload().value
         return model
     }
 
     // MARK: Sections and layout
 
-    @Test func groupsByDayNewestFirstWithCounts() {
-        let model = makeModel()
+    @Test func groupsByDayNewestFirstWithCounts() async {
+        let model = await makeModel()
         #expect(model.sections.map(\.title) == ["Today", "Yesterday"])
         #expect(model.sections.map { $0.items.count } == [5, 2])
         #expect(model.orderedIDs == ["a", "b", "c", "d", "e", "f", "g"])
         #expect(model.content == .grid)
     }
 
-    @Test func fourColumnsAtTheDefaultWidthAndMoreAsItGrows() {
+    @Test func fourColumnsAtTheDefaultWidthAndMoreAsItGrows() async {
         #expect(HistoryWindowModel.columns(forWidth: 760) == 4)
         #expect(HistoryWindowModel.columns(forWidth: 560) == 2)
         #expect(HistoryWindowModel.columns(forWidth: 940) == 5)
         #expect(HistoryWindowModel.columns(forWidth: 100) == 1)
-        let model = makeModel()
+        let model = await makeModel()
         #expect(model.rows == [["a", "b", "c", "d"], ["e"], ["f", "g"]])
         model.columns = 2
         #expect(model.rows == [["a", "b"], ["c", "d"], ["e"], ["f", "g"]])
     }
 
-    @Test func filterAndSearchNarrowTheListAndThePruneSelection() {
-        let model = makeModel()
+    @Test func filterAndSearchNarrowTheListAndThePruneSelection() async {
+        let model = await makeModel()
         model.select("a")
         model.filter = .videos
         #expect(model.orderedIDs == ["c", "f"])
@@ -122,13 +122,13 @@ final class HistoryActionLog {
         #expect(model.orderedIDs == ["b", "f"])
     }
 
-    @Test func emptyNoResultsAndEmptyFilterStates() {
-        let empty = makeModel([], bytes: 0)
+    @Test func emptyNoResultsAndEmptyFilterStates() async {
+        let empty = await makeModel([], bytes: 0)
         #expect(empty.content == .empty)
         #expect(empty.footerParts == ["0 captures", "screenshots kept for 30 days"])
         empty.retention = .threeDays
         #expect(empty.footerParts == ["0 captures", "kept for 3 days"])
-        let model = makeModel([item("a", hoursAgo: 1)])
+        let model = await makeModel([item("a", hoursAgo: 1)])
         model.searchText = "  notes2 "
         #expect(model.content == .noResults("notes2"))
         model.clearSearch()
@@ -136,18 +136,18 @@ final class HistoryActionLog {
         #expect(model.content == .emptyFilter(.videos))
     }
 
-    @Test func footerShowsCountSizeAndRetention() {
-        let model = makeModel()
+    @Test func footerShowsCountSizeAndRetention() async {
+        let model = await makeModel()
         let size = ByteCountFormatter.string(fromByteCount: 41_000_000, countStyle: .file)
         #expect(model.footerParts == ["7 captures", size, "screenshots kept for 30 days"])
         #expect(size.contains("41"))
-        #expect(makeModel([item("a", hoursAgo: 1)], bytes: 2048).footerParts.first == "1 capture")
+        #expect(await makeModel([item("a", hoursAgo: 1)], bytes: 2048).footerParts.first == "1 capture")
     }
 
     // MARK: Selection
 
-    @Test func clickCommandClickAndShiftClickSelect() {
-        let model = makeModel()
+    @Test func clickCommandClickAndShiftClickSelect() async {
+        let model = await makeModel()
         model.select("b")
         #expect(model.selection == ["b"])
         model.select("d", mode: .toggle)
@@ -160,8 +160,8 @@ final class HistoryActionLog {
         #expect(model.selectedItems.map(\.id) == ["a", "b", "c", "d", "e"])
     }
 
-    @Test func arrowsMoveAcrossTheGridAndSections() {
-        let model = makeModel()
+    @Test func arrowsMoveAcrossTheGridAndSections() async {
+        let model = await makeModel()
         model.move(.right)
         #expect(model.selection == ["a"])
         model.move(.right)
@@ -183,15 +183,15 @@ final class HistoryActionLog {
 
     // MARK: Buttons, commands, menu
 
-    @Test func buttonsAreDisabledWithNothingSelected() {
-        let model = makeModel()
+    @Test func buttonsAreDisabledWithNothingSelected() async {
+        let model = await makeModel()
         #expect(!model.canPin && !model.canCopy && !model.canShowInQuickAccess)
         model.select("a")
         #expect(model.canPin && model.canCopy && model.canShowInQuickAccess)
     }
 
-    @Test func recordingsCannotBePinnedAndInterruptedOnesOnlyRevealAndTrash() {
-        let model = makeModel()
+    @Test func recordingsCannotBePinnedAndInterruptedOnesOnlyRevealAndTrash() async {
+        let model = await makeModel()
         model.select("c")
         #expect(!model.canPin && model.canCopy && model.canShowInQuickAccess)
         #expect(!model.isEnabled(.annotate))
@@ -202,8 +202,8 @@ final class HistoryActionLog {
         #expect(rows.map(\.command) == [.showInQuickAccess, .copy, .pin, .annotate, .reveal, .trash])
     }
 
-    @Test func returnShowsTheCardAndKeysRunCommands() {
-        let model = makeModel()
+    @Test func returnShowsTheCardAndKeysRunCommands() async {
+        let model = await makeModel()
         #expect(!model.handle(.showInQuickAccess))
         model.select("a")
         #expect(model.handle(.showInQuickAccess))
@@ -214,8 +214,8 @@ final class HistoryActionLog {
         #expect(!model.handle(.pin))
     }
 
-    @Test func spaceOpensQuickLookWithTheCurrentFiles() {
-        let model = makeModel()
+    @Test func spaceOpensQuickLookWithTheCurrentFiles() async {
+        let model = await makeModel()
         model.select("b")
         model.select("c", mode: .toggle)
         #expect(model.handle(.quickLook))
@@ -224,8 +224,8 @@ final class HistoryActionLog {
         #expect(preview?.1 == 1)
     }
 
-    @Test func contextMenuSelectsAnUnselectedTileFirst() {
-        let model = makeModel()
+    @Test func contextMenuSelectsAnUnselectedTileFirst() async {
+        let model = await makeModel()
         model.select("a")
         model.select("b", mode: .toggle)
         _ = model.contextMenu(for: "b")
@@ -236,9 +236,9 @@ final class HistoryActionLog {
         #expect(log.calls == ["annotate d"])
     }
 
-    @Test func trashRemovesTheItemsAndReloads() {
+    @Test func trashRemovesTheItemsAndReloads() async {
         log.trashable = ["b"]
-        let model = makeModel()
+        let model = await makeModel()
         model.select("b")
         #expect(model.handle(.trash))
         #expect(log.calls == ["trash b"])
@@ -246,13 +246,13 @@ final class HistoryActionLog {
         #expect(model.selection.isEmpty)
     }
 
-    @Test func trashedTilesLeaveOnTheExitCurveWhileTheRestSpring() {
+    @Test func trashedTilesLeaveOnTheExitCurveWhileTheRestSpring() async {
         #expect(HistoryMotion.reflow(reduceMotion: false) == Theme.Motion.spring)
         #expect(HistoryMotion.reflow(reduceMotion: true) == nil)
         #expect(Theme.Motion.historyTileExit == 0.120)
         #expect(Theme.Motion.historyTileExitScale == 0.96)
         log.trashable = ["a"]
-        let model = makeModel()
+        let model = await makeModel()
         var asked = 0
         model.reduceMotion = {
             asked += 1
@@ -264,7 +264,7 @@ final class HistoryActionLog {
         #expect(!model.orderedIDs.contains("a"))
     }
 
-    @Test func theTileGridPlacesTilesInRowsWithTheDesignGaps() throws {
+    @Test func theTileGridPlacesTilesInRowsWithTheDesignGaps() async throws {
         let tiles = (0..<6).map { index in
             Color.clear.frame(width: Theme.History.tileSize.width, height: 134).id(index)
         }
@@ -275,16 +275,16 @@ final class HistoryActionLog {
         #expect(Double(image.height) == 2 * 134 + Theme.History.rowGap)
     }
 
-    @Test func dragCarriesTheSelectionWhenTheDraggedTileIsSelected() {
-        let model = makeModel()
+    @Test func dragCarriesTheSelectionWhenTheDraggedTileIsSelected() async {
+        let model = await makeModel()
         model.select("a")
         model.select("c", mode: .toggle)
         #expect(model.dragURLs(for: "c").map(\.lastPathComponent) == ["Snap a.png", "Snap c.mp4"])
         #expect(model.dragURLs(for: "d").map(\.lastPathComponent) == ["Snap d.png"])
     }
 
-    @Test func searchKeysFocusAndClear() {
-        let model = makeModel()
+    @Test func searchKeysFocusAndClear() async {
+        let model = await makeModel()
         #expect(model.handle(.focusSearch))
         #expect(model.searchFocusRequest == 1)
         #expect(!model.handle(.clearSearch))
@@ -300,7 +300,7 @@ final class HistoryActionLog {
 
     // MARK: Shot scenes
 
-    @Test func demoScenesRenderWithoutAWindow() throws {
+    @Test func demoScenesRenderWithoutAWindow() async throws {
         let (model, _) = HistoryDemo.makeModel()
         #expect(model.sections.map(\.title).prefix(2) == ["Today", "Yesterday"])
         #expect(model.items.count == 12)
@@ -320,8 +320,8 @@ final class HistoryActionLog {
 }
 
 extension HistoryWindowModelTests {
-    @Test func revealSelectsAndClearsSearch() {
-        let model = makeModel()
+    @Test func revealSelectsAndClearsSearch() async {
+        let model = await makeModel()
         model.searchText = "terminal"
         model.filter = .videos
         model.reveal("d")
@@ -331,8 +331,8 @@ extension HistoryWindowModelTests {
         #expect(model.scrollTarget == "d")
     }
 
-    @Test func revealUnknownIDSelectsNothing() {
-        let model = makeModel()
+    @Test func revealUnknownIDSelectsNothing() async {
+        let model = await makeModel()
         model.select("a")
         model.reveal("zzz")
         #expect(model.selection.isEmpty)

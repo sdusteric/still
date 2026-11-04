@@ -86,7 +86,7 @@ public enum HistoryDemo {
         }
         let snapshot = HistorySnapshot(items: items, totalBytes: empty ? 0 : 41_000_000)
         let model = HistoryWindowModel(load: { snapshot }, context: { context })
-        model.reload()
+        model.apply(.success(snapshot))
         if let first = model.orderedIDs.first { model.select(first) }
         return (model, DemoThumbnails(images))
     }
