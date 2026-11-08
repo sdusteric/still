@@ -49,7 +49,7 @@ In the area overlay: Esc or right-click cancels, Space while dragging moves the 
 ## Install and updates
 
 ```sh
-scripts/bundle.sh --release --install    # builds build/bundle/Snap.app, signs it, copies it to ~/Applications
+scripts/bundle.sh --release --install    # builds build/bundle/Snap.app, signs it, copies it to /Applications
 ```
 
 Install only when Snap is not running. Snap updates itself with Sparkle from the sdusteric/app-updates feed (contract: `../app-updates/CONTRACT.md`). It is signed with the same Apple Development identity each build so the Screen Recording grant survives rebuilds.
