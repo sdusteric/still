@@ -51,6 +51,24 @@ private final class FakePreflight: Sendable {
         #expect(state.needsOnboarding == false)
     }
 
+    @Test func aDenialAfterARequestNeedsReapprovalAndARelaunch() {
+        // A rebuild with a new signature leaves an entry in System Settings that looks on but no
+        // longer counts: the user must remove Snap, add it back and relaunch.
+        let preflight = FakePreflight(false)
+        let state = PermissionState(preflight: preflight.closure, requestedAt: requestDate)
+        #expect(state.needsReapproval)
+        #expect(state.offersRelaunchFromMenu)
+        preflight.set(true)
+        #expect(!state.needsReapproval)
+        #expect(!state.offersRelaunchFromMenu)
+    }
+
+    @Test func aFirstRunDenialIsNotAReapproval() {
+        let state = PermissionState(preflight: FakePreflight(false).closure)
+        #expect(!state.needsReapproval)
+        #expect(!state.offersRelaunchFromMenu)
+    }
+
     @Test func recordRequestKeepsTheFirstDate() {
         var state = PermissionState(preflight: FakePreflight(false).closure)
         state.recordRequest(at: requestDate)

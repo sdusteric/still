@@ -43,25 +43,30 @@ public struct HistoryQuery: Sendable, Hashable {
     public var isSearching: Bool { !words.isEmpty }
 
     /// The matching items, in the given order.
-    public func filter(_ items: [CaptureItem], context: HistoryDateContext) -> [CaptureItem] {
+    /// - Parameter texts: the text read from each capture by id, already `foldText`ed. A word
+    ///   also matches when it appears in its capture's text.
+    public func filter(_ items: [CaptureItem], context: HistoryDateContext, texts: [String: String] = [:]) -> [CaptureItem] {
         let words = words
-        return items.filter { matches($0, words: words, context: context) }
+        return items.filter { matches($0, words: words, context: context, text: texts[$0.id]) }
     }
 
-    public func matches(_ item: CaptureItem, context: HistoryDateContext) -> Bool {
-        matches(item, words: words, context: context)
+    public func matches(_ item: CaptureItem, context: HistoryDateContext, text: String? = nil) -> Bool {
+        matches(item, words: words, context: context, text: text)
     }
 
-    private func matches(_ item: CaptureItem, words: [String], context: HistoryDateContext) -> Bool {
+    private func matches(_ item: CaptureItem, words: [String], context: HistoryDateContext, text: String?) -> Bool {
         guard kind.includes(item.kind) else { return false }
         guard !words.isEmpty else { return true }
         let app = HistoryQuery.fold(item.sourceApp ?? "")
         let file = HistoryQuery.fold(item.fileName)
         let dates = context.dateWords(for: item.createdAt)
         return words.allSatisfy { word in
-            app.contains(word) || file.contains(word) || dates.matches(word)
+            app.contains(word) || file.contains(word) || dates.matches(word) || (text?.contains(word) ?? false)
         }
     }
+
+    /// A capture's text folded the way search words are, so matching it is a plain `contains`.
+    public static func foldText(_ text: String) -> String { fold(text) }
 
     /// Items grouped by local day, newest day first, items newest first within a day.
     public static func group(_ items: [CaptureItem], context: HistoryDateContext) -> [HistoryDaySection] {

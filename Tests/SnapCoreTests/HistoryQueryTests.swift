@@ -57,6 +57,16 @@ import Testing
         #expect(ids("menu") == ["d"])
     }
 
+    @Test func wordsMatchTheTextInTheCapture() {
+        let texts = ["c": HistoryQuery.foldText("Invoice #4417\nTotal due: 1.200 €"), "a": HistoryQuery.foldText("Grocery list")]
+        let query = { (text: String) in HistoryQuery(kind: .all, text: text).filter(items, context: context, texts: texts).map(\.id) }
+        #expect(query("invoice") == ["c"])
+        #expect(query("total due") == ["c"])
+        #expect(query("notes grocery") == ["a"])
+        #expect(query("grocery invoice").isEmpty)
+        #expect(ids("invoice").isEmpty, "no text, no match")
+    }
+
     @Test func wordsMatchTheFileName() {
         #expect(ids("quarterly") == ["e"])
         #expect(ids("report.png") == ["e"])

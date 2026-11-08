@@ -41,14 +41,41 @@ import Testing
         ))
     }
 
+    @Test func aStaleGrantOffersRelaunchUnderTheStatusLine() {
+        let menu = MenuModel(MenuInput(permissionNeeded: true, offersRelaunch: true, now: now, timeZone: Self.zone))
+        let ids = menu.items.map(\.id)
+        let status = try? #require(ids.firstIndex(of: .status))
+        #expect(status.map { ids[$0 + 1] } == .relaunch)
+        #expect(menu.item(.relaunch)?.title == "Relaunch Snap")
+        #expect(model(permissionNeeded: true).item(.relaunch) == nil)
+    }
+
+    @Test func capturePreviousAreaNeedsAStoredArea() {
+        let without = model()
+        #expect(without.item(.capturePreviousArea)?.isEnabled == false)
+        let with = MenuModel(MenuInput(hasPreviousArea: true, now: now, timeZone: Self.zone))
+        #expect(with.item(.capturePreviousArea)?.isEnabled == true)
+        #expect(with.item(.capturePreviousArea)?.title == "Capture Previous Area")
+        #expect(MenuItemID.capturePreviousArea.shortcutAction == .capturePreviousArea)
+    }
+
+    @Test func aClipboardImageCanBeOpenedOnlyWhenThereIsOne() {
+        #expect(model().item(.openClipboardImage) == nil)
+        let menu = MenuModel(MenuInput(hasClipboardImage: true, now: now, timeZone: Self.zone))
+        let ids = menu.items.map(\.id)
+        #expect(ids.firstIndex(of: .openClipboardImage) == ids.firstIndex(of: .openImage).map { $0 + 1 })
+        #expect(menu.item(.openImage)?.title == "Open Image\u{2026}")
+        #expect(menu.item(.openClipboardImage)?.title == "Open Clipboard Image")
+    }
+
     @Test func itemsFollowTheDesignOrder() {
         // Design 20.10: the capture group with All-in-One and Record Screen, the last-capture group
         // with Pin, then Recent Captures and Capture History.
         let ids = model().items.map(\.id)
         #expect(ids == [
-            .captureArea, .captureWindow, .captureFullscreen, .allInOne, .recordScreen, .separator(1),
-            .applyBackground, .openInAnnotate, .pinLastCapture, .separator(2),
-            .recentCapturesHeader, .noRecentCaptures, .captureHistory, .separator(3),
+            .captureArea, .capturePreviousArea, .captureWindow, .captureFullscreen, .allInOne, .recordScreen,
+            .separator(1), .applyBackground, .openInAnnotate, .pinLastCapture, .copyLastCaptureText, .separator(2),
+            .recentCapturesHeader, .noRecentCaptures, .captureHistory, .openImage, .separator(3),
             .settings, .quit,
         ])
         #expect(model().item(.openHistoryFolder) == nil)

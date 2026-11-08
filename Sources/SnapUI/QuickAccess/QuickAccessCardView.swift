@@ -479,7 +479,7 @@ public struct QuickAccessCardView: View {
             iconButton(
                 card.confirmedAction == .copy ? "checkmark" : (card.copiesFile ? "doc" : "square.on.square"),
                 label: card.copiesFile ? "Copy File" : "Copy", key: card.copiesFile ? "\u{2325}C" : "C",
-                action: card.copiesFile ? .copyFile : .copy
+                action: card.copiesFile ? .copyFile : .copy, help: card.copiesFile ? nil : "Copy (C), Copy Text (T)"
             )
             if card.savedURL != nil {
                 iconButton("folder", label: "Show in Finder", key: nil, action: .reveal)
@@ -537,7 +537,9 @@ public struct QuickAccessCardView: View {
         .background(Capsule().fill(Color.white.opacity(card.backgroundApplied ? 0.30 : 0.18)))
     }
 
-    private func iconButton(_ symbol: String, label: String, key: String?, action: QuickAccessCardAction) -> some View {
+    private func iconButton(
+        _ symbol: String, label: String, key: String?, action: QuickAccessCardAction, help: String? = nil
+    ) -> some View {
         Button { handler.perform(action) } label: {
             ZStack {
                 // The check cross-fades in from .85 scale (17.7 M5b); Reduce Motion keeps the fade.
@@ -553,7 +555,7 @@ public struct QuickAccessCardView: View {
             .contentShape(Capsule())
         }
         .buttonStyle(CardPressStyle(reduceMotion: reduceMotion))
-        .help(key.map { "\(label) (\($0))" } ?? label)
+        .help(help ?? key.map { "\(label) (\($0))" } ?? label)
         .accessibilityLabel(label)
     }
 

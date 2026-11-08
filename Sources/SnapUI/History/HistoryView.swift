@@ -83,7 +83,7 @@ public struct HistoryView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Theme.Colors.deskText2.color)
-            TextField("Search by app or date", text: $model.searchText)
+            TextField("App, date or text", text: $model.searchText)
                 .textFieldStyle(.plain)
                 .font(Theme.Typography.body.font)
                 .focused($searchFocused)
@@ -125,7 +125,7 @@ public struct HistoryView: View {
         let context = model.context
         let columns = max(model.columns, 1)
         return ScrollViewReader { proxy in ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(model.sections) { section in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(section.title)
@@ -347,38 +347,24 @@ struct HistoryFilterControl: View {
     }
 }
 
-/// Tiles in rows of `columns`, 16 pt apart, rows 14 pt apart, from the top-left: the same places
-/// the earlier rows of `HStack`s gave, with every tile a direct child so moves animate.
-struct HistoryTileGrid: Layout {
+/// Tiles in rows of `columns`, 16 pt apart, rows 14 pt apart, from the top-left. Lazy, so a long
+/// history builds only the tiles near the visible rows; one grid per section keeps every tile a
+/// direct child, so a trash still springs the rest into place (M28).
+struct HistoryTileGrid<Content: View>: View {
     let columns: Int
+    @ViewBuilder let content: Content
 
-    private func metrics(_ subviews: Subviews) -> (tile: CGSize, rows: Int, columns: Int) {
-        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
-        let tile = CGSize(width: sizes.map(\.width).max() ?? 0, height: sizes.map(\.height).max() ?? 0)
-        let columns = max(min(self.columns, subviews.count), 1)
-        return (tile, (subviews.count + columns - 1) / columns, columns)
-    }
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        guard !subviews.isEmpty else { return .zero }
-        let (tile, rows, columns) = metrics(subviews)
-        return CGSize(
-            width: Double(columns) * tile.width + Double(columns - 1) * Theme.History.columnGap,
-            height: Double(rows) * tile.height + Double(rows - 1) * Theme.History.rowGap
-        )
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        guard !subviews.isEmpty else { return }
-        let (tile, _, _) = metrics(subviews)
-        let columns = max(self.columns, 1)
-        for (index, subview) in subviews.enumerated() {
-            let point = CGPoint(
-                x: bounds.minX + Double(index % columns) * (tile.width + Theme.History.columnGap),
-                y: bounds.minY + Double(index / columns) * (tile.height + Theme.History.rowGap)
-            )
-            subview.place(at: point, anchor: .topLeading, proposal: ProposedViewSize(tile))
+    var body: some View {
+        LazyVGrid(columns: Self.gridItems(columns), alignment: .leading, spacing: Theme.History.rowGap) {
+            content
         }
+    }
+
+    static func gridItems(_ count: Int) -> [GridItem] {
+        Array(
+            repeating: GridItem(.fixed(Theme.History.tileSize.width), spacing: Theme.History.columnGap, alignment: .topLeading),
+            count: max(count, 1)
+        )
     }
 }
 

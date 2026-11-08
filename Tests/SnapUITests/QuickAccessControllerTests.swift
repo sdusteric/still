@@ -45,6 +45,7 @@ final class ActionLog {
     var savedURL: URL? = URL(filePath: "/tmp/snap-test/Snap shot.png")
     var thumbnail: QuickAccessThumbnail?
     var pinSucceeds = true
+    var copyTextOutcome: CaptureText.Outcome = .copied
 
     func actions() -> QuickAccessActions {
         QuickAccessActions(
@@ -73,6 +74,10 @@ final class ActionLog {
                 return self.pinSucceeds
             },
             open: { id in self.calls.append("open \(id)") },
+            copyText: { id in
+                self.calls.append("copy text \(id)")
+                return self.copyTextOutcome
+            },
             closed: { id, reason in self.closed.append((id, reason)) }
         )
     }
@@ -310,6 +315,33 @@ final class ActionLog {
         #expect(log.calls == ["editor a", "annotate a"])
         #expect(controller.cards.isEmpty)
         #expect(log.closed.first?.1 == .dismissed)
+    }
+
+    @Test func copyTextShowsItsOutcomeAsANoteAndLeavesTheCardOpen() async {
+        let controller = makeController()
+        controller.show(item("a"))
+        await controller.perform(.copyText, on: "a")
+        #expect(log.calls == ["copy text a"])
+        #expect(controller.card("a")?.note == "Text copied")
+        log.copyTextOutcome = .noText
+        await controller.perform(.copyText, on: "a")
+        #expect(controller.card("a")?.note == "No text found")
+        advance(controller, by: Theme.QuickAccessM2.noteSeconds)
+        #expect(controller.card("a")?.note == nil)
+        #expect(controller.card("a") != nil)
+        #expect(QuickAccessKey(characters: "t", keyCode: 17) == .copyText)
+        #expect(!QuickAccessCardAction.copyText.isAvailable(on: .video))
+    }
+
+    @Test func aFailedClipboardWriteTakesBackTheCopiedChip() {
+        let controller = makeController()
+        controller.show(item("a"))
+        #expect(controller.card("a")?.showsCopied == true)
+        controller.markNotCopied("a")
+        #expect(controller.card("a")?.showsCopied == false)
+        #expect(controller.card("a")?.note == "Not copied")
+        controller.showNote("Not saved to History", on: "a")
+        #expect(controller.card("a")?.note == "Not saved to History")
     }
 
     @Test func keysActOnlyOnTheHoveredCard() async {
@@ -619,6 +651,16 @@ final class ActionLog {
         controller.openSettings()
         #expect(opened == 1)
         #expect(!controller.isVisible)
+    }
+
+    @Test func aStaleGrantExplainsHowToReAddSnap() {
+        let controller = PermissionHintController(clock: FakeClock())
+        let visible = CGRect(x: 0, y: 0, width: 1280, height: 775)
+        controller.show(near: CGPoint(x: 640, y: 400), visibleFrame: visible)
+        #expect(controller.detail == "Turn on Snap in Screen & System Audio Recording.")
+        controller.show(near: CGPoint(x: 640, y: 400), visibleFrame: visible, reapproval: true)
+        #expect(controller.detail?.contains("remove it") == true)
+        #expect(controller.detail?.contains("relaunch Snap") == true)
     }
 
     @Test func aMessageChipShowsForFourSecondsAndThePermissionCardClearsIt() {

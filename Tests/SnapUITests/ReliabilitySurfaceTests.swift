@@ -87,8 +87,8 @@ import Testing
     @Test func thePermissionSceneRendersWithTheBadgedSymbol() throws {
         let light = try #require(MenuPermissionDemo.renderScene(dark: false))
         let dark = try #require(MenuPermissionDemo.renderScene(dark: true))
-        #expect(light.width == 840 && light.height == 1200)
-        #expect(dark.width == 840 && dark.height == 1200)
+        #expect(light.width == 840 && light.height == 1400)
+        #expect(dark.width == 840 && dark.height == 1400)
         #expect(MenuPermissionDemo.makeModel().item(.status)?.title == "Screen Recording needs your OK")
         // The badge: an orange disc near the symbol's top-right in the menu bar.
         let symbolX = MenuM2Demo.statusItemX

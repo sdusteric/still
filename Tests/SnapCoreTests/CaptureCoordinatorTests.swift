@@ -458,6 +458,45 @@ private struct Harness {
         #expect(excluded.map(Set.init) == [Set([9001, 7001, 7002])])
     }
 
+    @Test func previousAreaCapturesTheStoredRectWithoutTheOverlay() async throws {
+        let harness = try Harness(source: FakeCaptureSource(displays: [display]))
+        defer { harness.cleanUp() }
+        let area = try #require(LastArea.store(selection, displays: [display]))
+
+        let ticket = try #require(await harness.coordinator.runPreviousArea(area))
+        _ = await ticket.stored.value
+        #expect(harness.overlay.calls.isEmpty)
+        #expect(ticket.result.mode == .area)
+        #expect(ticket.result.rect == selection)
+        #expect(ticket.result.image.pixelWidth == 1684)
+        #expect(!harness.coordinator.isCapturing)
+    }
+
+    @Test func previousAreaOnAChangedDisplayCapturesNothing() async throws {
+        let harness = try Harness(source: FakeCaptureSource(displays: [display]))
+        defer { harness.cleanUp() }
+        let moved = LastArea(displayID: display.id, displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), rect: selection)
+        #expect(await harness.coordinator.runPreviousArea(moved) == nil)
+        #expect(!harness.coordinator.isCapturing)
+    }
+
+    @Test func aFailedHistoryWriteStillCopiesAndIsReported() async throws {
+        let harness = try Harness(source: FakeCaptureSource(displays: [display]))
+        defer { harness.cleanUp() }
+        // A file where the history folder should be makes every history write fail.
+        let historyPath = SnapPaths(home: harness.home).historyDirectory.path(percentEncoded: false)
+        #expect(FileManager.default.createFile(atPath: historyPath, contents: Data()))
+        harness.overlay.selectAfterFrozen = .area(displayID: display.id, rect: selection)
+
+        let ticket = try #require(await harness.coordinator.run(mode: .area))
+        #expect(await ticket.stored.value == nil)
+        #expect(harness.clipboard.writtenImages.count == 1)
+        let failure = try #require(harness.results.failures.last)
+        #expect(failure.stage == .output)
+        #expect(failure.traceID == ObjectIdentifier(ticket.result.trace))
+        #expect(failure.copied)
+    }
+
     @Test func clipboardOffLeavesThePasteboardAlone() async throws {
         let configuration = CaptureConfiguration(copyToClipboard: false)
         let harness = try Harness(source: FakeCaptureSource(displays: [display]), configuration: configuration)

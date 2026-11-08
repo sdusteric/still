@@ -331,7 +331,10 @@ public enum MenuPermissionDemo {
             CaptureItem(id: "demo-3", createdAt: now.addingTimeInterval(-17_382), mode: .window, scale: 2,
                         originalURL: URL(filePath: "/demo/history/demo-3/shot.png")),
         ]
-        return MenuModel(MenuInput(recentCaptures: captures, permissionNeeded: true, now: now, timeZone: MenuDemo.timeZone))
+        return MenuModel(MenuInput(
+            recentCaptures: captures, permissionNeeded: true, offersRelaunch: true, hasPreviousArea: true,
+            now: now, timeZone: MenuDemo.timeZone
+        ))
     }
 
     static func stage(dark: Bool, scale: Double = 2) -> CGImage? {

@@ -162,6 +162,28 @@ extension HistoryWindowModelTests {
         #expect(model.scrollTarget == "b")
     }
 
+    @Test func searchFindsTheTextInACapture() async {
+        let items = [item("a", hoursAgo: 1), item("b", hoursAgo: 2, app: "Safari")]
+        let texts = ["b": HistoryQuery.foldText("Order confirmation 88213")]
+        let model = makeModel(load: { HistorySnapshot(items: items, totalBytes: 0, texts: texts) })
+        await model.reload().value
+        model.searchText = "confirmation"
+        #expect(model.orderedIDs == ["b"])
+        model.searchText = "88213 safari"
+        #expect(model.orderedIDs == ["b"])
+    }
+
+    @Test func copyTextIsForScreenshotsAndCopiesTheSelection() async {
+        let model = await makeModel()
+        model.select("a")
+        model.select("b", mode: .toggle)
+        #expect(model.isEnabled(.copyText))
+        model.perform(.copyText)
+        #expect(log.calls == ["copy text a,b"])
+        model.select("c")
+        #expect(!model.isEnabled(.copyText), "a recording has no text")
+    }
+
     @Test func sectionsAreBuiltOncePerChange() async {
         let model = await makeModel()
         let builds = model.derivedBuilds

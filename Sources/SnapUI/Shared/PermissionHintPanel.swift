@@ -7,11 +7,21 @@ import SwiftUI
 /// warning-tinted monitor icon and an "Open System Settings" button.
 public struct PermissionHintView: View {
     var onOpenSettings: () -> Void
+    /// Permission was asked for before and macOS still says no: the entry in System Settings is
+    /// stale (often after a rebuild), so turning it on does nothing until Snap is removed and added.
+    var reapproval: Bool
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    public init(onOpenSettings: @escaping () -> Void = {}) {
+    public init(reapproval: Bool = false, onOpenSettings: @escaping () -> Void = {}) {
+        self.reapproval = reapproval
         self.onOpenSettings = onOpenSettings
+    }
+
+    static func detail(reapproval: Bool) -> String {
+        reapproval
+            ? "If Snap is already on, remove it, add it back, then relaunch Snap."
+            : "Turn on Snap in Screen & System Audio Recording."
     }
 
     private var shape: RoundedRectangle {
@@ -31,7 +41,7 @@ public struct PermissionHintView: View {
                 Text("Screen Recording needs your OK")
                     .font(Theme.Typography.headline.font)
                     .foregroundStyle(Theme.Colors.text.color)
-                Text("Turn on Snap in Screen & System Audio Recording.")
+                Text(Self.detail(reapproval: reapproval))
                     .font(Theme.Typography.caption.font)
                     .foregroundStyle(Theme.Colors.text2.color)
                     .padding(.top, 1)
@@ -80,17 +90,21 @@ final class PermissionHintModel {
     var visible = false
     /// A one-line message chip shown in place of the permission card, nil for the card.
     var message: String?
+    /// The chip is a warning (triangle) or a confirmation such as "Text copied" (check).
+    var messageIsWarning = true
+    var reapproval = false
 }
 
 /// A one-line hint chip near the pointer, such as "Recording could not start" (design D69).
 struct HintMessageChip: View {
     let message: String
+    var warning = true
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "exclamationmark.triangle.fill")
+            Image(systemName: warning ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.Colors.warningDot.color)
+                .foregroundStyle(warning ? Theme.Colors.warningDot.color : Theme.Colors.success.color)
             Text(message)
                 .font(Theme.Typography.captionSemibold.font)
                 .foregroundStyle(Theme.Colors.chipText.color)
@@ -158,14 +172,22 @@ public final class PermissionHintController {
     public var message: String? { isVisible ? model.message : nil }
 
     /// Shows the hint near `pointer` (`NSScreen` coordinates); a second call restarts the 6 s.
-    public func show(near pointer: CGPoint, visibleFrame: CGRect) {
+    /// - Parameter reapproval: the stale-entry text (`PermissionState.needsReapproval`).
+    public func show(near pointer: CGPoint, visibleFrame: CGRect, reapproval: Bool = false) {
+        model.reapproval = reapproval
         present(message: nil, seconds: Theme.HintPanel.visibleSeconds, near: pointer, visibleFrame: visibleFrame)
     }
 
     /// Shows a one-line chip near `pointer` for 4 s in place of the permission card, such as
-    /// "Recording could not start" (design D69).
-    public func show(message: String, near pointer: CGPoint, visibleFrame: CGRect) {
+    /// "Recording could not start" (design D69) or "Text copied".
+    public func show(message: String, warning: Bool = true, near pointer: CGPoint, visibleFrame: CGRect) {
+        model.messageIsWarning = warning
         present(message: message, seconds: Theme.HintPanel.messageSeconds, near: pointer, visibleFrame: visibleFrame)
+    }
+
+    /// The text under the title while the permission card shows, for tests.
+    public var detail: String? {
+        isVisible && model.message == nil ? PermissionHintView.detail(reapproval: model.reapproval) : nil
     }
 
     private func present(message: String?, seconds: Double, near pointer: CGPoint, visibleFrame: CGRect) {
@@ -237,9 +259,9 @@ struct PermissionHintPanelContent: View {
     var body: some View {
         Group {
             if let message = controller.model.message {
-                HintMessageChip(message: message)
+                HintMessageChip(message: message, warning: controller.model.messageIsWarning)
             } else {
-                PermissionHintView { controller.openSettings() }
+                PermissionHintView(reapproval: controller.model.reapproval) { controller.openSettings() }
             }
         }
         .opacity(controller.model.visible ? 1 : 0)

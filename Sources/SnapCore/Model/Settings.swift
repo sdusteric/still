@@ -317,6 +317,8 @@ public struct QuickAccessSettings: Codable, Sendable, Hashable {
 public enum ShortcutAction: String, Codable, Sendable, Hashable, CaseIterable {
     case captureArea, captureWindow, captureFullscreen, applyBackground, openInAnnotate
     case allInOne, recordScreen, stopRecording, pinLastCapture, openHistory
+    /// Last in the list so the Carbon hotkey ids of the older actions keep their numbers.
+    case capturePreviousArea
 
     public var title: String {
         switch self {
@@ -330,6 +332,7 @@ public enum ShortcutAction: String, Codable, Sendable, Hashable, CaseIterable {
         case .stopRecording: "Stop Recording"
         case .pinLastCapture: "Pin Last Capture"
         case .openHistory: "Open Capture History"
+        case .capturePreviousArea: "Capture Previous Area"
         }
     }
 }
@@ -371,7 +374,7 @@ public struct KeyShortcut: Codable, Sendable, Hashable {
 public struct ShortcutSettings: Codable, Sendable, Hashable {
     private enum CodingKeys: String, CodingKey {
         case captureArea, captureWindow, captureFullscreen, applyBackground, openInAnnotate
-        case allInOne, recordScreen, stopRecording, pinLastCapture, openHistory
+        case allInOne, recordScreen, stopRecording, pinLastCapture, openHistory, capturePreviousArea
     }
 
     public var captureArea: KeyShortcut?
@@ -384,6 +387,7 @@ public struct ShortcutSettings: Codable, Sendable, Hashable {
     public var stopRecording: KeyShortcut?
     public var pinLastCapture: KeyShortcut?
     public var openHistory: KeyShortcut?
+    public var capturePreviousArea: KeyShortcut?
 
     public init(
         captureArea: KeyShortcut? = .commandShift4,
@@ -395,7 +399,8 @@ public struct ShortcutSettings: Codable, Sendable, Hashable {
         recordScreen: KeyShortcut? = nil,
         stopRecording: KeyShortcut? = nil,
         pinLastCapture: KeyShortcut? = nil,
-        openHistory: KeyShortcut? = nil
+        openHistory: KeyShortcut? = nil,
+        capturePreviousArea: KeyShortcut? = nil
     ) {
         self.captureArea = captureArea
         self.captureWindow = captureWindow
@@ -407,6 +412,7 @@ public struct ShortcutSettings: Codable, Sendable, Hashable {
         self.stopRecording = stopRecording
         self.pinLastCapture = pinLastCapture
         self.openHistory = openHistory
+        self.capturePreviousArea = capturePreviousArea
     }
 
     /// What a version 1 file meant by a missing key: Cmd+Shift+5 on Capture Window and no
@@ -429,6 +435,7 @@ public struct ShortcutSettings: Codable, Sendable, Hashable {
         stopRecording = try container.optionalValue(.stopRecording, default: defaults.stopRecording)
         pinLastCapture = try container.optionalValue(.pinLastCapture, default: defaults.pinLastCapture)
         openHistory = try container.optionalValue(.openHistory, default: defaults.openHistory)
+        capturePreviousArea = try container.optionalValue(.capturePreviousArea, default: defaults.capturePreviousArea)
     }
 
     // Encode nil as an explicit null so a cleared default stays cleared after a round trip.
@@ -444,6 +451,7 @@ public struct ShortcutSettings: Codable, Sendable, Hashable {
         try container.encode(stopRecording, forKey: .stopRecording)
         try container.encode(pinLastCapture, forKey: .pinLastCapture)
         try container.encode(openHistory, forKey: .openHistory)
+        try container.encode(capturePreviousArea, forKey: .capturePreviousArea)
     }
 
     public subscript(action: ShortcutAction) -> KeyShortcut? {
@@ -459,6 +467,7 @@ public struct ShortcutSettings: Codable, Sendable, Hashable {
             case .stopRecording: stopRecording
             case .pinLastCapture: pinLastCapture
             case .openHistory: openHistory
+            case .capturePreviousArea: capturePreviousArea
             }
         }
         set {
@@ -473,6 +482,7 @@ public struct ShortcutSettings: Codable, Sendable, Hashable {
             case .stopRecording: stopRecording = newValue
             case .pinLastCapture: pinLastCapture = newValue
             case .openHistory: openHistory = newValue
+            case .capturePreviousArea: capturePreviousArea = newValue
             }
         }
     }

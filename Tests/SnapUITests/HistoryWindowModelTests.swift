@@ -23,6 +23,7 @@ final class HistoryActionLog {
                 self.calls.append("copy " + items.map(\.id).joined(separator: ","))
                 return true
             },
+            copyText: { items in self.calls.append("copy text " + items.map(\.id).joined(separator: ",")) },
             pin: { items in self.calls.append("pin " + items.map(\.id).joined(separator: ",")) },
             annotate: { item in self.calls.append("annotate \(item.id)") },
             reveal: { items in self.calls.append("reveal " + items.map(\.id).joined(separator: ",")) },
@@ -199,7 +200,7 @@ final class HistoryActionLog {
         #expect(!model.canPin && !model.canCopy && !model.canShowInQuickAccess)
         let rows = model.contextMenu(for: "f")
         #expect(rows.filter(\.isEnabled).map(\.command) == [.reveal, .trash])
-        #expect(rows.map(\.command) == [.showInQuickAccess, .copy, .pin, .annotate, .reveal, .trash])
+        #expect(rows.map(\.command) == [.showInQuickAccess, .copy, .copyText, .pin, .annotate, .reveal, .trash])
     }
 
     @Test func returnShowsTheCardAndKeysRunCommands() async {

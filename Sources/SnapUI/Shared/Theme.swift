@@ -679,7 +679,7 @@ nonisolated public enum Theme {
     /// Menu additions (20.10, mockup 15).
     public enum MenuM2 {
         /// The menu shot: 420 x 600.
-        public static let shotSize = CGSize(width: 420, height: 600)
+        public static let shotSize = CGSize(width: 420, height: 700)
         public static let pinnedThumbnailSize: Double = 32
     }
 

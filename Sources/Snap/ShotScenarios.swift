@@ -159,7 +159,7 @@ enum ShotScenario: String, CaseIterable, Sendable {
     private func hintScene(dark: Bool) -> some View {
         ZStack {
             Color(nsColor: (dark ? ThemeRGBA(hex: 0x1D2240) : ThemeRGBA(hex: 0xD9E2F5)).nsColor)
-            PermissionHintView()
+            PermissionHintView(reapproval: true)
                 .frame(width: Theme.HintPanel.size.width)
         }
         .frame(width: pointSize.width, height: pointSize.height)

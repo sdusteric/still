@@ -38,6 +38,13 @@ public struct MenuKeyEquivalent: Sendable, Hashable {
 
 public enum MenuItemID: Sendable, Hashable {
     case captureArea, captureWindow, captureFullscreen
+    case capturePreviousArea
+    /// Copies the text in the last screenshot (read on this Mac with Vision).
+    case copyLastCaptureText
+    /// An image file, or the clipboard's image, becomes a capture with its card.
+    case openImage, openClipboardImage
+    /// Under the permission status line: quits and reopens Snap so macOS applies a new grant.
+    case relaunch
     /// "All-in-One..." opens the HUD (design 20.5).
     case allInOne
     /// "Record Screen..." opens the HUD in Record mode; it reads "Stop Recording" while recording.
@@ -71,6 +78,7 @@ public enum MenuItemID: Sendable, Hashable {
     public var shortcutAction: ShortcutAction? {
         switch self {
         case .captureArea: .captureArea
+        case .capturePreviousArea: .capturePreviousArea
         case .captureWindow: .captureWindow
         case .captureFullscreen: .captureFullscreen
         case .allInOne: .allInOne
@@ -191,6 +199,12 @@ public struct MenuInput: Sendable {
     /// Enables "Apply Background to Last Capture" and "Open Last Capture in Annotate".
     public var hasLastCapture: Bool
     public var permissionNeeded: Bool
+    /// Adds "Relaunch Snap" under the permission line (`PermissionState.offersRelaunchFromMenu`).
+    public var offersRelaunch: Bool
+    /// Enables "Capture Previous Area": an area was captured before on a current display.
+    public var hasPreviousArea: Bool
+    /// Shows "Open Clipboard Image": the clipboard holds an image.
+    public var hasClipboardImage: Bool
     public var plan: HotkeyPlan?
     /// Shows "Check for Updates..." above Settings. Only the app's updater turns it on.
     public var offersUpdates: Bool
@@ -208,6 +222,9 @@ public struct MenuInput: Sendable {
         recentCaptures: [CaptureItem] = [],
         hasLastCapture: Bool? = nil,
         permissionNeeded: Bool = false,
+        offersRelaunch: Bool = false,
+        hasPreviousArea: Bool = false,
+        hasClipboardImage: Bool = false,
         plan: HotkeyPlan? = nil,
         offersUpdates: Bool = false,
         canPinLastCapture: Bool? = nil,
@@ -220,6 +237,9 @@ public struct MenuInput: Sendable {
         self.recentCaptures = recentCaptures
         self.hasLastCapture = hasLastCapture ?? !recentCaptures.isEmpty
         self.permissionNeeded = permissionNeeded
+        self.offersRelaunch = offersRelaunch
+        self.hasPreviousArea = hasPreviousArea
+        self.hasClipboardImage = hasClipboardImage
         self.plan = plan
         self.offersUpdates = offersUpdates
         self.canPinLastCapture = canPinLastCapture ?? (recentCaptures.first.map { $0.kind == .image } ?? false)
@@ -244,6 +264,9 @@ public struct MenuModel: Sendable, Hashable {
 
         var items: [MenuItem] = [
             MenuModel.actionItem(.captureArea, title: "Capture Area", input),
+            MenuModel.actionItem(
+                .capturePreviousArea, title: "Capture Previous Area", input, enabled: input.hasPreviousArea
+            ),
             MenuModel.actionItem(.captureWindow, title: "Capture Window", input),
             MenuModel.actionItem(.captureFullscreen, title: "Capture Fullscreen", input),
             MenuModel.actionItem(.allInOne, title: "All-in-One\u{2026}", input),
@@ -256,14 +279,22 @@ public struct MenuModel: Sendable, Hashable {
                 .openInAnnotate, title: "Open Last Capture in Annotate", input, enabled: input.hasLastCapture
             ),
             MenuModel.actionItem(.pinLastCapture, title: "Pin Last Capture", input, enabled: input.canPinLastCapture),
+            MenuModel.actionItem(
+                .copyLastCaptureText, title: "Copy Text from Last Capture", input, enabled: input.canPinLastCapture
+            ),
             MenuItem(id: .separator(2), kind: .separator, title: ""),
         ]
         items.append(contentsOf: MenuModel.recentItems(input))
         items.append(MenuModel.actionItem(.captureHistory, title: "Capture History\u{2026}", input))
         if !input.pins.isEmpty { items.append(MenuModel.pinnedItem(input)) }
+        items.append(MenuItem(id: .openImage, title: "Open Image\u{2026}"))
+        if input.hasClipboardImage { items.append(MenuItem(id: .openClipboardImage, title: "Open Clipboard Image")) }
         items.append(MenuItem(id: .separator(3), kind: .separator, title: ""))
         if let status {
             items.append(MenuItem(id: .status, kind: .status, title: status.title, isEnabled: status.isClickable))
+            if status == .permissionNeeded, input.offersRelaunch {
+                items.append(MenuItem(id: .relaunch, title: "Relaunch Snap"))
+            }
             items.append(MenuItem(id: .separator(4), kind: .separator, title: ""))
         }
         if input.offersUpdates {

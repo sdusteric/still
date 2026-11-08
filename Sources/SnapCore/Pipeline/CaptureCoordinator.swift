@@ -8,6 +8,15 @@ public protocol ClipboardWriting: Sendable {
     func writeImage(pngData: Data, image: CGImage, scale: Double) throws
     /// "Copy file": writes the file URL instead of the image.
     func writeFileURL(_ url: URL) throws
+    /// "Copy Text": plain text only.
+    func writeText(_ text: String) throws
+}
+
+public struct ClipboardTextUnsupported: Error {}
+
+extension ClipboardWriting {
+    /// Fakes that never copy text need not implement it.
+    public func writeText(_ text: String) throws { throw ClipboardTextUnsupported() }
 }
 
 /// What the coordinator reports after the overlay is gone. Live: the Quick Access controller in
@@ -162,12 +171,21 @@ public struct CaptureFailure: Sendable, Hashable {
     /// Set when the capture source failed; nil for an output error.
     public var captureError: CaptureError?
     public var message: String
+    /// The capture's trace for an output failure, so the app finds the card it already showed.
+    public var traceID: ObjectIdentifier?
+    /// An output failure after which the clipboard still got the image.
+    public var copied: Bool
 
-    public init(mode: CaptureMode, stage: Stage, captureError: CaptureError?, message: String) {
+    public init(
+        mode: CaptureMode, stage: Stage, captureError: CaptureError?, message: String,
+        traceID: ObjectIdentifier? = nil, copied: Bool = false
+    ) {
         self.mode = mode
         self.stage = stage
         self.captureError = captureError
         self.message = message
+        self.traceID = traceID
+        self.copied = copied
     }
 
     /// True for a missing or lapsed Screen Recording grant, which shows the hint panel.
@@ -215,16 +233,35 @@ public struct CaptureOutputStage: Sendable {
         let namer = FileNamer(pattern: configuration.fileNamePattern)
         // Each item has its own history folder, so the plain name never collides there.
         let fileName = namer.fileName(date: result.createdAt, app: result.sourceApp) { _ in false }
-        let item = try history.add(
-            pngData: png, fileName: fileName, mode: result.mode, scale: result.image.scale,
-            sourceApp: result.sourceApp, createdAt: result.createdAt,
-            // Area and window captures keep their rect, so a pin opened later from history lands
-            // on top of what it shows (design 20.4, D47); fullscreen has none.
-            screenRect: result.mode == .fullscreen ? nil : result.rect,
-            pixelSize: PixelSize(width: result.image.cgImage.width, height: result.image.cgImage.height)
-        )
+        let item: CaptureItem
+        do {
+            item = try history.add(
+                pngData: png, fileName: fileName, mode: result.mode, scale: result.image.scale,
+                sourceApp: result.sourceApp, createdAt: result.createdAt,
+                // Area and window captures keep their rect, so a pin opened later from history lands
+                // on top of what it shows (design 20.4, D47); fullscreen has none.
+                screenRect: result.mode == .fullscreen ? nil : result.rect,
+                pixelSize: PixelSize(width: result.image.cgImage.width, height: result.image.cgImage.height)
+            )
+        } catch {
+            // A full disk or a missing folder must not also lose the clipboard and the saved copy.
+            let (copied, savedURL, problems) = deliverCopies(png, result: result, configuration: configuration, namer: namer)
+            for problem in problems { log?.warning("capture: \(problem)") }
+            throw CaptureOutputError.historyFailed(String(describing: error), copied: copied, savedURL: savedURL)
+        }
         trace.record(.history, at: clock.now())
 
+        let (copied, savedURL, problems) = deliverCopies(png, result: result, configuration: configuration, namer: namer)
+        for problem in problems { log?.warning("capture \(item.id): \(problem)") }
+        log?.info(LatencyLog.line(for: trace))
+        return StoredCapture(result: result, item: item, copied: copied, savedURL: savedURL, problems: problems)
+    }
+
+    /// The clipboard copy and the save-folder copy, each on its own so one failing keeps the other.
+    private func deliverCopies(
+        _ png: Data, result: CaptureResult, configuration: CaptureConfiguration, namer: FileNamer
+    ) -> (copied: Bool, savedURL: URL?, problems: [String]) {
+        let trace = result.trace
         var problems: [String] = []
         var copied = false
         if configuration.copyToClipboard, let clipboard {
@@ -246,9 +283,24 @@ public struct CaptureOutputStage: Sendable {
                 problems.append("save: \(error)")
             }
         }
-        for problem in problems { log?.warning("capture \(item.id): \(problem)") }
-        log?.info(LatencyLog.line(for: trace))
-        return StoredCapture(result: result, item: item, copied: copied, savedURL: savedURL, problems: problems)
+        return (copied, savedURL, problems)
+    }
+}
+
+/// The history write failed after the card was shown. The clipboard and save copies still ran.
+public enum CaptureOutputError: Error, CustomStringConvertible {
+    case historyFailed(String, copied: Bool, savedURL: URL?)
+
+    public var description: String {
+        switch self {
+        case .historyFailed(let message, _, _): "history: \(message)"
+        }
+    }
+
+    public var copied: Bool {
+        switch self {
+        case .historyFailed(_, let copied, _): copied
+        }
     }
 }
 
@@ -352,6 +404,26 @@ public final class CaptureCoordinator {
         return await confirm(selection)
     }
 
+    /// "Capture Previous Area": captures the stored area at once, with no overlay, on the display
+    /// it was taken on. Nil when that display is gone or changed, or a capture is running.
+    @discardableResult
+    public func runPreviousArea(_ area: LastArea, eventTime: TimeInterval? = nil) async -> CaptureTicket? {
+        guard session == nil else { return nil }
+        var known = displays
+        if known.isEmpty {
+            do {
+                known = try await refreshDisplays()
+            } catch {
+                report(mode: .area, stage: .capture, error: error)
+                return nil
+            }
+        }
+        guard let rect = area.restore(on: known) else { return nil }
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        guard await begin(mode: .area, eventTime: eventTime, pointer: center, presented: false), let session else { return nil }
+        return await cropFrozen(session, displayID: area.displayID, rect: rect, mode: .area).ticket
+    }
+
     /// The all-in-one HUD (design 20.5): presents the overlay with the toolbar, starts the frozen
     /// captures only in Screenshot mode (D59), waits for the user and confirms. Record mode ends
     /// with the target to record; the overlay stays up for the countdown.
@@ -367,11 +439,13 @@ public final class CaptureCoordinator {
     /// Presents the overlay at once, then starts the display captures and the window snapshot in
     /// parallel. Returns false when a capture is already running or no display is known.
     @discardableResult
-    public func begin(mode: CaptureMode, eventTime: TimeInterval? = nil, pointer: CGPoint? = nil) async -> Bool {
+    public func begin(
+        mode: CaptureMode, eventTime: TimeInterval? = nil, pointer: CGPoint? = nil, presented: Bool? = nil
+    ) async -> Bool {
         guard session == nil else { return false }
         let trace = CaptureTrace(mode: mode, triggerTime: eventTime ?? clock.now())
         lastTrace = trace
-        let presented = mode != .fullscreen
+        let presented = presented ?? (mode != .fullscreen)
         var configuration = configuration()
         configuration.options = configuration.captureOptions(overlayShown: presented)
 
@@ -636,7 +710,8 @@ public final class CaptureCoordinator {
             } catch {
                 log?.error("capture: output failed: \(error)")
                 results.captureFailed(CaptureFailure(
-                    mode: result.mode, stage: .output, captureError: nil, message: String(describing: error)
+                    mode: result.mode, stage: .output, captureError: nil, message: String(describing: error),
+                    traceID: ObjectIdentifier(result.trace), copied: (error as? CaptureOutputError)?.copied ?? false
                 ))
                 return nil
             }

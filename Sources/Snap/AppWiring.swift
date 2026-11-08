@@ -36,6 +36,8 @@ final class AppWiring: CaptureResultPresenter {
         /// False for a capture edited before `item.json` version 3: its edited PNG has no
         /// annotation file, so the annotate editor opens on that PNG and no file is written.
         var editsAreReproducible = true
+        /// The history write failed: no item will come, so the record may be dropped once its card closes.
+        var storeFailed = false
 
         init(
             cardID: String, trace: CaptureTrace?, original: CapturedImage, createdAt: Date, sourceApp: String?,
@@ -65,9 +67,11 @@ final class AppWiring: CaptureResultPresenter {
     }
 
     /// Records kept for the menu's last-capture actions after their cards close.
-    private static let recordLimit = 12
+    /// Records keep full-size images (a 5K fullscreen is about 58 MB), so only a few with closed
+    /// cards stay; an older capture is read back from its history file when asked for.
+    private static let recordLimit = 4
     /// Recent capture thumbnails in the menu are drawn from images at most this many pixels wide.
-    private static let menuThumbnailPixels = 64
+    nonisolated static let menuThumbnailPixels = 64
 
     let paths: SnapPaths
     let log: Log
@@ -86,6 +90,8 @@ final class AppWiring: CaptureResultPresenter {
     let captureSource: LiveCaptureSource
     private let windowSource = LiveWindowSource()
     let clipboard = PasteboardWriter()
+    let textRecognizer = VisionTextRecognizer()
+    let textIndex = CaptureTextIndex()
     let overlay: OverlayController
     let quickAccess: QuickAccessController
     let hint: PermissionHintController
@@ -110,15 +116,16 @@ final class AppWiring: CaptureResultPresenter {
 
     var records: [String: CaptureRecord] = [:]
     private(set) var recordOrder: [String] = []
-    private var cardForTrace: [ObjectIdentifier: String] = [:]
+    var cardForTrace: [ObjectIdentifier: String] = [:]
     private var backgroundPanels: [ObjectIdentifier: BackgroundEditorPanel] = [:]
     private var annotateWindows: [ObjectIdentifier: AnnotateWindowController] = [:]
     /// History ids an open Background editor or annotate window works on, for the sweep.
     private var editorItems: [ObjectIdentifier: String] = [:]
-    private var menuThumbnails: [String: CGImage] = [:]
+    var menuThumbnails: [String: CGImage] = [:]
+    var menuThumbnailTask: Task<Void, Never>?
     /// Video cards by card id (design 20.6, D67): the recording each one shows.
     var videoCards: [String: CaptureItem] = [:]
-    private var historyWindow: HistoryWindowController?
+    var historyWindow: HistoryWindowController?
 
     /// Called after the app changed settings on its own (key hints off after 10 captures).
     var onSettingsChanged: ((SnapCore.Settings) -> Void)?
@@ -324,7 +331,7 @@ final class AppWiring: CaptureResultPresenter {
 
     /// The in-process notification the history window reloads on (design 20.3).
     func historyChanged() {
-        menuThumbnails = [:]
+        refreshMenuThumbnails()
         NotificationCenter.default.post(name: HistoryWindowController.historyDidChange, object: nil)
     }
 
@@ -356,6 +363,11 @@ final class AppWiring: CaptureResultPresenter {
 
     /// The OCR queue changed size: tell Shelf, at most once a second.
     private func recallPendingChanged(_ count: Int) {
+        // OCR writes ocr.json inside an item folder, which neither the folder date nor a capture
+        // event reports: when the queue empties, History reads the new text for its search.
+        if count == 0, recallPending > 0 {
+            NotificationCenter.default.post(name: HistoryWindowController.historyDidChange, object: nil)
+        }
         recallPending = count
         let wait = 1 - Date().timeIntervalSince(lastStatusWrite)
         guard wait > 0 else { return publishShelfStatus() }
@@ -408,13 +420,7 @@ final class AppWiring: CaptureResultPresenter {
     /// A capture hotkey or menu item. Shows the permission hint instead when permission is
     /// missing; never requests it.
     func capture(_ mode: CaptureMode, eventTime: TimeInterval? = nil) {
-        guard !coordinator.isCapturing else { return }
-        if permission.hotkeyPressed() == .showHint {
-            log.info("capture \(mode.rawValue): no Screen Recording permission, showing the hint")
-            showPermissionHint()
-            onPermissionChanged?()
-            return
-        }
+        guard !coordinator.isCapturing, permissionAllowsCapture(mode.rawValue) else { return }
         overlay.options = OverlayController.Options(settings: settings)
         let pointer = AppWiring.globalPointer()
         Task {
@@ -430,9 +436,18 @@ final class AppWiring: CaptureResultPresenter {
         }
     }
 
+    /// False, after showing the hint, when Screen Recording permission is missing. Never requests it.
+    func permissionAllowsCapture(_ what: String) -> Bool {
+        guard permission.hotkeyPressed() == .showHint else { return true }
+        log.info("capture \(what): no Screen Recording permission, showing the hint")
+        showPermissionHint()
+        onPermissionChanged?()
+        return false
+    }
+
     func showPermissionHint() {
         guard let screen = AppWiring.screenUnderPointer() else { return }
-        hint.show(near: NSEvent.mouseLocation, visibleFrame: screen.visibleFrame)
+        hint.show(near: NSEvent.mouseLocation, visibleFrame: screen.visibleFrame, reapproval: permission.needsReapproval)
     }
 
     // MARK: CaptureResultPresenter
@@ -455,6 +470,8 @@ final class AppWiring: CaptureResultPresenter {
         let id = stored.item.id
         Task { [recall] in await recall.enqueue(id) }
 
+        if settings.capture.copyToClipboard, !stored.copied { quickAccess.markNotCopied(record.cardID) }
+
         let wasLapsed = permission.status != .granted
         permission.captureSucceeded()
         if wasLapsed { onPermissionChanged?() }
@@ -465,6 +482,14 @@ final class AppWiring: CaptureResultPresenter {
 
     func captureFailed(_ failure: CaptureFailure) {
         log.warning("capture \(failure.mode.rawValue) failed at \(failure.stage.rawValue): \(failure.message)")
+        if failure.stage == .output, let traceID = failure.traceID, let cardID = cardForTrace[traceID] {
+            // The card is already up; say what did not happen instead of failing quietly.
+            records[cardID]?.storeFailed = true
+            let copyMissing = settings.capture.copyToClipboard && !failure.copied
+            if copyMissing { quickAccess.markNotCopied(cardID) }
+            quickAccess.showNote(copyMissing ? "Not saved or copied" : "Not saved to History", on: cardID)
+            trimRecords()
+        }
         guard failure.stage == .capture else { return }
         let code = failure.isPermissionError ? PermissionState.userDeclinedErrorCode : nil
         if permission.captureFailed(errorCode: code) == .showHint {
@@ -492,12 +517,19 @@ final class AppWiring: CaptureResultPresenter {
         return record
     }
 
-    private func insert(_ record: CaptureRecord) {
+    func insert(_ record: CaptureRecord) {
         records[record.cardID] = record
         recordOrder.append(record.cardID)
-        // Drop the oldest records whose cards are closed; their files stay in history.
+        trimRecords()
+    }
+
+    /// Drops the oldest records whose cards are closed and whose files are stored; their files
+    /// stay in history. An open editor keeps its own reference to its record.
+    private func trimRecords() {
         while recordOrder.count > Self.recordLimit,
-              let index = recordOrder.firstIndex(where: { quickAccess.card($0) == nil }) {
+              let index = recordOrder.firstIndex(where: { id in
+                  quickAccess.card(id) == nil && (records[id].map { $0.item != nil || $0.storeFailed } ?? true)
+              }) {
             let id = recordOrder.remove(at: index)
             if let trace = records[id]?.trace { cardForTrace[ObjectIdentifier(trace)] = nil }
             records[id] = nil
@@ -550,8 +582,10 @@ final class AppWiring: CaptureResultPresenter {
                 guard let url = self?.videoCards[id]?.originalURL else { return }
                 NSWorkspace.shared.open(url)
             },
+            copyText: { [weak self] id in await self?.copyCardText(id) ?? .failed },
             closed: { [weak self] id, reason in
                 self?.videoCards[id] = nil
+                self?.trimRecords()
                 self?.log.info("card \(id) closed: \(reason)")
             }
         )
@@ -869,145 +903,6 @@ final class AppWiring: CaptureResultPresenter {
         }
     }
 
-    // MARK: Menu
-
-    func recentCaptures() -> [CaptureItem] {
-        do {
-            return try history.recent(limit: MenuModel.recentLimit)
-        } catch {
-            log.warning("history: \(error)")
-            return []
-        }
-    }
-
-    var hasLastCapture: Bool { lastRecord != nil || !recentCaptures().isEmpty }
-
-    /// "Pin Last Capture" is enabled when the last capture is a screenshot (recordings cannot be pinned).
-    var canPinLastCapture: Bool {
-        if lastRecord != nil { return true }
-        return recentCaptures().first { $0.state == .complete }?.kind == .image
-    }
-
-    /// A small thumbnail of a history item for the menu, read once and cached.
-    func menuThumbnail(for id: String) -> CGImage? {
-        if let cached = menuThumbnails[id] { return cached }
-        let url: URL?
-        do {
-            url = try history.item(id: id)?.thumbnailURL
-        } catch {
-            url = nil
-        }
-        guard let url, let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceThumbnailMaxPixelSize: Self.menuThumbnailPixels,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-        ]
-        let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
-        menuThumbnails[id] = thumbnail
-        return thumbnail
-    }
-
-    var lastRecord: CaptureRecord? {
-        recordOrder.reversed().lazy.compactMap { self.records[$0] }.first { $0.item != nil || $0.stored != nil }
-    }
-
-    /// "Apply Background to Last Capture": on its card, shown again when it has closed.
-    func applyBackgroundToLastCapture() {
-        guard let cardID = cardForLastCapture() else { return }
-        Task { await quickAccess.perform(.background, on: cardID) }
-    }
-
-    func openLastCaptureInAnnotate() {
-        guard let cardID = cardForLastCapture(showCard: false) else { return }
-        annotate(cardID)
-    }
-
-    /// A Recent Captures entry, a pin's Show in Quick Access or the history window: its card again
-    /// with a fresh timer, never touching the clipboard (design 20.3). A recording gets its video card.
-    func showRecentCapture(id: String) {
-        if let record = records.values.first(where: { $0.item?.id == id }), quickAccess.card(record.cardID) != nil {
-            return
-        }
-        if let open = videoCards.first(where: { $0.value.id == id }), quickAccess.card(open.key) != nil { return }
-        do {
-            if let item = try history.item(id: id), item.kind == .video {
-                showVideoCard(item, copied: false)
-                return
-            }
-        } catch {
-            log.warning("history: cannot read \(id): \(error)")
-            return
-        }
-        _ = reopen(historyID: id, showCard: true)
-    }
-
-    func openHistoryFolder() {
-        NSWorkspace.shared.open(paths.historyDirectory)
-    }
-
-    /// "Open in Annotate" from a pin or the history window: the session's record when there is
-    /// one, else the item read back from history.
-    func annotate(historyID id: String) {
-        if let record = records.values.first(where: { $0.item?.id == id }) {
-            annotate(record.cardID)
-        } else if let cardID = reopen(historyID: id, showCard: false) {
-            annotate(cardID)
-        }
-    }
-
-    /// The session's record of a history item, else one read back from history without a card.
-    func record(forHistoryID id: String) -> CaptureRecord? {
-        if let record = records.values.first(where: { $0.item?.id == id }) { return record }
-        return reopen(historyID: id, showCard: false).flatMap { records[$0] }
-    }
-
-    private func cardForLastCapture(showCard: Bool = true) -> String? {
-        if let record = lastRecord {
-            if !showCard || quickAccess.card(record.cardID) != nil { return record.cardID }
-            if let id = record.item?.id { return reopen(historyID: id, showCard: true) }
-            return nil
-        }
-        guard let newest = recentCaptures().first else { return nil }
-        return reopen(historyID: newest.id, showCard: showCard)
-    }
-
-    /// Reads a history item back into a new record and, if asked, a new card.
-    func reopen(historyID id: String, showCard: Bool) -> String? {
-        do {
-            guard let item = try history.item(id: id), item.kind == .image, item.state == .complete else { return nil }
-            let original = try PNGReader.read(item.originalURL)
-            let record = CaptureRecord(
-                cardID: "card-" + UUID().uuidString.lowercased(), trace: nil, original: original,
-                createdAt: item.createdAt, sourceApp: item.sourceApp, mode: item.mode, screenRect: item.screenRect
-            )
-            record.item = item
-            if let edited = item.editedURL {
-                record.edited = try PNGReader.read(edited)
-                record.showingEdited = true
-                do {
-                    record.annotations = try history.annotations(id: id)
-                } catch {
-                    log.warning("history: cannot read the annotations of \(id): \(error)")
-                }
-                // An edit from before version 3 has no annotation file to rebuild it from.
-                record.editsAreReproducible = record.annotations != nil
-            }
-            insert(record)
-            if showCard {
-                let image = record.current
-                quickAccess.show(QuickAccessItem(
-                    id: record.cardID, thumbnail: image.cgImage, pointSize: image.pointSize, copied: false
-                ))
-                quickAccess.card(record.cardID)?.backgroundApplied = record.backgroundApplied
-            }
-            return record.cardID
-        } catch {
-            log.warning("history: cannot reopen \(id): \(error)")
-            return nil
-        }
-    }
-
     // MARK: All-in-one HUD (design 20.5)
 
     /// Cmd+Shift+5, "All-in-One..." or "Record Screen..." (Record mode). The overlay with the
@@ -1095,100 +990,6 @@ final class AppWiring: CaptureResultPresenter {
         InputDevices.audioInputs().map { MicrophoneDevice(id: $0.id, name: $0.name) }
     }
 
-    // MARK: History window (design 20.3)
-
-    /// "Capture History..." or its shortcut: one window, activated because the user opened it.
-    func openHistoryWindow() {
-        let controller = historyWindow ?? makeHistoryWindow()
-        historyWindow = controller
-        controller.model.captureAreaShortcut = settings.shortcuts.captureArea.map { HotkeyCombo($0).displayString }
-        controller.model.retention = settings.general.screenshotRetention
-        controller.show()
-    }
-
-    /// A Shelf search result: History opens with the capture selected (Recall design 7.5a).
-    func revealInHistory(_ id: String) {
-        openHistoryWindow()
-        historyWindow?.model.reveal(id)
-    }
-
-    private func makeHistoryWindow() -> HistoryWindowController {
-        let history = history
-        let model = HistoryWindowModel(
-            load: { HistorySnapshot(items: try history.allItems(), totalBytes: try history.totalBytes()) },
-            context: { HistoryDateContext(now: Date()) },
-            // Adding or removing an item folder changes the folder's date; edits post historyDidChange.
-            changeStamp: { Self.modificationDate(of: history.directory) },
-            actions: HistoryActions(
-                showInQuickAccess: { [weak self] items in
-                    // Oldest first, so the first selected ends up on top of the stack.
-                    for item in items.reversed() { self?.showRecentCapture(id: item.id) }
-                },
-                copy: { [weak self] items in self?.copyHistoryItems(items) ?? false },
-                pin: { [weak self] items in self?.pin(historyItems: items) },
-                annotate: { [weak self] item in self?.annotate(historyID: item.id) },
-                reveal: { items in NSWorkspace.shared.activateFileViewerSelecting(items.map(HistoryWindowModel.previewURL)) },
-                trash: { [weak self] ids in self?.trashHistoryItems(ids) ?? [] },
-                openFolder: { [weak self] in self?.openHistoryFolder() }
-            )
-        )
-        return HistoryWindowController(
-            model: model, frame: stateStore.state.historyWindowFrame,
-            frameChanged: { [weak self] frame in self?.storeHistoryWindowFrame(frame) }
-        )
-    }
-
-    /// A folder's modification date, nil when it cannot be read. `FileManager`, not
-    /// `URL.resourceValues`, which caches the value on the URL.
-    private static func modificationDate(of folder: URL) -> Date? {
-        do {
-            let attributes = try FileManager.default.attributesOfItem(atPath: folder.path(percentEncoded: false))
-            return attributes[.modificationDate] as? Date
-        } catch {
-            return nil
-        }
-    }
-
-    private func storeHistoryWindowFrame(_ frame: CGRect) {
-        do {
-            try stateStore.update { $0.historyWindowFrame = frame }
-        } catch {
-            log.warning("state: cannot store the history window frame: \(error)")
-        }
-    }
-
-    /// Cmd+C in history: one screenshot as an image, otherwise the files (a recording copies its
-    /// mp4's URL, design 20.3).
-    private func copyHistoryItems(_ items: [CaptureItem]) -> Bool {
-        if items.count == 1, let item = items.first, item.kind == .image {
-            do {
-                let image = try PNGReader.read(item.currentURL)
-                try ClipboardCopy.write(.image, image: image, fileURL: item.currentURL, to: clipboard)
-                return true
-            } catch {
-                log.error("history copy \(item.id): \(error)")
-                return false
-            }
-        }
-        return copyFileURLs(items.map(HistoryWindowModel.previewURL))
-    }
-
-    /// Move to Trash and Cmd+Delete: each item folder goes to the Trash, no dialog (design D52).
-    private func trashHistoryItems(_ ids: [String]) -> Set<String> {
-        var trashed = Set<String>()
-        for id in ids {
-            do {
-                if try history.trash(id: id) { trashed.insert(id) }
-            } catch {
-                log.error("history: cannot move \(id) to the Trash: \(error)")
-            }
-        }
-        if !trashed.isEmpty { historyChanged() }
-        let removed = Array(trashed)
-        Task { [recall] in await recall.remove(removed) }
-        return trashed
-    }
-
     // MARK: Permission
 
     /// "Allow Access..." in the first-run window: the one permitted request, recorded before it
@@ -1270,7 +1071,7 @@ final class AppWiring: CaptureResultPresenter {
         }
     }
 
-    private static func chooseImage() -> String? {
+    static func chooseImage() -> String? {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = false

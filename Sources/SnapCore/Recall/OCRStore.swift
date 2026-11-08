@@ -26,6 +26,18 @@ public struct OCRStore: Sendable {
         return result
     }
 
+    /// `load(id:)` for a caller that already holds the item: skips reading `item.json` again.
+    public func load(id: String, currentImageName: String) -> OCRResult? {
+        let url = fileURL(id)
+        guard let data = FileManager.default.contents(atPath: url.path(percentEncoded: false)) else { return nil }
+        do {
+            let result = try JSONDecoder().decode(OCRResult.self, from: data)
+            return result.imageName == currentImageName ? result : nil
+        } catch {
+            return nil
+        }
+    }
+
     public func save(_ result: OCRResult, id: String) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]

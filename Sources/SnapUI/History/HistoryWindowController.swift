@@ -9,21 +9,25 @@ import Synchronization
 public struct HistorySnapshot: Sendable {
     public var items: [CaptureItem]
     public var totalBytes: Int64
+    /// The text read from each screenshot by id, folded for search (`HistoryQuery.foldText`).
+    public var texts: [String: String]
 
-    nonisolated public init(items: [CaptureItem], totalBytes: Int64) {
+    nonisolated public init(items: [CaptureItem], totalBytes: Int64, texts: [String: String] = [:]) {
         self.items = items
         self.totalBytes = totalBytes
+        self.texts = texts
     }
 }
 
 /// What a history button, key or context menu row does (design 20.3).
 public enum HistoryCommand: Sendable, Hashable, CaseIterable {
-    case showInQuickAccess, copy, pin, annotate, reveal, trash, quickLook
+    case showInQuickAccess, copy, copyText, pin, annotate, reveal, trash, quickLook
 
     public var title: String {
         switch self {
         case .showInQuickAccess: "Show in Quick Access"
         case .copy: "Copy"
+        case .copyText: "Copy Text"
         case .pin: "Pin to Screen"
         case .annotate: "Open in Annotate"
         case .reveal: "Reveal in Finder"
@@ -108,6 +112,8 @@ public struct HistoryActions {
     public var showInQuickAccess: @MainActor ([CaptureItem]) -> Void
     /// Copies images, or a recording's file URL; true on success.
     public var copy: @MainActor ([CaptureItem]) -> Bool
+    /// Reads the text in the screenshots and copies it.
+    public var copyText: @MainActor ([CaptureItem]) -> Void
     public var pin: @MainActor ([CaptureItem]) -> Void
     public var annotate: @MainActor (CaptureItem) -> Void
     public var reveal: @MainActor ([CaptureItem]) -> Void
@@ -118,6 +124,7 @@ public struct HistoryActions {
     public init(
         showInQuickAccess: @escaping @MainActor ([CaptureItem]) -> Void = { _ in },
         copy: @escaping @MainActor ([CaptureItem]) -> Bool = { _ in false },
+        copyText: @escaping @MainActor ([CaptureItem]) -> Void = { _ in },
         pin: @escaping @MainActor ([CaptureItem]) -> Void = { _ in },
         annotate: @escaping @MainActor (CaptureItem) -> Void = { _ in },
         reveal: @escaping @MainActor ([CaptureItem]) -> Void = { _ in },
@@ -126,6 +133,7 @@ public struct HistoryActions {
     ) {
         self.showInQuickAccess = showInQuickAccess
         self.copy = copy
+        self.copyText = copyText
         self.pin = pin
         self.annotate = annotate
         self.reveal = reveal
@@ -156,6 +164,7 @@ public final class HistoryWindowModel {
     /// A read of the folder is running off the main thread.
     public private(set) var isLoading = false
     public private(set) var totalBytes: Int64 = 0
+    @ObservationIgnored private var texts: [String: String] = [:]
     public var filter: HistoryQuery.KindFilter = .all {
         didSet { pruneSelection() }
     }
@@ -296,6 +305,7 @@ public final class HistoryWindowModel {
     func apply(_ result: Result<HistorySnapshot, any Error>) {
         switch result {
         case .success(let snapshot):
+            texts = snapshot.texts
             items = snapshot.items
             totalBytes = snapshot.totalBytes
             loadError = nil
@@ -337,7 +347,7 @@ public final class HistoryWindowModel {
             day: context.calendar.startOfDay(for: context.now), calendar: context.calendar
         )
         if let derived, derived.key == key { return derived }
-        let sections = HistoryQuery.group(query.filter(items, context: context), context: context)
+        let sections = HistoryQuery.group(query.filter(items, context: context, texts: texts), context: context)
         let value = Derived(key: key, sections: sections, orderedIDs: sections.flatMap { $0.items.map(\.id) })
         derived = value
         derivedBuilds += 1
@@ -486,6 +496,7 @@ public final class HistoryWindowModel {
         case .reveal, .trash: return true
         case .showInQuickAccess, .copy, .quickLook: return complete
         case .pin: return complete && items.allSatisfy { $0.kind == .image } && items.count <= PinBoard.capacity
+        case .copyText: return complete && items.allSatisfy { $0.kind == .image }
         case .annotate: return complete && items.count == 1 && items[0].kind == .image
         }
     }
@@ -496,6 +507,7 @@ public final class HistoryWindowModel {
         switch command {
         case .showInQuickAccess: actions.showInQuickAccess(selected)
         case .copy: _ = actions.copy(selected)
+        case .copyText: actions.copyText(selected)
         case .pin: actions.pin(selected)
         case .annotate: actions.annotate(selected[0])
         case .reveal: actions.reveal(selected)
@@ -535,7 +547,7 @@ public final class HistoryWindowModel {
     /// The context menu of a tile; a right-click on an unselected tile selects it first.
     public func contextMenu(for id: String) -> [HistoryMenuRow] {
         if !selection.contains(id) { select(id) }
-        let order: [HistoryCommand] = [.showInQuickAccess, .copy, .pin, .annotate, .reveal, .trash]
+        let order: [HistoryCommand] = [.showInQuickAccess, .copy, .copyText, .pin, .annotate, .reveal, .trash]
         return order.map { command in
             HistoryMenuRow(command: command, isEnabled: isEnabled(command), separatorBefore: command == .trash || command == .reveal)
         }

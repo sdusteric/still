@@ -73,6 +73,14 @@ import Testing
         }
     }
 
+    @Test func copyTextWritesPlainTextOnly() throws {
+        try withPrivatePasteboard { pasteboard, writer in
+            try writer.writeText("Invoice 4417")
+            #expect(pasteboard.string(forType: .string) == "Invoice 4417")
+            #expect(pasteboard.data(forType: .png) == nil)
+        }
+    }
+
     @Test func aNewCaptureReplacesTheOldOne() throws {
         try withPrivatePasteboard { pasteboard, writer in
             let image = try sampleImage()

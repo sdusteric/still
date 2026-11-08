@@ -70,13 +70,15 @@ public enum QuickAccessCardAction: Sendable, Hashable, CaseIterable {
     case pin
     /// Open the recording in the default player (design 20.6): video cards only.
     case open
+    /// Copy the text in the screenshot (key T): screenshot cards only.
+    case copyText
 
     /// Whether the action exists on a card of `kind`. Reveal also needs a file to show, which the
     /// controller checks when it runs.
     public func isAvailable(on kind: QuickAccessStack.CardKind) -> Bool {
         switch self {
         case .background, .backgroundEditor, .annotate: kind.canEdit
-        case .pin: kind.canPin
+        case .pin, .copyText: kind.canPin
         case .open: kind.canOpen
         case .copy, .copyFile, .save, .reveal, .close: true
         }
@@ -104,6 +106,8 @@ public struct QuickAccessActions {
     public var pin: @MainActor (String) async -> Bool
     /// Opens a recording in the default player.
     public var open: @MainActor (String) -> Void
+    /// Reads the screenshot's text and copies it.
+    public var copyText: @MainActor (String) async -> CaptureText.Outcome
     /// A card left the stack.
     public var closed: @MainActor (String, QuickAccessStack.CloseReason) -> Void
 
@@ -118,6 +122,7 @@ public struct QuickAccessActions {
         dragURL: @escaping @MainActor (String) -> URL? = { _ in nil },
         pin: @escaping @MainActor (String) async -> Bool = { _ in false },
         open: @escaping @MainActor (String) -> Void = { _ in },
+        copyText: @escaping @MainActor (String) async -> CaptureText.Outcome = { _ in .failed },
         closed: @escaping @MainActor (String, QuickAccessStack.CloseReason) -> Void = { _, _ in }
     ) {
         self.copy = copy
@@ -130,6 +135,7 @@ public struct QuickAccessActions {
         self.dragURL = dragURL
         self.pin = pin
         self.open = open
+        self.copyText = copyText
         self.closed = closed
     }
 }
@@ -138,7 +144,7 @@ public struct QuickAccessActions {
 /// Copy File on a screenshot card; O, S, R, C, Delete or Esc on a video card. A key whose action
 /// the hovered card lacks does nothing.
 public enum QuickAccessKey: Sendable, Hashable {
-    case copy, copyFile, save, annotate, background, close, pin, open, reveal
+    case copy, copyFile, save, annotate, background, close, pin, open, reveal, copyText
 
     /// `characters` is `charactersIgnoringModifiers`, so Option-C still reads as "c".
     public init?(characters: String?, keyCode: UInt16, modifiers: NSEvent.ModifierFlags = []) {
@@ -164,6 +170,7 @@ public enum QuickAccessKey: Sendable, Hashable {
         case "p": self = .pin
         case "o": self = .open
         case "r": self = .reveal
+        case "t": self = .copyText
         default: return nil
         }
     }
@@ -178,6 +185,7 @@ public enum QuickAccessKey: Sendable, Hashable {
         case .close: .close
         case .pin: .pin
         case .open: .open
+        case .copyText: .copyText
         case .reveal: .reveal
         }
     }
@@ -539,7 +547,26 @@ public final class QuickAccessController {
             removeModels(for: [closure])
         case .open:
             actions.open(id)
+        case .copyText:
+            let outcome = await actions.copyText(id)
+            showNote(outcome.message, on: id)
         }
+    }
+
+    /// A short line on the card, such as "Text copied" or "Not saved to History", for 4 s.
+    public func showNote(_ note: String, on id: String) {
+        guard let card = card(id) else { return }
+        withAnimation(.easeOut(duration: Theme.Motion.copiedChip)) { card.note = note }
+        noteUntil[id] = clock.now() + Theme.QuickAccessM2.noteSeconds
+        processTimers()
+    }
+
+    /// The clipboard write failed after the card showed "Copied".
+    public func markNotCopied(_ id: String) {
+        guard let card = card(id) else { return }
+        copiedUntil[id] = nil
+        withAnimation(.easeOut(duration: Theme.Motion.copiedChip)) { card.showsCopied = false }
+        showNote("Not copied", on: id)
     }
 
     /// The saved copy when there is one; a video card also reveals its mp4 in history.

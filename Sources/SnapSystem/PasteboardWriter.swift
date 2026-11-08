@@ -46,6 +46,13 @@ public struct PasteboardWriter: ClipboardWriting {
         guard pasteboard.writeObjects([url as NSURL]) else { throw WriteError.rejected }
     }
 
+    /// "Copy Text": the string only.
+    public func writeText(_ text: String) throws {
+        let pasteboard = NSPasteboard(name: pasteboardName)
+        pasteboard.clearContents()
+        guard pasteboard.setString(text, forType: .string) else { throw WriteError.rejected }
+    }
+
     /// TIFF bytes with the same DPI as the PNG, for the lazy provider and tests.
     public static func tiffData(for image: CGImage, scale: Double) -> Data? {
         let output = NSMutableData()

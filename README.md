@@ -12,12 +12,16 @@ It is built for one Mac and the way its owner uses it: about one and a half scre
 - A Quick Access card in the corner after each capture. The image is already on the clipboard. From the card you can add a Background, annotate, save, copy, pin, or drag the file out.
 - Background puts the capture on a gradient, mesh, color, image or a blurred copy of itself, with padding, inset, corners and shadow from your preset.
 - Annotate has crop, rectangle, arrow, text, highlight, numbered steps, freehand, and redaction by pixelate, blur or black-out. Black-out is the only redaction that cannot be reversed.
-- History keeps every capture for 3 days. Edited captures keep their annotations in `annotations.json`, so reopening one gives you every arrow, step and redaction to edit again, with the Background still applied on export.
+- Copy Text reads the text in a screenshot on this Mac with Vision and puts it on the clipboard: T on a card, "Copy Text from Last Capture" in the menu, or Copy Text in History. History search also matches that text.
+- Capture Previous Area takes the last area again with no selection, from the menu or a shortcut you set.
+- Open Image and Open Clipboard Image turn any picture into a capture with its card, so Background, Annotate and Pin work on it.
+- History keeps screenshots for 30 days by default (3 days, 30 days or a year in Settings) and recordings for 3 days. Edited captures keep their annotations in `annotations.json`, so reopening one gives you every arrow, step and redaction to edit again, with the Background still applied on export.
 - Pins float a capture above other windows, with opacity and click-through.
 - Screen recording to mp4 (H.264 or HEVC, 30 or 60 fps), with system audio and microphone when you turn them on.
 - While recording, Snap checks once a second that video frames and audio from each source keep arriving. After 3 s without them the menu bar timer turns amber and the menu says what stopped. Snap keeps recording; Stop keeps whatever was written.
 - After a recording that asked for audio, the video card says "No audio track", "Microphone silent" or "System audio silent" when the file stays below -60 dBFS.
-- When macOS asks to approve Screen Recording again and a capture fails for that reason, the menu bar symbol gets an orange dot and the menu shows "Screen Recording needs your OK". Clicking the row opens the right System Settings pane.
+- When macOS asks to approve Screen Recording again and a capture fails for that reason, the menu bar symbol gets an orange dot and the menu shows "Screen Recording needs your OK". Clicking the row opens the right System Settings pane. If Snap was approved before and macOS still says no (a rebuild with a new signature leaves a stale entry), the hint says to remove Snap from the list and add it back, and the menu offers Relaunch Snap.
+- If the history write fails (a full disk), the clipboard and save copies still happen and the card says "Not saved to History". A failed clipboard write takes back the "Copied" chip.
 
 ### Shortcuts
 
@@ -28,9 +32,9 @@ Global hotkeys, changeable in Settings > Shortcuts (recorder fields with conflic
 | Shift-Cmd-4 | Capture Area |
 | Shift-Cmd-3 | Capture Fullscreen |
 | Shift-Cmd-5 | All-in-One toolbar (also stops a recording) |
-| unset | Capture Window, Record Screen, Stop Recording, Apply Background, Open in Annotate, Pin Last Capture, Open Capture History |
+| unset | Capture Previous Area, Capture Window, Record Screen, Stop Recording, Apply Background, Open in Annotate, Pin Last Capture, Open Capture History |
 
-In the area overlay: Esc or right-click cancels, Space while dragging moves the rectangle, Shift constrains to a square, Option resizes from the center, arrow keys nudge 1 point (Shift 10), Space or Tab switches to window mode. On a hovered Quick Access card: C copy, Option-C copy file, S save, A annotate, B background, Delete or Esc close. Settings has five tabs: General, Capture, Quick Access, Recording, Shortcuts.
+In the area overlay: Esc or right-click cancels, Space while dragging moves the rectangle, Shift constrains to a square, Option resizes from the center, arrow keys nudge 1 point (Shift 10), Space or Tab switches to window mode. On a hovered Quick Access card: C copy, Option-C copy file, T copy text, S save, A annotate, B background, Delete or Esc close. Settings has five tabs: General, Capture, Quick Access, Recording, Shortcuts.
 
 ## Permissions and what it never does
 

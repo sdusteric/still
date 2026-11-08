@@ -145,6 +145,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
             recentCaptures: wiring.recentCaptures(),
             hasLastCapture: wiring.hasLastCapture,
             permissionNeeded: wiring.permission.needsAttention,
+            offersRelaunch: wiring.permission.offersRelaunchFromMenu,
+            hasPreviousArea: wiring.hasPreviousArea,
+            hasClipboardImage: wiring.hasClipboardImage,
             plan: plan,
             offersUpdates: updater != nil,
             canPinLastCapture: wiring.canPinLastCapture,
@@ -157,6 +160,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
         guard let wiring else { return }
         switch id {
         case .captureArea: wiring.capture(.area)
+        case .capturePreviousArea: wiring.capturePreviousArea()
+        case .copyLastCaptureText: wiring.copyLastCaptureText()
+        case .relaunch: AppDelegate.relaunch()
+        case .openImage: wiring.openImageFile()
+        case .openClipboardImage: wiring.openClipboardImage()
         case .captureWindow: wiring.capture(.window)
         case .captureFullscreen: wiring.capture(.fullscreen)
         case .applyBackground: wiring.applyBackgroundToLastCapture()
@@ -224,6 +232,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
         let eventTime = press.time(on: SystemClock())
         switch press.action {
         case .captureArea: wiring.capture(.area, eventTime: eventTime)
+        case .capturePreviousArea: wiring.capturePreviousArea(eventTime: eventTime)
         case .captureWindow: wiring.capture(.window, eventTime: eventTime)
         case .captureFullscreen: wiring.capture(.fullscreen, eventTime: eventTime)
         case .applyBackground: wiring.applyBackgroundToLastCapture()
@@ -459,5 +468,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
         sweepTimer = Timer.scheduledTimer(withTimeInterval: Self.sweepInterval, repeats: true) { [weak wiring] _ in
             MainActor.assumeIsolated { wiring?.sweepHistory() }
         }
+        // The sweep has no deadline, so macOS may fold its wake-up into others.
+        sweepTimer?.tolerance = Self.sweepInterval / 6
     }
 }

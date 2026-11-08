@@ -67,7 +67,7 @@ import Testing
     @Test func menuM2SceneRendersAtTheShotSize() throws {
         let light = try #require(MenuM2Demo.renderScene(dark: false))
         let dark = try #require(MenuM2Demo.renderScene(dark: true))
-        #expect(light.width == 840 && light.height == 1200)
+        #expect(light.width == 840 && light.height == 1400)
         #expect(try #require(ImageStats.luminance(light)).standardDeviation >= 4)
         let region = CGRect(x: 240, y: 80, width: 520, height: 1000)
         let lightMean = try #require(ImageStats.luminance(light, region: region)).mean

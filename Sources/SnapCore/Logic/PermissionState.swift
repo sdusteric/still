@@ -89,6 +89,14 @@ public struct PermissionState: Sendable {
     /// by a preflight that says yes when no lapse is pending.
     public var showsBadge: Bool { captureBlocked && needsAttention }
 
+    /// Permission was asked for before and macOS still says no. After a rebuild with a new
+    /// signature, the old entry in System Settings can look on while it no longer counts.
+    public var needsReapproval: Bool { hasRequested && status == .denied }
+
+    /// The menu offers "Relaunch Snap" under the status line: macOS applies a new grant only to a
+    /// fresh process.
+    public var offersRelaunchFromMenu: Bool { needsReapproval || offersRelaunch }
+
     /// The onboarding window offers "Relaunch Snap": the user came back from System Settings and
     /// the preflight still says no, or a capture failed although the preflight says yes.
     public var offersRelaunch: Bool {
