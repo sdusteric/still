@@ -37,26 +37,65 @@ public final class HotkeyCenter {
 
     /// "SNAP" as a four-character code, so events of other handlers are ignored.
     nonisolated static let signature: OSType = 0x534E_4150
+    /// "SNPK": the overlay's grabbed keys (`grab`), told apart from the shortcuts.
+    nonisolated static let grabSignature: OSType = 0x534E_504B
 
     private let box: HotkeyHandlerBox
     private var handlerRef: EventHandlerRef?
     private var refs: [ShortcutAction: EventHotKeyRef] = [:]
+    private var grabRefs: [EventHotKeyRef] = []
+    private var onGrabbedKey: (@MainActor (Int, Bool) -> Void)?
     public private(set) var registrations: [ShortcutAction: Registration] = [:]
 
     /// - Parameter onPress: runs on the main actor for every press of a registered combo.
     public init(onPress: @escaping @MainActor (HotkeyPress) -> Void) {
-        box = HotkeyHandlerBox { id, eventTime in
+        let grabbed = GrabbedKeyRelay()
+        box = HotkeyHandlerBox { signature, id, pressed, eventTime in
+            if signature == HotkeyCenter.grabSignature {
+                grabbed.forward?(Int(id), pressed)
+                return
+            }
             let actions = ShortcutAction.allCases
-            guard Int(id) < actions.count else { return }
+            guard pressed, Int(id) < actions.count else { return }
             onPress(HotkeyPress(
                 action: actions[Int(id)], eventTime: eventTime, receivedUptime: ProcessInfo.processInfo.systemUptime
             ))
         }
+        relay = grabbed
     }
 
+    private let relay: GrabbedKeyRelay
+
     isolated deinit {
+        releaseGrab()
         unregisterAll()
         if let handlerRef { RemoveEventHandler(handlerRef) }
+    }
+
+    /// Takes `keys` (key code and Carbon modifiers) as global hotkeys until `releaseGrab()`, so
+    /// the capture overlay gets Esc, Return and the rest while another app is active: macOS does
+    /// not send keys to a non-activating panel of an app that is not active. `onKey` gets the
+    /// index in `keys` and whether the key went down (true) or up. Returns how many registered.
+    @discardableResult
+    public func grab(_ keys: [KeyShortcut], onKey: @escaping @MainActor (Int, Bool) -> Void) -> Int {
+        releaseGrab()
+        guard installHandlerIfNeeded() == noErr else { return 0 }
+        relay.forward = onKey
+        for (index, key) in keys.enumerated() {
+            var ref: EventHotKeyRef?
+            let status = RegisterEventHotKey(
+                key.keyCode, key.modifiers, EventHotKeyID(signature: HotkeyCenter.grabSignature, id: UInt32(index)),
+                GetApplicationEventTarget(), 0, &ref
+            )
+            if status == noErr, let ref { grabRefs.append(ref) }
+        }
+        return grabRefs.count
+    }
+
+    public func releaseGrab() {
+        for ref in grabRefs { UnregisterEventHotKey(ref) }
+        grabRefs.removeAll()
+        relay.forward = nil
     }
 
     /// Registers what `plan.register` lists, replacing earlier registrations. Deferred combos (CleanShot
@@ -109,9 +148,12 @@ public final class HotkeyCenter {
 
     private func installHandlerIfNeeded() -> OSStatus {
         guard handlerRef == nil else { return noErr }
-        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        var eventTypes = [
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
+        ]
         return InstallEventHandler(
-            GetApplicationEventTarget(), hotkeyEventHandler, 1, &eventType,
+            GetApplicationEventTarget(), hotkeyEventHandler, eventTypes.count, &eventTypes,
             Unmanaged.passUnretained(box).toOpaque(), &handlerRef
         )
     }
@@ -119,12 +161,19 @@ public final class HotkeyCenter {
 
 /// The one documented `@unchecked Sendable` boundary: Carbon hands this box to a C callback as an
 /// opaque pointer. The callback runs on the main thread, which is the only place `handler` is called.
+/// The handler gets the hotkey's signature, its id, whether it went down, and the event time.
 final class HotkeyHandlerBox: @unchecked Sendable {
-    let handler: @MainActor (UInt32, TimeInterval) -> Void
+    let handler: @MainActor (OSType, UInt32, Bool, TimeInterval) -> Void
 
-    init(handler: @escaping @MainActor (UInt32, TimeInterval) -> Void) {
+    init(handler: @escaping @MainActor (OSType, UInt32, Bool, TimeInterval) -> Void) {
         self.handler = handler
     }
+}
+
+/// Where grabbed keys go while a grab is on. Only touched on the main actor.
+@MainActor
+final class GrabbedKeyRelay {
+    var forward: (@MainActor (Int, Bool) -> Void)?
 }
 
 private func hotkeyEventHandler(_ next: EventHandlerCallRef?, _ event: EventRef?, _ userData: UnsafeMutableRawPointer?) -> OSStatus {
@@ -134,10 +183,14 @@ private func hotkeyEventHandler(_ next: EventHandlerCallRef?, _ event: EventRef?
         event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
         MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID
     )
-    guard status == noErr, hotKeyID.signature == HotkeyCenter.signature else { return OSStatus(eventNotHandledErr) }
+    let signature = hotKeyID.signature
+    guard status == noErr, signature == HotkeyCenter.signature || signature == HotkeyCenter.grabSignature else {
+        return OSStatus(eventNotHandledErr)
+    }
     let eventTime = GetEventTime(event)
+    let pressed = GetEventKind(event) == UInt32(kEventHotKeyPressed)
     let box = Unmanaged<HotkeyHandlerBox>.fromOpaque(userData).takeUnretainedValue()
     let id = hotKeyID.id
-    MainActor.assumeIsolated { box.handler(id, eventTime) }
+    MainActor.assumeIsolated { box.handler(signature, id, pressed, eventTime) }
     return noErr
 }

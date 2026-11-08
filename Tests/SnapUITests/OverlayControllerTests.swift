@@ -123,6 +123,48 @@ enum ImageStats {
         #expect(controller.surfaceWindowIDs == [7001, 7002])
     }
 
+    @Test func theOverlayGrabsItsKeysWhileItIsUp() async throws {
+        // macOS sends no keys to a non-activating panel of an inactive app, so Esc comes in as a
+        // grabbed global hotkey for as long as the overlay is up.
+        let controller = makeController()
+        var grabs: [Bool] = []
+        controller.onKeyGrabChanged = { grabs.append($0) }
+        controller.present(mode: .area, displays: displays)
+        #expect(grabs == [true])
+        let escape = try #require(OverlayController.grabbedKeys.firstIndex { $0.keyCode == 53 && $0.modifiers == 0 })
+        controller.grabbedKey(at: escape, pressed: true)
+        #expect(!controller.isPresented)
+        #expect(grabs == [true, false])
+        #expect(cursor.isBalanced)
+        #expect(await controller.selection() == .cancelled)
+    }
+
+    @Test func grabbedKeysCoverTheOverlayAndTheHUD() throws {
+        let keys = OverlayController.grabbedKeys
+        let shift = KeyShortcut.Modifier.shift
+        for code: UInt32 in [53, 36, 76, 48, 49, 18, 19, 20, 15] {
+            #expect(keys.contains(KeyShortcut(keyCode: code, modifiers: 0)), "key \(code)")
+        }
+        for arrow: UInt32 in [123, 124, 125, 126] {
+            #expect(keys.contains(KeyShortcut(keyCode: arrow, modifiers: 0)))
+            #expect(keys.contains(KeyShortcut(keyCode: arrow, modifiers: shift)))
+        }
+        #expect(Set(keys).count == keys.count)
+    }
+
+    @Test func aGrabbedSpaceReleaseEndsTheMoveAndOtherKeysWaitForTheOverlay() {
+        let controller = makeController()
+        var grabs: [Bool] = []
+        controller.onKeyGrabChanged = { grabs.append($0) }
+        let space = OverlayController.grabbedKeys.firstIndex { $0.keyCode == 49 } ?? 0
+        controller.grabbedKey(at: space, pressed: true)
+        #expect(grabs.isEmpty, "no overlay, no grab and nothing handled")
+        controller.present(mode: .area, displays: displays)
+        controller.grabbedKey(at: space, pressed: true)
+        controller.grabbedKey(at: space, pressed: false)
+        #expect(controller.isPresented)
+    }
+
     @Test func panelsAreBuiltOnceAndReusedAcrossCaptures() {
         let box = SurfaceBox()
         let controller = makeController(box: box)

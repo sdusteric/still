@@ -156,8 +156,11 @@ Check them once by hand after installing with `scripts/bundle.sh --install`, wit
    overlay panel received keys through `makeKey()`. The frontmost app's title bar should not go
    inactive. Covered offscreen: the overlay view accepts first responder and forwards Esc, Space
    and Tab key events to the controller (`PanelGlueTests`), and the controller maps them to
-   cancel, move and window mode (`OverlayControllerTests`). Not covered: whether the window
-   server routes keys to a `.nonactivatingPanel` that called `makeKey()` while Snap is inactive.
+   cancel, move and window mode (`OverlayControllerTests`). Checked by hand on 2026-11-08: the
+   window server does not route keys to the `.nonactivatingPanel` while Snap is inactive, so Esc
+   did nothing. Since then the overlay grabs its keys (`OverlayController.grabbedKeys`) as Carbon
+   hotkeys while it is up and releases them when it closes (`HotkeyCenter.grab`), which needs no
+   permission. Check again that Esc, Tab, Return and the arrows work with another app frontmost.
 3. Hover a Quick Access card, then press Esc: the card closes. Move the pointer off the card and
    type: keys reach the frontmost app again. Do it once with a single card and once with two or
    more cards, and watch the remaining cards for a one-frame flicker when the pointer leaves.

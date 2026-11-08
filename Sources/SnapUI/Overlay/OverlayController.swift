@@ -168,7 +168,13 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
     public private(set) var states: [DisplayID: SelectionOverlayState] = [:]
     public private(set) var mode: CaptureMode = .area
     public private(set) var phase: OverlayPhase = .idle
-    public private(set) var isPresented = false
+    public private(set) var isPresented = false {
+        didSet { if isPresented != oldValue { onKeyGrabChanged?(isPresented) } }
+    }
+    /// True when the overlay comes up and false when it goes: the app grabs `grabbedKeys` as global
+    /// hotkeys meanwhile. macOS sends no keys to a non-activating panel of an app that is not
+    /// active, so without the grab Esc, Return and Tab never reach the overlay.
+    public var onKeyGrabChanged: ((Bool) -> Void)?
     public private(set) var isCursorHidden = false
     public private(set) var hoveredWindow: WindowInfo?
     /// The current selection in global top-left points and the display it is on.
@@ -397,6 +403,35 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
 
     public func overlayEvent(_ event: OverlayInputEvent) {
         handle(event)
+    }
+
+    /// The keys the overlay and the HUD act on, as Carbon key codes and modifiers: Esc, Return and
+    /// Enter, Tab, Space, the arrows alone and with Shift, Command and both, and 1, 2, 3 and R.
+    public static let grabbedKeys: [KeyShortcut] = {
+        let shift = KeyShortcut.Modifier.shift
+        let command = KeyShortcut.Modifier.command
+        var keys = [53, 36, 76, 48, 49, 18, 19, 20, 15].map { KeyShortcut(keyCode: UInt32($0), modifiers: 0) }
+        for arrow: UInt32 in [123, 124, 125, 126] {
+            for modifiers in [0, shift, command, shift | command] {
+                keys.append(KeyShortcut(keyCode: arrow, modifiers: modifiers))
+            }
+        }
+        return keys
+    }()
+
+    /// A grabbed key went down or up: handled like the panel's own key event.
+    public func grabbedKey(at index: Int, pressed: Bool) {
+        guard Self.grabbedKeys.indices.contains(index) else { return }
+        let shortcut = Self.grabbedKeys[index]
+        let key = OverlayKey(keyCode: UInt16(shortcut.keyCode))
+        guard pressed else {
+            handle(.keyUp(key))
+            return
+        }
+        var modifiers: OverlayModifiers = []
+        if shortcut.modifiers & KeyShortcut.Modifier.shift != 0 { modifiers.insert(.shift) }
+        if shortcut.modifiers & KeyShortcut.Modifier.command != 0 { modifiers.insert(.command) }
+        handle(.keyDown(key, modifiers: modifiers, isRepeat: false))
     }
 
     /// Maps one input event onto the selection. Points are global top-left.

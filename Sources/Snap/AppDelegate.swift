@@ -217,7 +217,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
     // MARK: Hotkeys
 
     private func installHotkeys(_ wiring: AppWiring) {
-        hotkeys = HotkeyCenter { [weak self] press in self?.hotkeyPressed(press) }
+        let hotkeys = HotkeyCenter { [weak self] press in self?.hotkeyPressed(press) }
+        self.hotkeys = hotkeys
+        // The overlay's keys arrive as grabbed hotkeys while it is up (see OverlayController.grabbedKeys).
+        let overlay = wiring.overlay
+        overlay.onKeyGrabChanged = { [weak hotkeys, weak overlay, weak wiring] active in
+            guard let hotkeys else { return }
+            guard active else {
+                hotkeys.releaseGrab()
+                return
+            }
+            let keys = OverlayController.grabbedKeys
+            let registered = hotkeys.grab(keys) { index, pressed in overlay?.grabbedKey(at: index, pressed: pressed) }
+            if registered < keys.count {
+                wiring?.log.warning("overlay: grabbed \(registered) of \(keys.count) keys; another app holds the rest")
+            }
+        }
         readSymbolicHotkeys()
         applyHotkeys()
         // CleanShot X launching or quitting changes which combos Snap may register (design 12.3).
