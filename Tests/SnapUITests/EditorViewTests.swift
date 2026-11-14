@@ -389,7 +389,7 @@ private func luminance(_ image: CGImage, in rect: CGRect? = nil) throws -> Lumin
 
     @Test func settingsFileNamePreviewUsesThePattern() {
         let model = SettingsDemo.makeModel(tab: .general)
-        #expect(model.fileNamePreview.hasPrefix("Snap 2026-10-2"))
+        #expect(model.fileNamePreview.hasPrefix("Still 2026-10-2"))
         #expect(model.fileNamePreview.hasSuffix(".png"))
         #expect(!model.fileNamePreview.contains(":"))
         #expect(model.saveFolderName == "Downloads")
@@ -415,7 +415,7 @@ private func luminance(_ image: CGImage, in rect: CGRect? = nil) throws -> Lumin
         let recent = try #require(items.first { $0.title.hasPrefix("Screenshot 14.03.22") })
         #expect(recent.image?.size == CGSize(width: 32, height: 32))
         let quit = try #require(items.last)
-        #expect(quit.title == "Quit Snap" && quit.keyEquivalent == "q")
+        #expect(quit.title == "Quit Still" && quit.keyEquivalent == "q")
         _ = quit.target?.perform(quit.action, with: quit)
         #expect(chosen == [.quit])
     }

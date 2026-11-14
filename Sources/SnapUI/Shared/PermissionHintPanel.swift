@@ -20,8 +20,8 @@ public struct PermissionHintView: View {
 
     static func detail(reapproval: Bool) -> String {
         reapproval
-            ? "If Snap is already on, remove it, add it back, then relaunch Snap."
-            : "Turn on Snap in Screen & System Audio Recording."
+            ? "If Still is already on, remove it, add it back, then relaunch Still."
+            : "Turn on Still in Screen & System Audio Recording."
     }
 
     private var shape: RoundedRectangle {

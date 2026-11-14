@@ -93,11 +93,11 @@ public struct PermissionState: Sendable {
     /// signature, the old entry in System Settings can look on while it no longer counts.
     public var needsReapproval: Bool { hasRequested && status == .denied }
 
-    /// The menu offers "Relaunch Snap" under the status line: macOS applies a new grant only to a
+    /// The menu offers "Relaunch Still" under the status line: macOS applies a new grant only to a
     /// fresh process.
     public var offersRelaunchFromMenu: Bool { needsReapproval || offersRelaunch }
 
-    /// The onboarding window offers "Relaunch Snap": the user came back from System Settings and
+    /// The onboarding window offers "Relaunch Still": the user came back from System Settings and
     /// the preflight still says no, or a capture failed although the preflight says yes.
     public var offersRelaunch: Bool {
         (activatedAfterRequestWithoutGrant && !preflight()) || failedAfterGrant

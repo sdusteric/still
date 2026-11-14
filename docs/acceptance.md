@@ -82,7 +82,7 @@ Each is non-blank (luminance stddev at least 4), and each light/dark pair differ
 40/255 mean luminance in its chrome region. The script exits 0, which means `lsappinfo front` was
 unchanged around every launch and `winlist` never saw an on-screen window owned by the shot PID.
 
-**How it is checked.** `shots.sh` runs `build/bundle/Snap.app/Contents/MacOS/Snap --shot
+**How it is checked.** `shots.sh` runs `build/bundle/Still.app/Contents/MacOS/Snap --shot
 <scenario> --appearance light|dark --out <png>` by direct exec, one process per shot, each with
 a fresh `SNAP_HOME`. It records `lsappinfo front` before and after (exit 3 on a change) and polls
 `scripts/winlist.swift` every 100 ms for an on-screen window of that PID (exit 4). The shot mode
@@ -217,8 +217,8 @@ and a fake clock. A threshold that is not met is reported with its number, never
 every M1 and Sparkle gate, plus: swiftlint `--strict` with `screen_capture_only_in_system`
 extended to `SCStream`, `SCRecordingOutput`, `SCStreamConfiguration`, `SCContentFilter` and
 `AVCaptureDevice` (allowed only in `Sources/SnapSystem`); the plist gate finding
-`NSMicrophoneUsageDescription` equal to "Snap records your microphone only during a screen
-recording you start with the microphone turned on."; `otool -L` showing that `snapctl` and
+`NSMicrophoneUsageDescription` equal to "The microphone is on only during a screen recording you
+start with it turned on."; `otool -L` showing that `snapctl` and
 `snapbench` link neither ScreenCaptureKit nor Sparkle; no em or en dashes.
 
 **How it is checked.** The run starts with AC01 (`check.sh`, logs in `build/check/`). AC-M2-1

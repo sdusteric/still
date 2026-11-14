@@ -213,7 +213,7 @@ extension AppWiring {
             importImage(try PNGReader.read(url), name: url.deletingPathExtension().lastPathComponent)
         } catch {
             log.warning("open image \(url.lastPathComponent): \(error)")
-            showHintMessage("Snap cannot open that image")
+            showHintMessage("Can't open that image")
         }
     }
 
@@ -235,7 +235,7 @@ extension AppWiring {
             importImage(try PNGReader.read(data), name: nil)
         } catch {
             log.warning("open clipboard image: \(error)")
-            showHintMessage("Snap cannot open the clipboard image")
+            showHintMessage("Can't open the clipboard image")
         }
     }
 
@@ -258,7 +258,7 @@ extension AppWiring {
             _ = reopen(historyID: item.id, showCard: true)
         } catch {
             log.warning("open image: \(error)")
-            showHintMessage("Snap cannot open that image")
+            showHintMessage("Can't open that image")
         }
     }
 

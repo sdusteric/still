@@ -110,7 +110,7 @@ public enum ScreenshotRetention: String, Codable, Sendable, CaseIterable {
 public struct GeneralSettings: Codable, Sendable, Hashable {
     public static let defaultExcludedApps = ["Passwords", "Keychain Access", "1Password", "Bitwarden"]
 
-    public static let defaultFileNamePattern = "Snap {yyyy}-{MM}-{dd} at {HH}.{mm}.{ss}"
+    public static let defaultFileNamePattern = "Still {yyyy}-{MM}-{dd} at {HH}.{mm}.{ss}"
 
     /// Launch at login through `SMAppService.mainApp`. Off by default and never touched by tests.
     public var launchAtLogin: Bool

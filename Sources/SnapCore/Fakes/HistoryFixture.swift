@@ -146,7 +146,7 @@ public enum HistoryFixture {
             let mode = CaptureMode.allCases[Int.random(in: 0..<3, using: &random)]
             let scale: Double = Int.random(in: 0..<4, using: &random) == 0 ? 1 : 2
             let isVideo = index >= 3 && Int.random(in: 0..<100, using: &random) < 15
-            let base = "Snap \(timeFormatter.string(from: date))"
+            let base = "Still \(timeFormatter.string(from: date))"
             let rect = mode == .fullscreen ? nil
                 : CGRect(x: Double(Int.random(in: 0..<1200, using: &random)), y: Double(Int.random(in: 0..<700, using: &random)),
                          width: Double(Int.random(in: 200...900, using: &random)), height: Double(Int.random(in: 150...600, using: &random)))

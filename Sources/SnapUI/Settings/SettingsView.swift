@@ -194,8 +194,8 @@ public final class SettingsModel {
             launchAtLoginError = nil
         } else {
             launchAtLoginError = enabled
-                ? "Snap could not be added to your login items. Check System Settings > General > Login Items."
-                : "Snap could not be removed from your login items."
+                ? "Couldn't add Still to your login items. Check System Settings > General > Login Items."
+                : "Couldn't remove Still from your login items."
         }
     }
 
@@ -222,7 +222,7 @@ public final class SettingsModel {
         }
     }
 
-    /// "Microphone access is off for Snap. Recordings are saved without it."
+    /// "Microphone access is off for Still. Recordings are saved without it."
     public var showsMicrophoneWarning: Bool {
         settings.recording.microphone && (microphoneAccess == .denied || microphoneAccess == .restricted)
     }
@@ -771,7 +771,7 @@ private struct MicrophoneWarningRow: View {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.system(size: Theme.SettingsM2.warningRowIconSize, weight: .regular))
                         .padding(.top, 1)
-                    Text("Microphone access is off for Snap. Recordings are saved without it.")
+                    Text("Microphone access is off for Still. Recordings are saved without it.")
                         .font(Theme.Typography.body.font)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -800,7 +800,7 @@ private struct ShortcutsTab: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.Colors.warning.color)
                     .padding(.top, 1)
-                Text("\(Text("CleanShot X is running.").fontWeight(.semibold)) Snap registers these shortcuts when it quits and never closes it for you.")
+                Text("\(Text("CleanShot X is running.").fontWeight(.semibold)) These shortcuts switch to Still once you quit it.")
                     .font(Theme.Typography.body.font)
                     .foregroundStyle(Theme.Colors.deskText.color)
                     .fixedSize(horizontal: false, vertical: true)

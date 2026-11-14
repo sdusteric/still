@@ -90,8 +90,8 @@ enum ShotMode {
 
     static func run(_ options: ShotOptions) -> Never {
         guard isUIElement(Bundle.main.object(forInfoDictionaryKey: "LSUIElement")) else {
-            report("refusing to run: shot mode only runs from the Snap.app bundle, whose Info.plist sets "
-                + "LSUIElement (build it with scripts/bundle.sh and run Snap.app/Contents/MacOS/Snap)")
+            report("refusing to run: shot mode only runs from the Still.app bundle, whose Info.plist sets "
+                + "LSUIElement (build it with scripts/bundle.sh and run Still.app/Contents/MacOS/Snap)")
             exit(notInBundleStatus)
         }
         Task { @MainActor in

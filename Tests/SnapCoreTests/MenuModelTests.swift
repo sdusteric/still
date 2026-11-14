@@ -18,7 +18,7 @@ import Testing
     static func capture(_ name: String, at date: Date, mode: CaptureMode = .area) -> CaptureItem {
         CaptureItem(
             id: name, createdAt: date, mode: mode, scale: 2,
-            originalURL: URL(filePath: "/tmp/history/\(name)/Snap \(name).png")
+            originalURL: URL(filePath: "/tmp/history/\(name)/Still \(name).png")
         )
     }
 
@@ -27,7 +27,7 @@ import Testing
     static func recording(_ name: String, at date: Date, duration: Double?) -> CaptureItem {
         CaptureItem(
             id: name, createdAt: date, mode: .area, scale: 2,
-            originalURL: URL(filePath: "/tmp/history/\(name)/Snap \(name).mp4"), kind: .video, durationSeconds: duration
+            originalURL: URL(filePath: "/tmp/history/\(name)/Still \(name).mp4"), kind: .video, durationSeconds: duration
         )
     }
 
@@ -46,7 +46,7 @@ import Testing
         let ids = menu.items.map(\.id)
         let status = try? #require(ids.firstIndex(of: .status))
         #expect(status.map { ids[$0 + 1] } == .relaunch)
-        #expect(menu.item(.relaunch)?.title == "Relaunch Snap")
+        #expect(menu.item(.relaunch)?.title == "Relaunch Still")
         #expect(model(permissionNeeded: true).item(.relaunch) == nil)
     }
 
@@ -191,7 +191,7 @@ import Testing
         #expect(menu.item(.applyBackground)?.keyEquivalent == nil)
         #expect(menu.item(.openInAnnotate)?.title == "Open Last Capture in Annotate")
         #expect(menu.item(.settings)?.keyEquivalent == MenuKeyEquivalent(key: ",", command: true))
-        #expect(menu.item(.quit)?.title == "Quit Snap")
+        #expect(menu.item(.quit)?.title == "Quit Still")
         #expect(menu.item(.quit)?.keyEquivalent == MenuKeyEquivalent(key: "q", command: true))
     }
 

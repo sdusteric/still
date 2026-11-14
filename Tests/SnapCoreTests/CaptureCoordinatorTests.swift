@@ -528,7 +528,7 @@ private struct Harness {
         let stored = try #require(await ticket.stored.value)
         let saved = try #require(stored.savedURL)
         #expect(FileManager.default.fileExists(atPath: saved.path(percentEncoded: false)))
-        #expect(saved.lastPathComponent.hasPrefix("Snap "))
+        #expect(saved.lastPathComponent.hasPrefix("Still "))
         #expect(ticket.result.trace.order.last == .save)
     }
 

@@ -74,7 +74,7 @@ private final class StoreScratch {
         #expect(settings.quickAccess.autoCloseSeconds == 15)
         #expect(!settings.general.playSound)
         #expect(!settings.general.launchAtLogin)
-        #expect(settings.general.fileNamePattern == "Snap {yyyy}-{MM}-{dd} at {HH}.{mm}.{ss}")
+        #expect(settings.general.fileNamePattern == "Still {yyyy}-{MM}-{dd} at {HH}.{mm}.{ss}")
         #expect(settings.shortcuts.captureFullscreen == .commandShift3)
         #expect(settings.shortcuts.captureArea == .commandShift4)
         #expect(settings.shortcuts.allInOne == .commandShift5)

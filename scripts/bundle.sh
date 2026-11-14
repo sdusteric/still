@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build, sign and optionally install Snap.app. Usage: scripts/bundle.sh [--release] [--install]
-# Never launches the app. Output: build/bundle/Snap.app
+# Build, sign and optionally install Still.app. Usage: scripts/bundle.sh [--release] [--install]
+# Never launches the app. Output: build/bundle/Still.app
 #
 # The app is always built with `swift build -c release`; --release is accepted so callers can
 # spell it out.
@@ -13,7 +13,7 @@
 #   SNAP_BUNDLE_ID   CFBundleIdentifier (default dev.sdusteric.snap)
 #   SIGN_ID          signing identity SHA-1 or name (default: the Developer ID Application cert of
 #                    team 8N9KUZLT8N when the keychain has one, else the Apple Development cert)
-#   SNAP_BUNDLE_OUT  output bundle path, must end in bundle/Snap.app (default <repo>/build/bundle/Snap.app)
+#   SNAP_BUNDLE_OUT  output bundle path, must end in bundle/Still.app (default <repo>/build/bundle/Still.app)
 #   INSTALL_DIR      install target for --install (default: /Applications)
 #
 # --install copies the bundle to /Applications with ditto. Agents and acceptance never use it.
@@ -44,7 +44,7 @@ if [ -z "${SIGN_ID:-}" ]; then
   SIGN_ID="${SIGN_ID:-$APPLE_DEV_SHA}"
 fi
 SCRATCH="${SNAP_SCRATCH:-$REPO/.build}"
-OUT="${SNAP_BUNDLE_OUT:-$REPO/build/bundle/Snap.app}"
+OUT="${SNAP_BUNDLE_OUT:-$REPO/build/bundle/Still.app}"
 
 VERSION="$(tr -d '[:space:]' <"$REPO/VERSION")"
 [ -n "$VERSION" ] || { echo "VERSION file is empty" >&2; exit 1; }
@@ -73,8 +73,8 @@ else
 fi
 [ -x "$BIN" ] || { echo "missing binary $BIN" >&2; exit 1; }
 
-# Only ever delete a bundle dir named bundle/Snap.app (the repo's build dir, or SNAP_BUNDLE_OUT).
-case "$OUT" in */bundle/Snap.app) ;; *) echo "refusing odd output path $OUT" >&2; exit 1 ;; esac
+# Only ever delete a bundle dir named bundle/Still.app (the repo's build dir, or SNAP_BUNDLE_OUT).
+case "$OUT" in */bundle/Still.app) ;; *) echo "refusing odd output path $OUT" >&2; exit 1 ;; esac
 [ -d "$OUT" ] && rm -rf "$OUT"
 mkdir -p "$OUT/Contents/MacOS" "$OUT/Contents/Resources"
 cp "$BIN" "$OUT/Contents/MacOS/Snap"
@@ -134,9 +134,9 @@ codesign --verify --deep --strict --verbose=2 "$OUT"
 
 if [ "$INSTALL" = 1 ]; then
   DEST_DIR="${INSTALL_DIR:-/Applications}"
-  DEST="$DEST_DIR/Snap.app"
+  DEST="$DEST_DIR/Still.app"
   mkdir -p "$DEST_DIR"
-  case "$DEST" in */Snap.app) ;; *) echo "refusing odd install path $DEST" >&2; exit 1 ;; esac
+  case "$DEST" in */Still.app) ;; *) echo "refusing odd install path $DEST" >&2; exit 1 ;; esac
   [ -d "$DEST" ] && rm -rf "$DEST"
   ditto "$OUT" "$DEST"
   echo "installed $DEST"

@@ -1,5 +1,7 @@
 # Snap
 
+Ships as Still (`Still.app`, bundle ID `dev.sdusteric.snap`); Snap is the code name. User-visible copy says Still, and never starts a sentence with "Still" followed by a verb, since it reads as the adverb. Code, `SNAP_*` variables, the `snap` URL scheme, the Sparkle feed and `~/Library/Application Support/Snap` keep the code name.
+
 A macOS menu bar screenshot app for one person, replacing CleanShot X on this Mac: area, window
 and fullscreen screenshots through ScreenCaptureKit with the overlay shown first, a Quick Access
 card stack, clipboard and save, the Background beautifier, a minimal annotate editor, settings and
@@ -13,7 +15,7 @@ swift build --scratch-path "$TMPDIR/snap-<task>"
 swift test --scratch-path "$TMPDIR/snap-<task>" --filter <Suite>
 swiftlint lint --strict
 SNAP_SCRATCH="$TMPDIR/snap-check" scripts/check.sh   # every gate, logs in build/check/
-scripts/bundle.sh --release                           # build/bundle/Snap.app, signed, never launched
+scripts/bundle.sh --release                           # build/bundle/Still.app, signed, never launched
 scripts/release.sh [--notes <file.md>] [--dry-run <dir>]   # check.sh, release bundle, app-updates publish.sh
 scripts/accept.sh recall                              # Recall: snapctl recall end to end, real Vision (SNAP_VISION=1), listing budget (SNAP_BENCH=1)
 swift scripts/shot-stats.swift <png> [x y w h]        # size, luminance and mean RGBA of a region
@@ -87,7 +89,7 @@ swift scripts/winlist.swift <pid>                     # on-screen windows of one
 3. The Snap binary runs only in `--shot` mode (no `NSApplication.run`, no on-screen window, no
    status item, no hotkeys, no updater) or as `snapctl`, always with `SNAP_HOME` set to a temp
    dir and `SNAP_NO_UPDATES=1`. Compare `lsappinfo front` before and after any Snap launch.
-   Run shot mode only from the bundle (`build/bundle/Snap.app/Contents/MacOS/Snap`): its
+   Run shot mode only from the bundle (`build/bundle/Still.app/Contents/MacOS/Snap`): its
    `LSUIElement` keeps the process a UIElement, and a bare `.build` binary refuses with exit 78
    instead of registering as an app.
 4. No sound: no afplay, no say, nothing in tests plays audio.

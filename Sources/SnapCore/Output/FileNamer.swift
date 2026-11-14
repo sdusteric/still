@@ -8,7 +8,7 @@ import Foundation
 public struct FileNamer: Sendable, Hashable {
     public static let defaultPattern = GeneralSettings.defaultFileNamePattern
     public static let maximumBaseLength = 150
-    static let fallbackBase = "Snap"
+    static let fallbackBase = "Still"
 
     public var pattern: String
     public var timeZone: TimeZone

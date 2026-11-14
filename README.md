@@ -1,8 +1,8 @@
-# Snap
+# Still
 
-Snap is a menu bar screenshot and screen recording app that replaces CleanShot X.
+Still (code name Snap) is a menu bar screenshot and screen recording app that replaces CleanShot X.
 
-![Snap Quick Access card](docs/mockup/png/04-quick-access.png)
+![Still Quick Access card](docs/mockup/png/04-quick-access.png)
 
 It is built for one Mac and the way its owner uses it: about one and a half screenshots a day, a gradient behind a window now and then, and a recording every few months. It runs offline. The only network code is the Sparkle update check in the installed app.
 
@@ -49,7 +49,7 @@ In the area overlay: Esc or right-click cancels, Space while dragging moves the 
 ## Install and updates
 
 ```sh
-scripts/bundle.sh --release --install    # builds build/bundle/Snap.app, signs it, copies it to /Applications
+scripts/bundle.sh --release --install    # builds build/bundle/Still.app, signs it, copies it to /Applications
 ```
 
 Install only when Snap is not running. Snap updates itself with Sparkle from the sdusteric/app-updates feed (contract: `../app-updates/CONTRACT.md`). It is signed with the same Apple Development identity each build so the Screen Recording grant survives rebuilds.
@@ -69,7 +69,7 @@ swiftlint lint --strict
 SNAP_HOME=$(mktemp -d) SNAP_NO_UPDATES=1 scripts/check.sh   # every gate, logs in build/check/
 SNAP_NO_UPDATES=1 scripts/accept.sh offline                 # milestone 1 acceptance
 SNAP_NO_UPDATES=1 scripts/accept.sh m2                      # milestone 2 acceptance
-scripts/bundle.sh --release                                 # build/bundle/Snap.app, signed, never launched
+scripts/bundle.sh --release                                 # build/bundle/Still.app, signed, never launched
 scripts/shots.sh [m2|m2-polish]                             # headless screenshots
 scripts/release.sh [--notes <file.md>] [--dry-run <dir>]    # check.sh, release bundle, app-updates publish.sh
 swift scripts/shot-stats.swift <png> [x y w h]              # size, luminance, mean RGBA of a region
@@ -97,7 +97,7 @@ Design doc (source of truth): [docs/superpowers/specs/2026-10-24-snap-design.md]
 ## Rules for agents
 
 - Never show a window, take focus, capture the screen, record, open the microphone, register a hotkey or trigger a permission dialog from a test, tool or probe. Never run `open`, `screencapture` or osascript.
-- The Snap binary runs only in `--shot` mode from `build/bundle/Snap.app/Contents/MacOS/Snap`, or as `snapctl`, always with `SNAP_HOME` set and `SNAP_NO_UPDATES=1`.
+- The Snap binary runs only in `--shot` mode from `build/bundle/Still.app/Contents/MacOS/Snap`, or as `snapctl`, always with `SNAP_HOME` set and `SNAP_NO_UPDATES=1`.
 - Never read private folders (`~/Downloads`, `~/Desktop`, `~/Pictures`, `~/Movies`, iCloud Drive) or the real pasteboard (use `NSPasteboard(name:)`). No sound.
 - No network code in `Sources/` (`URLSession`, `NWConnection`, `import Network`); never run `bundle.sh --install` from an agent run.
 - No `try!` in `Sources/`, no `try?` in `SnapCore` store files. State files go through `AtomicFile`.

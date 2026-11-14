@@ -183,7 +183,7 @@ public enum MenuStatus: Sendable, Hashable {
         switch self {
         case .permissionNeeded: "Screen Recording needs your OK"
         case .waitingForCleanShot: "Waiting for CleanShot X to quit"
-        case .systemShortcutOverlap: "A macOS shortcut overlaps Snap's. See Settings."
+        case .systemShortcutOverlap: "A macOS shortcut overlaps Still's. See Settings."
         }
     }
 
@@ -199,7 +199,7 @@ public struct MenuInput: Sendable {
     /// Enables "Apply Background to Last Capture" and "Open Last Capture in Annotate".
     public var hasLastCapture: Bool
     public var permissionNeeded: Bool
-    /// Adds "Relaunch Snap" under the permission line (`PermissionState.offersRelaunchFromMenu`).
+    /// Adds "Relaunch Still" under the permission line (`PermissionState.offersRelaunchFromMenu`).
     public var offersRelaunch: Bool
     /// Enables "Capture Previous Area": an area was captured before on a current display.
     public var hasPreviousArea: Bool
@@ -293,7 +293,7 @@ public struct MenuModel: Sendable, Hashable {
         if let status {
             items.append(MenuItem(id: .status, kind: .status, title: status.title, isEnabled: status.isClickable))
             if status == .permissionNeeded, input.offersRelaunch {
-                items.append(MenuItem(id: .relaunch, title: "Relaunch Snap"))
+                items.append(MenuItem(id: .relaunch, title: "Relaunch Still"))
             }
             items.append(MenuItem(id: .separator(4), kind: .separator, title: ""))
         }
@@ -305,7 +305,7 @@ public struct MenuModel: Sendable, Hashable {
             keyEquivalent: MenuKeyEquivalent(key: ",", command: true), shortcutText: "\u{2318},"
         ))
         items.append(MenuItem(
-            id: .quit, title: "Quit Snap",
+            id: .quit, title: "Quit Still",
             keyEquivalent: MenuKeyEquivalent(key: "q", command: true), shortcutText: "\u{2318}Q"
         ))
         self.items = items

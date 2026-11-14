@@ -49,7 +49,7 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         self.onSelect = onSelect
         self.onWillOpen = onWillOpen
         self.now = now
-        menu = NSMenu(title: "Snap")
+        menu = NSMenu(title: "Still")
         super.init()
         menu.autoenablesItems = false
         menu.delegate = self
@@ -180,12 +180,12 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
             // The system opens the attached menu on any click; the button action is not sent.
             statusItem.menu = menu
             statusItem.length = NSStatusItem.squareLength
-            var image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "Snap")
+            var image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "Still")
             if showsBadge, let symbol = image { image = StatusBadgeView.symbolWithHole(symbol) }
             image?.isTemplate = true
             button.image = image
-            button.toolTip = showsBadge ? "Snap: Screen Recording needs your OK" : "Snap"
-            button.setAccessibilityLabel(showsBadge ? "Snap, Screen Recording needs your OK" : "Snap")
+            button.toolTip = showsBadge ? "Still: Screen Recording needs your OK" : "Still"
+            button.setAccessibilityLabel(showsBadge ? "Still, Screen Recording needs your OK" : "Still")
             if showsBadge {
                 let badge = badgeView ?? StatusBadgeView()
                 if badge.superview !== button { button.addSubview(badge) }

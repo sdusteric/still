@@ -17,7 +17,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_UPDATES="${APP_UPDATES:-$(cd "$ROOT/.." && pwd)/app-updates}"
 PUBLISH="$APP_UPDATES/tools/publish.sh"
-APP="$ROOT/build/bundle/Snap.app"
+APP="$ROOT/build/bundle/Still.app"
 
 NOTES=""
 DRY_RUN=""

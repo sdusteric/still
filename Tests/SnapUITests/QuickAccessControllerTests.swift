@@ -42,7 +42,7 @@ final class ActionLog {
     var calls: [String] = []
     var closed: [(String, QuickAccessStack.CloseReason)] = []
     var copySucceeds = true
-    var savedURL: URL? = URL(filePath: "/tmp/snap-test/Snap shot.png")
+    var savedURL: URL? = URL(filePath: "/tmp/snap-test/Still shot.png")
     var thumbnail: QuickAccessThumbnail?
     var pinSucceeds = true
     var copyTextOutcome: CaptureText.Outcome = .copied
@@ -277,10 +277,10 @@ final class ActionLog {
         controller.show(item("a"))
         #expect(controller.card("a")?.compactBar == false)
         await controller.perform(.save, on: "a")
-        #expect(controller.card("a")?.savedURL?.lastPathComponent == "Snap shot.png")
+        #expect(controller.card("a")?.savedURL?.lastPathComponent == "Still shot.png")
         #expect(controller.card("a")?.compactBar == true)
         await controller.perform(.reveal, on: "a")
-        #expect(log.calls == ["save a", "reveal Snap shot.png"])
+        #expect(log.calls == ["save a", "reveal Still shot.png"])
     }
 
     @Test func saveClosesTheCardWhenTheSettingIsOn() async {
@@ -657,10 +657,10 @@ final class ActionLog {
         let controller = PermissionHintController(clock: FakeClock())
         let visible = CGRect(x: 0, y: 0, width: 1280, height: 775)
         controller.show(near: CGPoint(x: 640, y: 400), visibleFrame: visible)
-        #expect(controller.detail == "Turn on Snap in Screen & System Audio Recording.")
+        #expect(controller.detail == "Turn on Still in Screen & System Audio Recording.")
         controller.show(near: CGPoint(x: 640, y: 400), visibleFrame: visible, reapproval: true)
         #expect(controller.detail?.contains("remove it") == true)
-        #expect(controller.detail?.contains("relaunch Snap") == true)
+        #expect(controller.detail?.contains("relaunch Still") == true)
     }
 
     @Test func aMessageChipShowsForFourSecondsAndThePermissionCardClearsIt() {

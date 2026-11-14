@@ -70,7 +70,7 @@ clear_snap_env
 
 SCRATCH="${SNAP_SCRATCH:-$REPO/.build}"
 export SNAP_SCRATCH="$SCRATCH"
-APP="$REPO/build/bundle/Snap.app"
+APP="$REPO/build/bundle/Still.app"
 TOOLS="$REPO/build/shots/bin"
 STATS="$TOOLS/shot-stats"
 
@@ -498,7 +498,7 @@ group_offline() {
 
 M2_SCENARIOS="pin history history-empty hud recording-countdown recording quick-access-video annotate-tools background-mesh settings-recording menu-m2"
 M2_SUITES="PinBoardTests HistoryStoreV2Tests HistoryQueryTests AllInOneStateTests SettingsMigrationTests RecordingPlanTests RecordingControllerTests VideoProbeTests AnnotationM2Tests MeshGradientTests BlurredBackgroundTests PinControllerTests HistoryWindowModelTests QuickAccessVideoCardTests AllInOneToolbarTests"
-MIC_USAGE="Snap records your microphone only during a screen recording you start with the microphone turned on."
+MIC_USAGE="The microphone is on only during a screen recording you start with it turned on."
 REGIONS="$REPO/docs/mockup/m2/regions.tsv"
 CHECK_RAN=0
 

@@ -28,8 +28,8 @@ export SNAP_NO_UPDATES=1
 
 BUNDLE_ID="dev.sdusteric.snap"
 # Design D79.
-MIC_USAGE="Snap records your microphone only during a screen recording you start with the microphone turned on."
-APP="$ROOT/build/bundle/Snap.app"
+MIC_USAGE="The microphone is on only during a screen recording you start with it turned on."
+APP="$ROOT/build/bundle/Still.app"
 # app-updates CONTRACT.md
 FEED_URL="https://sdusteric.github.io/app-updates/snap/appcast.xml"
 ED_KEY="PMaW+8sZRzOkfIwy1KBGk0CHTVoN49FE9o8gUlNGdZc="

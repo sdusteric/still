@@ -221,7 +221,7 @@ enum M2DemoArt {
     }
 
     static let buildLines: [TerminalLine] = [
-        .comment("$ make demo"), .plain("building Snap.app"), .ok("compiled 112 files"), .ok("signed"),
+        .comment("$ make demo"), .plain("building Still.app"), .ok("compiled 112 files"), .ok("signed"),
         .plain("launching shot mode"), .ok("20 shots written"), .plain("comparing with mockup"),
         .ok("all regions match"), .plain("done in 42 s"),
     ]

@@ -418,7 +418,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
             backing: .buffered,
             defer: true
         )
-        window.title = "Welcome to Snap"
+        window.title = "Welcome to Still"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false

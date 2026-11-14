@@ -2,7 +2,7 @@ import Foundation
 
 /// History and settings text that names how long captures are kept (Recall design 7.4 and 7.7).
 public enum HistoryCopy {
-    public static let searchHelp = "Snap reads the text in your screenshots on this Mac. It skips likely passwords and keys. Nothing is uploaded."
+    public static let searchHelp = "Search reads the text in your screenshots on this Mac. It skips likely passwords and keys. Nothing is uploaded."
     public static let recordingsNote = "Recordings are kept for 3 days."
 
     public static func subtitle(_ retention: ScreenshotRetention) -> String {
@@ -15,8 +15,8 @@ public enum HistoryCopy {
 
     public static func emptyBody(_ retention: ScreenshotRetention) -> String {
         retention == .threeDays
-            ? "Snap keeps every screenshot and recording here for 3 days. "
-            : "Snap keeps every screenshot here for \(retention.label) and recordings for 3 days. "
+            ? "Every screenshot and recording stays here for 3 days. "
+            : "Screenshots stay here for \(retention.label) and recordings for 3 days. "
     }
 
     public static func footerKept(_ retention: ScreenshotRetention) -> String {

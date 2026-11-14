@@ -51,7 +51,7 @@ public enum HistoryDemo {
         Entry(id: "d3", day: 0, hour: 11, minute: 48, app: "Terminal", kind: .video, duration: 42, art: .build),
         Entry(id: "d4", day: 0, hour: 9, minute: 15, app: "Figma", art: .palette),
         Entry(id: "d5", day: 0, hour: 8, minute: 52, app: "Messages", art: .chat),
-        Entry(id: "d6", day: -1, hour: 17, minute: 20, app: "Snap", art: .form),
+        Entry(id: "d6", day: -1, hour: 17, minute: 20, app: "Still", art: .form),
         Entry(id: "d7", day: -1, hour: 16, minute: 2, app: "Safari", kind: .video, state: .interrupted, art: .notes),
         Entry(id: "d8", day: -1, hour: 10, minute: 31, app: "Terminal", art: .tests),
         Entry(id: "d9", day: -2, hour: 18, minute: 12, app: "Notes", art: .notes),
@@ -72,9 +72,9 @@ public enum HistoryDemo {
                 let day = calendar.date(byAdding: .day, value: entry.day, to: today) ?? today
                 let created = day.addingTimeInterval(Double(entry.hour * 3600 + entry.minute * 60))
                 let folder = URL(filePath: "/demo/history/\(entry.id)", directoryHint: .isDirectory)
-                let original = folder.appending(path: entry.kind == .video ? "Snap.mp4" : "Snap.png")
-                let edited = entry.edited ? folder.appending(path: "Snap (edited).png") : nil
-                let poster = entry.kind == .video ? folder.appending(path: "Snap poster.png") : nil
+                let original = folder.appending(path: entry.kind == .video ? "Still.mp4" : "Still.png")
+                let edited = entry.edited ? folder.appending(path: "Still (edited).png") : nil
+                let poster = entry.kind == .video ? folder.appending(path: "Still poster.png") : nil
                 let item = CaptureItem(
                     id: entry.id, createdAt: created, mode: .window, scale: 2, originalURL: original, editedURL: edited,
                     sourceApp: entry.app, kind: entry.kind, state: entry.state, durationSeconds: entry.duration,

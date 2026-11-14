@@ -11,7 +11,7 @@
 #        each scenario in light and dark -> build/shots/<scenario>-<light|dark>.png (2x points)
 #        other scenarios: overlay-before overlay-window settings-shortcuts settings-general settings-general-full onboarding
 #                         onboarding-granted permission-hint
-# Env:   SNAP_APP  bundle to run (default build/bundle/Snap.app, from scripts/bundle.sh)
+# Env:   SNAP_APP  bundle to run (default build/bundle/Still.app, from scripts/bundle.sh)
 #        OUT       where the PNGs go (default build/shots)
 #
 # Safety: each shot is a direct exec of the bundle binary (never `open`, never LaunchServices)
@@ -27,7 +27,7 @@ set -euo pipefail
 export SNAP_NO_UPDATES=1
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-APP="${SNAP_APP:-$REPO/build/bundle/Snap.app}"
+APP="${SNAP_APP:-$REPO/build/bundle/Still.app}"
 BIN="$APP/Contents/MacOS/Snap"
 OUT="${OUT:-$REPO/build/shots}"
 LOG="$OUT/shots.log"

@@ -15,8 +15,8 @@ import Testing
 
     @Test func defaultPatternGivesTheDesignExample() {
         let namer = FileNamer(timeZone: Self.paris)
-        #expect(namer.baseName(date: Self.date()) == "Snap 2026-10-24 at 14.03.22")
-        #expect(namer.fileName(date: Self.date()) { _ in false } == "Snap 2026-10-24 at 14.03.22.png")
+        #expect(namer.baseName(date: Self.date()) == "Still 2026-10-24 at 14.03.22")
+        #expect(namer.fileName(date: Self.date()) { _ in false } == "Still 2026-10-24 at 14.03.22.png")
     }
 
     @Test func everyDateTokenIsZeroPadded() {
@@ -52,14 +52,14 @@ import Testing
     @Test func collisionsGetNumericSuffixesStartingAtTwo() {
         let namer = FileNamer(timeZone: Self.paris)
         let taken: Set<String> = [
-            "Snap 2026-10-24 at 14.03.22.png",
-            "Snap 2026-10-24 at 14.03.22 2.png",
+            "Still 2026-10-24 at 14.03.22.png",
+            "Still 2026-10-24 at 14.03.22 2.png",
         ]
         let name = namer.fileName(date: Self.date()) { taken.contains($0) }
-        #expect(name == "Snap 2026-10-24 at 14.03.22 3.png")
+        #expect(name == "Still 2026-10-24 at 14.03.22 3.png")
 
-        let onlyFirst = namer.fileName(date: Self.date()) { $0 == "Snap 2026-10-24 at 14.03.22.png" }
-        #expect(onlyFirst == "Snap 2026-10-24 at 14.03.22 2.png")
+        let onlyFirst = namer.fileName(date: Self.date()) { $0 == "Still 2026-10-24 at 14.03.22.png" }
+        #expect(onlyFirst == "Still 2026-10-24 at 14.03.22 2.png")
     }
 
     @Test func collisionCheckSeesTheFullFileNameWithExtension() {
@@ -80,9 +80,9 @@ import Testing
     }
 
     @Test func emptyOrBlankResultsFallBackToSnap() {
-        #expect(FileNamer(pattern: "", timeZone: Self.paris).baseName(date: Self.date()) == "Snap 2026-10-24 at 14.03.22")
-        #expect(FileNamer(pattern: "{app}", timeZone: Self.paris).baseName(date: Self.date()) == "Snap")
-        #expect(FileNamer(pattern: "...", timeZone: Self.paris).baseName(date: Self.date()) == "Snap")
+        #expect(FileNamer(pattern: "", timeZone: Self.paris).baseName(date: Self.date()) == "Still 2026-10-24 at 14.03.22")
+        #expect(FileNamer(pattern: "{app}", timeZone: Self.paris).baseName(date: Self.date()) == "Still")
+        #expect(FileNamer(pattern: "...", timeZone: Self.paris).baseName(date: Self.date()) == "Still")
     }
 
     @Test func leadingDotsAndRepeatedSpacesAreTidied() {

@@ -6,8 +6,8 @@
   <key>CFBundleExecutable</key><string>Snap</string>
   <key>CFBundleIdentifier</key><string>@BUNDLE_ID@</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>Snap</string>
-  <key>CFBundleDisplayName</key><string>Snap</string>
+  <key>CFBundleName</key><string>Still</string>
+  <key>CFBundleDisplayName</key><string>Still</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>@VERSION@</string>
   <key>CFBundleVersion</key><string>@BUILD@</string>
@@ -20,7 +20,7 @@
   <key>NSSupportsAutomaticTermination</key><false/>
   <key>NSSupportsSuddenTermination</key><false/>
   <!-- Design D79: asked once, only when the user turns the microphone on for recordings. -->
-  <key>NSMicrophoneUsageDescription</key><string>Snap records your microphone only during a screen recording you start with the microphone turned on.</string>
+  <key>NSMicrophoneUsageDescription</key><string>The microphone is on only during a screen recording you start with it turned on.</string>
 
   <!-- Shelf quick actions (shelf design, section 11): snap://<action>, allowlisted in ShelfURL. -->
   <key>CFBundleURLTypes</key>

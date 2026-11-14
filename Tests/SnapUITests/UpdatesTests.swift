@@ -18,8 +18,8 @@ final class FakeUpdater: UpdaterControlling {
 }
 
 @MainActor @Suite struct UpdatesTests {
-    static let app = URL(filePath: "/Applications/Snap.app", directoryHint: .isDirectory)
-    static let normal = ["/Applications/Snap.app/Contents/MacOS/Snap"]
+    static let app = URL(filePath: "/Applications/Still.app", directoryHint: .isDirectory)
+    static let normal = ["/Applications/Still.app/Contents/MacOS/Snap"]
 
     private func make(_ arguments: [String], _ environment: [String: String], bundleURL: URL = app) -> (FakeUpdater?, Int) {
         var built = 0

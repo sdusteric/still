@@ -9,7 +9,7 @@ public struct OnboardingActions {
     /// "Allow Access...": the app asks `PermissionState.requestDecision()` and makes the one
     /// permitted request, or opens the Screen Recording pane of System Settings.
     public var requestAccess: () -> Void
-    /// "Relaunch Snap", offered when capture still fails after a grant.
+    /// "Relaunch Still", offered when capture still fails after a grant.
     public var relaunch: () -> Void
     /// "Skip for now" or "Done": closes the window.
     public var finish: () -> Void
@@ -40,7 +40,7 @@ public final class OnboardingModel {
     }
 }
 
-/// The first-run window content: app icon, "Welcome to Snap", two steps in one grouped list and
+/// The first-run window content: app icon, "Welcome to Still", two steps in one grouped list and
 /// a footer. Never modal; Snap works without either step (design 13, 17.6, D43).
 public struct OnboardingView: View {
     let model: OnboardingModel
@@ -57,7 +57,7 @@ public struct OnboardingView: View {
             VStack(spacing: 0) {
                 AppIconView()
                     .padding(.bottom, 18)
-                Text("Welcome to Snap")
+                Text("Welcome to Still")
                     .font(Theme.Typography.title.font)
                     .tracking(Theme.Typography.title.size * Theme.Typography.title.tracking)
                     .foregroundStyle(Theme.Colors.text.color)
@@ -100,7 +100,7 @@ public struct OnboardingView: View {
     private var permissionStep: some View {
         StepRow(symbol: "display", tint: Theme.Colors.accent.color, active: true) {
             Text("Allow Screen Recording").font(Theme.Typography.headline.font)
-            Text("Snap reads the screen only when you press a capture shortcut. Nothing leaves this Mac.")
+            Text("Only a capture shortcut makes Still read the screen. Nothing leaves this Mac.")
                 .font(Theme.Typography.caption.font)
                 .foregroundStyle(Theme.Colors.text2.color)
                 .fixedSize(horizontal: false, vertical: true)
@@ -108,7 +108,7 @@ public struct OnboardingView: View {
                 Button("Allow Access\u{2026}") { model.actions.requestAccess() }
                     .buttonStyle(.borderedProminent)
                     .font(Theme.Typography.button.font)
-                Text("Then turn on Snap under Screen & System Audio Recording.")
+                Text("Then turn on Still under Screen & System Audio Recording.")
                     .font(Theme.Typography.captionSmall.font)
                     .foregroundStyle(Theme.Colors.text2.color)
                     .fixedSize(horizontal: false, vertical: true)
@@ -116,10 +116,10 @@ public struct OnboardingView: View {
             .padding(.top, 6)
             if model.offersRelaunch {
                 HStack(spacing: 8) {
-                    Text("If you turned Snap on, relaunch it so macOS applies the change.")
+                    Text("If you turned Still on, relaunch it so macOS applies the change.")
                         .font(Theme.Typography.captionSmall.font)
                         .foregroundStyle(Theme.Colors.text2.color)
-                    Button("Relaunch Snap") { model.actions.relaunch() }
+                    Button("Relaunch Still") { model.actions.relaunch() }
                 }
                 .padding(.top, 4)
             }
@@ -142,7 +142,7 @@ public struct OnboardingView: View {
             GrantedCheck()
             VStack(alignment: .leading, spacing: 2) {
                 Text("Screen Recording is on").font(Theme.Typography.headline.font)
-                Text("Snap can capture the screen.")
+                Text("Screen capture is on.")
                     .font(Theme.Typography.caption.font)
                     .foregroundStyle(Theme.Colors.text2.color)
             }
@@ -173,13 +173,13 @@ public struct OnboardingView: View {
 
     private var shortcutText: String {
         guard model.permissionGranted else {
-            return "Snap uses \(Self.shortcutList), the same keys as CleanShot X."
+            return "The shortcuts are \(Self.shortcutList), the same keys as CleanShot X."
         }
         if model.cleanShotRunning {
-            return "CleanShot X is running and uses \(Self.shortcutList). Quit it when you are ready and Snap "
-                + "registers them on its own."
+            return "CleanShot X is running and uses \(Self.shortcutList). Quit it when you are ready. The keys switch "
+                + "to Still on their own."
         }
-        return "Nothing to do: CleanShot X is not running, so \(Self.shortcutList) are Snap's."
+        return "Nothing to do: CleanShot X is not running, so \(Self.shortcutList) are Still's."
     }
 
     private var footer: some View {
