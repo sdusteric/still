@@ -103,3 +103,7 @@ Design doc (source of truth): [docs/superpowers/specs/2026-10-24-snap-design.md]
 - Never read private folders (`~/Downloads`, `~/Desktop`, `~/Pictures`, `~/Movies`, iCloud Drive) or the real pasteboard (use `NSPasteboard(name:)`). No sound.
 - No network code in `Sources/` (`URLSession`, `NWConnection`, `import Network`); never run `bundle.sh --install` from an agent run.
 - No `try!` in `Sources/`, no `try?` in `SnapCore` store files. State files go through `AtomicFile`.
+
+## License
+
+MIT. See `LICENSE`.
