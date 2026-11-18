@@ -46,6 +46,7 @@ final class ActionLog {
     var thumbnail: QuickAccessThumbnail?
     var pinSucceeds = true
     var copyTextOutcome: CaptureText.Outcome = .copied
+    var trashSucceeds = true
 
     func actions() -> QuickAccessActions {
         QuickAccessActions(
@@ -77,6 +78,10 @@ final class ActionLog {
             copyText: { id in
                 self.calls.append("copy text \(id)")
                 return self.copyTextOutcome
+            },
+            trash: { id in
+                self.calls.append("trash \(id)")
+                return self.trashSucceeds
             },
             closed: { id, reason in self.closed.append((id, reason)) }
         )
@@ -331,6 +336,26 @@ final class ActionLog {
         #expect(controller.card("a") != nil)
         #expect(QuickAccessKey(characters: "t", keyCode: 17) == .copyText)
         #expect(!QuickAccessCardAction.copyText.isAvailable(on: .video))
+    }
+
+    @Test func trashMovesTheCaptureToTheTrashAndClosesItsCard() async {
+        let controller = makeController()
+        controller.show(item("a"))
+        controller.show(item("b"))
+        await controller.perform(.trash, on: "a")
+        #expect(log.calls == ["trash a"])
+        #expect(controller.card("a") == nil)
+        #expect(log.closed.last.map { $0.0 == "a" && $0.1 == .trashed } == true)
+        #expect(controller.card("b") != nil)
+
+        log.trashSucceeds = false
+        await controller.perform(.trash, on: "b")
+        #expect(controller.card("b") != nil, "a failed trash keeps the card")
+
+        #expect(QuickAccessKey(characters: nil, keyCode: 51, modifiers: .command) == .trash)
+        #expect(QuickAccessKey(characters: nil, keyCode: 117, modifiers: .command) == .trash)
+        #expect(QuickAccessKey(characters: nil, keyCode: 51) == .close, "plain Delete still only closes")
+        #expect(QuickAccessCardAction.trash.isAvailable(on: .video))
     }
 
     @Test func aFailedClipboardWriteTakesBackTheCopiedChip() {

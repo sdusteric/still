@@ -523,6 +523,21 @@ final class AppWiring: CaptureResultPresenter {
         trimRecords()
     }
 
+    /// Move to Trash on a card: waits for the capture to be stored, then moves its history folder
+    /// to the Trash, the same way History does, and forgets the record.
+    private func trashCard(_ cardID: String) async -> Bool {
+        var itemID = videoCards[cardID]?.id ?? records[cardID]?.item?.id
+        if itemID == nil { itemID = await records[cardID]?.stored?.value?.item.id }
+        guard let itemID, trashHistoryItems([itemID]).contains(itemID) else {
+            log.warning("card \(cardID): could not move its capture to the Trash")
+            return false
+        }
+        if let trace = records[cardID]?.trace { cardForTrace[ObjectIdentifier(trace)] = nil }
+        records[cardID] = nil
+        recordOrder.removeAll { $0 == cardID }
+        return true
+    }
+
     /// Drops the oldest records whose cards are closed and whose files are stored; their files
     /// stay in history. An open editor keeps its own reference to its record.
     private func trimRecords() {
@@ -583,6 +598,7 @@ final class AppWiring: CaptureResultPresenter {
                 NSWorkspace.shared.open(url)
             },
             copyText: { [weak self] id in await self?.copyCardText(id) ?? .failed },
+            trash: { [weak self] id in await self?.trashCard(id) ?? false },
             closed: { [weak self] id, reason in
                 self?.videoCards[id] = nil
                 self?.trimRecords()

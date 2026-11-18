@@ -634,6 +634,8 @@ nonisolated public enum Theme {
         /// The Pin chip mirrors Close at the top-right of the thumbnail.
         public static let pinButtonSize: Double = 22
         public static let pinButtonInset: Double = 8
+        /// Between Move to Trash and Pin in the card's top-right corner.
+        public static let cornerButtonGap: Double = 6
         /// The video card's duration pill replaces the dimension pill.
         public static let durationPillHeight: Double = 18
         public static let durationPillRadius: Double = 9

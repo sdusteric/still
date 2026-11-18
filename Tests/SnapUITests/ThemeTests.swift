@@ -1,4 +1,6 @@
 import Foundation
+import SnapCore
+import SwiftUI
 import Testing
 
 @testable import SnapUI
@@ -43,6 +45,21 @@ import Testing
             #expect(ratio(ThemeRGBA(hex: 0xFFFFFF), pick(C.brand)) >= 4.5, "white on brand, dark \(dark)")
             #expect(ratio(pick(C.brand), pick(C.desk)) >= 3, "ring on desk, dark \(dark)")
         }
+    }
+
+    @Test func theAccentButtonDrawsItsOwnBrandFill() throws {
+        // A system prominent button inside the editor's NSToolbar lost its fill and left white
+        // text on the light bar; this style paints the fill itself, so the host cannot drop it.
+        let button = Button("Save") {}.buttonStyle(AccentFillButtonStyle())
+            .padding(20).background(Color.white).environment(\.colorScheme, .light)
+        let renderer = ImageRenderer(content: button)
+        renderer.scale = 1
+        let image = try #require(renderer.cgImage)
+        // Inside the button, left of the label: the brand fill, not the white ground.
+        let pixel = try #require(SyntheticImages.pixel(of: image, x: 26, y: image.height / 2))
+        let brand = Theme.Colors.brand.light
+        #expect(abs(Double(pixel.red) / 255 - brand.red) < 0.08, "\(pixel)")
+        #expect(abs(Double(pixel.blue) / 255 - brand.blue) < 0.08, "\(pixel)")
     }
 
     @Test func displayStylesFallBackToTheSystemFont() {

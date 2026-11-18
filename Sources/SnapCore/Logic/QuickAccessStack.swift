@@ -87,6 +87,8 @@ public struct QuickAccessStack: Sendable {
         case saved
         /// The screenshot was pinned to the screen; the same image is now on screen (design D46).
         case pinned
+        /// The capture was moved to the Trash from its card.
+        case trashed
     }
 
     public struct Closure: Sendable, Hashable {

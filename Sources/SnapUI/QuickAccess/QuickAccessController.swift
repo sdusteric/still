@@ -72,6 +72,8 @@ public enum QuickAccessCardAction: Sendable, Hashable, CaseIterable {
     case open
     /// Copy the text in the screenshot (key T): screenshot cards only.
     case copyText
+    /// Move the capture to the Trash and close the card (Command-Delete).
+    case trash
 
     /// Whether the action exists on a card of `kind`. Reveal also needs a file to show, which the
     /// controller checks when it runs.
@@ -80,7 +82,7 @@ public enum QuickAccessCardAction: Sendable, Hashable, CaseIterable {
         case .background, .backgroundEditor, .annotate: kind.canEdit
         case .pin, .copyText: kind.canPin
         case .open: kind.canOpen
-        case .copy, .copyFile, .save, .reveal, .close: true
+        case .copy, .copyFile, .save, .reveal, .close, .trash: true
         }
     }
 }
@@ -108,6 +110,8 @@ public struct QuickAccessActions {
     public var open: @MainActor (String) -> Void
     /// Reads the screenshot's text and copies it.
     public var copyText: @MainActor (String) async -> CaptureText.Outcome
+    /// Moves the capture's history folder to the Trash; true when it moved.
+    public var trash: @MainActor (String) async -> Bool
     /// A card left the stack.
     public var closed: @MainActor (String, QuickAccessStack.CloseReason) -> Void
 
@@ -123,6 +127,7 @@ public struct QuickAccessActions {
         pin: @escaping @MainActor (String) async -> Bool = { _ in false },
         open: @escaping @MainActor (String) -> Void = { _ in },
         copyText: @escaping @MainActor (String) async -> CaptureText.Outcome = { _ in .failed },
+        trash: @escaping @MainActor (String) async -> Bool = { _ in false },
         closed: @escaping @MainActor (String, QuickAccessStack.CloseReason) -> Void = { _, _ in }
     ) {
         self.copy = copy
@@ -136,6 +141,7 @@ public struct QuickAccessActions {
         self.pin = pin
         self.open = open
         self.copyText = copyText
+        self.trash = trash
         self.closed = closed
     }
 }
@@ -144,10 +150,15 @@ public struct QuickAccessActions {
 /// Copy File on a screenshot card; O, S, R, C, Delete or Esc on a video card. A key whose action
 /// the hovered card lacks does nothing.
 public enum QuickAccessKey: Sendable, Hashable {
-    case copy, copyFile, save, annotate, background, close, pin, open, reveal, copyText
+    case copy, copyFile, save, annotate, background, close, pin, open, reveal, copyText, trash
 
     /// `characters` is `charactersIgnoringModifiers`, so Option-C still reads as "c".
     public init?(characters: String?, keyCode: UInt16, modifiers: NSEvent.ModifierFlags = []) {
+        // Command-Delete moves the capture to the Trash, as in Finder and History.
+        if modifiers.contains(.command), !modifiers.contains(.control), keyCode == 51 || keyCode == 117 {
+            self = .trash
+            return
+        }
         let blocking: NSEvent.ModifierFlags = [.command, .control]
         guard modifiers.intersection(blocking).isEmpty else { return nil }
         if modifiers.contains(.option) {
@@ -186,6 +197,7 @@ public enum QuickAccessKey: Sendable, Hashable {
         case .pin: .pin
         case .open: .open
         case .copyText: .copyText
+        case .trash: .trash
         case .reveal: .reveal
         }
     }
@@ -550,6 +562,12 @@ public final class QuickAccessController {
         case .copyText:
             let outcome = await actions.copyText(id)
             showNote(outcome.message, on: id)
+        case .trash:
+            guard await actions.trash(id) else {
+                showNote("Could not move to the Trash", on: id)
+                return
+            }
+            close(id, reason: .trashed)
         }
     }
 

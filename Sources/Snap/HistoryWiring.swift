@@ -99,7 +99,7 @@ extension AppWiring {
     }
 
     /// Move to Trash and Cmd+Delete: each item folder goes to the Trash, no dialog (design D52).
-    private func trashHistoryItems(_ ids: [String]) -> Set<String> {
+    func trashHistoryItems(_ ids: [String]) -> Set<String> {
         var trashed = Set<String>()
         for id in ids {
             do {

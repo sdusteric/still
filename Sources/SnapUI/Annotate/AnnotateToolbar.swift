@@ -265,7 +265,7 @@ public struct AnnotateToolbar: View {
             Button { model.copy() } label: { Label("Copy", systemImage: "square.on.square") }
                 .help("Copy (\u{2318}C)")
             Button("Save") { model.save() }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(AccentFillButtonStyle())
                 .help("Save to \(model.actions.saveFolderName) (\u{2318}S)")
         }
         .font(Theme.Typography.body.font)

@@ -277,8 +277,13 @@ public struct QuickAccessCardView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if card.isHovered && card.kind.canPin {
-                pinButton.padding(Theme.QuickAccessM2.pinButtonInset).transition(.opacity)
+            if card.isHovered {
+                HStack(spacing: Theme.QuickAccessM2.cornerButtonGap) {
+                    trashButton
+                    if card.kind.canPin { pinButton }
+                }
+                .padding(Theme.QuickAccessM2.pinButtonInset)
+                .transition(.opacity)
             }
         }
         .overlay(alignment: .bottom) {
@@ -420,6 +425,22 @@ public struct QuickAccessCardView: View {
         .buttonStyle(CardPressStyle(reduceMotion: reduceMotion))
         .help("Pin to Screen (P)")
         .accessibilityLabel("Pin to Screen")
+    }
+
+    /// Move to Trash, left of Pin in the top-right corner. The file goes to the Trash, so it can
+    /// be put back from Finder.
+    private var trashButton: some View {
+        Button { handler.perform(.trash) } label: {
+            Image(systemName: "trash")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(Theme.Colors.chipText.color)
+                .frame(width: Theme.QuickAccessM2.pinButtonSize, height: Theme.QuickAccessM2.pinButtonSize)
+                .background(Circle().fill(Theme.Colors.chip.color))
+                .overlay(Circle().strokeBorder(Theme.Colors.chipRing.color, lineWidth: Theme.Overlay.chipRingWidth))
+        }
+        .buttonStyle(CardPressStyle(reduceMotion: reduceMotion))
+        .help("Move to Trash (\u{2318}\u{232B})")
+        .accessibilityLabel("Move to Trash")
     }
 
     // MARK: Control bar
