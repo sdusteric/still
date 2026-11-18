@@ -420,7 +420,8 @@ final class AppWiring: CaptureResultPresenter {
     /// A capture hotkey or menu item. Shows the permission hint instead when permission is
     /// missing; never requests it.
     func capture(_ mode: CaptureMode, eventTime: TimeInterval? = nil) {
-        guard !coordinator.isCapturing, permissionAllowsCapture(mode.rawValue) else { return }
+        // The overlay is also up for the record countdown, which a capture would reset.
+        guard !coordinator.isCapturing, !overlay.isPresented, permissionAllowsCapture(mode.rawValue) else { return }
         overlay.options = OverlayController.Options(settings: settings)
         let pointer = AppWiring.globalPointer()
         Task {

@@ -111,6 +111,24 @@ extension HistoryWindowModelTests {
         #expect(await gate.calls == 2)
     }
 
+    @Test func aFailedReadIsTriedAgainOnTheNextOpen() async {
+        let calls = Mutex(0)
+        let ready = snapshot(["a"])
+        let stamp = StampBox()
+        let model = makeModel(load: {
+            let call = calls.withLock { $0 += 1; return $0 }
+            if call == 1 { throw CocoaError(.fileReadUnknown) }
+            return ready
+        }, stamp: { stamp.date })
+
+        await model.reloadIfNeeded()?.value
+        #expect(model.loadError != nil)
+        await model.reloadIfNeeded()?.value
+        #expect(calls.withLock { $0 } == 2)
+        #expect(model.loadError == nil)
+        #expect(model.reloadIfNeeded() == nil)
+    }
+
     @Test func becomingKeyWithNothingChangedSkipsTheReload() async {
         let calls = Mutex(0)
         let ready = snapshot(["a"])

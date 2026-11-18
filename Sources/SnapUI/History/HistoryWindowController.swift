@@ -290,7 +290,8 @@ public final class HistoryWindowModel {
                 }
             }.value
             guard !reloadQueued else { continue }
-            loadedStamp = stamp
+            // A failed read is not "read": the next open tries again.
+            if case .success = result { loadedStamp = stamp } else { isStale = true }
             apply(result)
         } while reloadQueued
         loadTask = nil
