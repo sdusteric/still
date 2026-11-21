@@ -349,6 +349,25 @@ enum ImageStats {
         #expect(controller.displays == [.fake5K])
     }
 
+    @Test func spaceOutsideADragHighlightsTheWindowUnderThePointer() {
+        // Design 6.5: Space or Tab enters window mode, like the macOS screenshot overlay.
+        let box = SurfaceBox()
+        let controller = makeController(pointer: CGPoint(x: 300, y: 150), box: box)
+        controller.present(mode: .area, displays: displays)
+        controller.updateWindows(FakeWindowSource.sample)
+        controller.handle(.keyDown(.space, modifiers: [], isRepeat: false))
+        #expect(controller.mode == .window)
+        #expect(controller.hoveredWindow?.ownerName == "Safari")
+        #expect(box.surfaces[1]?.lastState?.hoveredWindow?.ownerName == "Safari")
+        // Holding Space repeats the key; that must not flip the mode back and forth.
+        controller.handle(.keyDown(.space, modifiers: [], isRepeat: true))
+        controller.handle(.keyUp(.space))
+        #expect(controller.mode == .window)
+        controller.handle(.keyDown(.space, modifiers: [], isRepeat: false))
+        #expect(controller.mode == .area)
+        #expect(controller.hoveredWindow == nil)
+    }
+
     @Test func tabSwitchesToWindowModeAndAClickTakesTheHoveredWindow() async {
         let box = SurfaceBox()
         let controller = makeController(pointer: CGPoint(x: 300, y: 150), box: box)

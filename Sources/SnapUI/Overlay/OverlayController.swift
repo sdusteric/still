@@ -567,7 +567,13 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
             guard !isRepeat, !isDrawing else { return }
             toggleMode()
         case .space:
-            spaceHeld = true
+            // During a drag Space moves the rectangle; otherwise it switches to window mode
+            // and highlights the window under the pointer, as Tab does (design 6.5).
+            if isDrawing {
+                spaceHeld = true
+            } else if !isRepeat {
+                toggleMode()
+            }
         case .returnKey:
             if phase == .adjusting, let rect = selection, let display = selectionDisplay {
                 finish(.area(displayID: display.id, rect: rect))

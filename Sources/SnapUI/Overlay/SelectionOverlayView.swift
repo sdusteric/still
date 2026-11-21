@@ -262,9 +262,9 @@ enum OverlayHintBar {
     static func items(for mode: CaptureMode) -> [Item] {
         switch mode {
         case .window:
-            [.text("Click to capture"), .key("Tab", "Area"), .key("\u{2325}", "Toggle shadow"), .key("Esc", "Cancel")]
+            [.text("Click to capture"), .key("Space", "Area"), .key("\u{2325}", "Toggle shadow"), .key("Esc", "Cancel")]
         case .area, .fullscreen:
-            [.text("Drag to capture"), .key("Tab", "Window"), .key("Esc", "Cancel")]
+            [.text("Drag to capture"), .key("Space", "Window"), .key("Esc", "Cancel")]
         }
     }
 
