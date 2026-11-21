@@ -39,6 +39,7 @@ enum ShotScenario: String, CaseIterable, Sendable {
     case quickAccessAudio = "quick-access-audio"
     case annotateReopened = "annotate-reopened"
     case menuPermission = "menu-permission"
+    case scrollCapture = "scroll-capture"
 
     /// What `scripts/shots.sh` renders by default and acceptance AC04 checks.
     static let acceptance: [ShotScenario] = [.overlayArea, .quickAccess, .backgroundEditor, .annotate, .menu, .settings]
@@ -65,6 +66,7 @@ enum ShotScenario: String, CaseIterable, Sendable {
         case .onboarding: OnboardingDemo.size(granted: false)
         case .onboardingGranted: OnboardingDemo.size(granted: true)
         case .permissionHint: ShotScenario.hintSceneSize
+        case .scrollCapture: ScrollCaptureDemo.size
         case .pin: PinDemo.sceneSize
         case .history, .historyEmpty: HistoryDemo.size
         case .hud, .recordingCountdown, .recording: HUDDemo.sceneSize
@@ -122,6 +124,8 @@ enum ShotScenario: String, CaseIterable, Sendable {
             .view(OnboardingDemo.makeView(granted: true, dark: dark))
         case .permissionHint:
             .image(QuickAccessDemo.render(hintScene(dark: dark), size: pointSize, dark: dark, scale: scale))
+        case .scrollCapture:
+            .image(QuickAccessDemo.render(ScrollCaptureDemo.scene(dark: dark), size: pointSize, dark: dark, scale: scale))
         case .pin:
             .image(PinDemo.renderScene(dark: dark, scale: scale))
         case .history:

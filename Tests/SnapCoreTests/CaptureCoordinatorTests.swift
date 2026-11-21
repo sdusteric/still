@@ -458,6 +458,33 @@ private struct Harness {
         #expect(excluded.map(Set.init) == [Set([9001, 7001, 7002])])
     }
 
+    @Test func selectingARegionEndsAtTheSelectionWithNoCard() async throws {
+        let harness = try Harness(source: FakeCaptureSource(displays: [display]))
+        defer { harness.cleanUp() }
+        harness.overlay.selectAfterFrozen = .area(displayID: display.id, rect: selection)
+        let region = try #require(await harness.coordinator.selectRegion())
+        #expect(region.display.id == display.id)
+        #expect(region.rect == selection)
+        #expect(harness.results.cards.isEmpty)
+        #expect(harness.overlay.dismissCount == 1)
+        #expect(!harness.coordinator.isCapturing)
+
+        harness.overlay.selectAfterFrozen = .cancelled
+        #expect(await harness.coordinator.selectRegion() == nil)
+    }
+
+    @Test func aDeliveredImageIsStoredLikeACapture() async throws {
+        let harness = try Harness(source: FakeCaptureSource(displays: [display]))
+        defer { harness.cleanUp() }
+        let tall = try #require(SyntheticImages.gradientGrid(width: 200, height: 1200))
+        let ticket = harness.coordinator.deliverCapture(CapturedImage(cgImage: tall, scale: 2), rect: selection)
+        let stored = try #require(await ticket.stored.value)
+        #expect(harness.results.cards.count == 1)
+        #expect(stored.item.pixelSize == PixelSize(width: 200, height: 1200))
+        #expect(stored.item.mode == .area)
+        #expect(harness.clipboard.writtenImages.count == 1)
+    }
+
     @Test func previousAreaCapturesTheStoredRectWithoutTheOverlay() async throws {
         let harness = try Harness(source: FakeCaptureSource(displays: [display]))
         defer { harness.cleanUp() }

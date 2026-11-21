@@ -122,6 +122,13 @@ final class AppWiring: CaptureResultPresenter {
     /// History ids an open Background editor or annotate window works on, for the sweep.
     private var editorItems: [ObjectIdentifier: String] = [:]
     var menuThumbnails: [String: CGImage] = [:]
+    /// Scrolling capture while it runs (ScrollWiring.swift).
+    var scrollSession: ScrollCaptureSession?
+    let scrollOutline = RecordingOutlinePanel()
+    let scrollBar = ScrollCaptureBarPanel()
+    /// Takes keys as global hotkeys until `releaseKeys`; set by the app delegate, which owns them.
+    var grabKeys: (@MainActor ([KeyShortcut], @escaping @MainActor (Int, Bool) -> Void) -> Void)?
+    var releaseKeys: (@MainActor () -> Void)?
     var menuThumbnailTask: Task<Void, Never>?
     /// Video cards by card id (design 20.6, D67): the recording each one shows.
     var videoCards: [String: CaptureItem] = [:]
@@ -421,7 +428,7 @@ final class AppWiring: CaptureResultPresenter {
     /// missing; never requests it.
     func capture(_ mode: CaptureMode, eventTime: TimeInterval? = nil) {
         // The overlay is also up for the record countdown, which a capture would reset.
-        guard !coordinator.isCapturing, !overlay.isPresented, permissionAllowsCapture(mode.rawValue) else { return }
+        guard !coordinator.isCapturing, !overlay.isPresented, scrollSession == nil, permissionAllowsCapture(mode.rawValue) else { return }
         overlay.options = OverlayController.Options(settings: settings)
         let pointer = AppWiring.globalPointer()
         Task {
@@ -926,7 +933,7 @@ final class AppWiring: CaptureResultPresenter {
     /// toolbar, the last area restored when the same display is present; a Record confirm hands
     /// the target to the recorder, which counts down over the same overlay.
     func openHUD(mode: HUDMode? = nil, eventTime: TimeInterval? = nil) {
-        guard !coordinator.isCapturing, !overlay.isPresented, !recorder.isBusy else { return }
+        guard !coordinator.isCapturing, !overlay.isPresented, !recorder.isBusy, scrollSession == nil else { return }
         if permission.hotkeyPressed() == .showHint {
             log.info("hud: no Screen Recording permission, showing the hint")
             showPermissionHint()

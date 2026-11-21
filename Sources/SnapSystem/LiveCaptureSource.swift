@@ -71,6 +71,33 @@ public actor LiveCaptureSource: CaptureSource {
         return CapturedImage(cgImage: image, scale: scale, displayID: displayID)
     }
 
+    /// Part of one display (scrolling capture): only `rect`, in the display's top-left points,
+    /// through `SCScreenshotConfiguration.sourceRect`, so each frame is small.
+    public func captureRegion(_ displayID: DisplayID, rect: CGRect, options: CaptureOptions) async throws -> CapturedImage {
+        var content = try await cachedContent()
+        if !LiveCaptureSource.containsAll(options.excludedWindowIDs, in: content) {
+            content = try await fetchContent()
+        }
+        guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
+            throw CaptureError.displayNotFound(displayID)
+        }
+        let filter = makeDisplayFilter(display: display, content: content, options: options)
+        let configuration = SCScreenshotConfiguration()
+        configuration.dynamicRange = .sdr
+        configuration.showsCursor = false
+        configuration.sourceRect = rect
+        let scale = Double(filter.pointPixelScale)
+        configuration.width = Int((rect.width * scale).rounded())
+        configuration.height = Int((rect.height * scale).rounded())
+        do {
+            let output = try await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: configuration)
+            guard let image = output.sdrImage else { throw CaptureError.failed("no SDR image for display \(displayID)") }
+            return CapturedImage(cgImage: image, scale: scale, displayID: displayID)
+        } catch {
+            throw LiveCaptureSource.map(error, display: displayID)
+        }
+    }
+
     /// One window, live, with a transparent background. `SCScreenshotConfiguration` has no
     /// `shouldBeOpaque`, so this path uses `captureImage` with a stream configuration.
     public func captureWindow(_ windowID: WindowID, options: CaptureOptions) async throws -> CapturedImage {

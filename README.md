@@ -14,6 +14,7 @@ It is built for one Mac and the way its owner uses it: about one and a half scre
 - Annotate has crop, rectangle, arrow, text, highlight, numbered steps, freehand, and redaction by pixelate, blur or black-out. Black-out is the only redaction that cannot be reversed.
 - Copy Text reads the text in a screenshot on this Mac with Vision and puts it on the clipboard: T on a card, "Copy Text from Last Capture" in the menu, or Copy Text in History. History search also matches that text.
 - Capture Previous Area takes the last area again with no selection, from the menu or a shortcut you set.
+- Capture Scrolling Area: pick an area (or press Space for a window), scroll it, and press Return. The frames join into one tall image, which becomes a normal capture. You do the scrolling, so it needs no extra permission.
 - Open Image and Open Clipboard Image turn any picture into a capture with its card, so Background, Annotate and Pin work on it.
 - History keeps screenshots for 30 days by default (3 days, 30 days or a year in Settings) and recordings for 3 days. Edited captures keep their annotations in `annotations.json`, so reopening one gives you every arrow, step and redaction to edit again, with the Background still applied on export.
 - Pins float a capture above other windows, with opacity and click-through.
@@ -32,7 +33,7 @@ Global hotkeys, changeable in Settings > Shortcuts (recorder fields with conflic
 | Shift-Cmd-4 | Capture Area |
 | Shift-Cmd-3 | Capture Fullscreen |
 | Shift-Cmd-5 | All-in-One toolbar (also stops a recording) |
-| unset | Capture Previous Area, Capture Window, Record Screen, Stop Recording, Apply Background, Open in Annotate, Pin Last Capture, Open Capture History |
+| unset | Capture Previous Area, Capture Scrolling Area, Capture Window, Record Screen, Stop Recording, Apply Background, Open in Annotate, Pin Last Capture, Open Capture History |
 
 In the area overlay: Esc or right-click cancels, Space while dragging moves the rectangle, Shift constrains to a square, Option resizes from the center, arrow keys nudge 1 point (Shift 10), Space or Tab switches to window mode and highlights the window under the pointer. On a hovered Quick Access card: C copy, Option-C copy file, T copy text, S save, A annotate, B background, Command-Delete move to Trash (or the trash button next to Pin), Delete or Esc close. Settings has five tabs: General, Capture, Quick Access, Recording, Shortcuts.
 

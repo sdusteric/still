@@ -404,6 +404,41 @@ public final class CaptureCoordinator {
         return await confirm(selection)
     }
 
+    /// Scrolling capture's first step: the area overlay (Space for a window) up to the user's
+    /// choice, then dismissed with no capture taken. Global top-left points. Nil when canceled,
+    /// busy or failed.
+    public func selectRegion(eventTime: TimeInterval? = nil) async -> (display: DisplayInfo, rect: CGRect)? {
+        guard await begin(mode: .area, eventTime: eventTime), let session else { return nil }
+        let selection = await overlay.selection()
+        guard self.session === session, !session.finished else { return nil }
+        let displays = session.displays
+        end(session)
+        switch selection {
+        case .area(let displayID, let rect):
+            guard let display = displays.first(where: { $0.id == displayID }) else { return nil }
+            return (display, rect)
+        case .window(let window, _):
+            guard let display = CoordinateSpace.display(mostlyContaining: window.frame, in: displays) else { return nil }
+            let rect = window.frame.intersection(display.frameTopLeft)
+            return rect.isEmpty ? nil : (display, rect)
+        case .fullscreen(let displayID):
+            guard let display = displays.first(where: { $0.id == displayID }) else { return nil }
+            return (display, display.frameTopLeft)
+        case .cancelled, .record:
+            return nil
+        }
+    }
+
+    /// An image made outside the overlay (a scrolling capture) shown and stored like any capture:
+    /// the card, then history, clipboard and save folder in the background.
+    @discardableResult
+    public func deliverCapture(_ image: CapturedImage, rect: CGRect, sourceApp: String? = nil) -> CaptureTicket {
+        let trace = CaptureTrace(mode: .area, triggerTime: clock.now())
+        lastTrace = trace
+        let result = CaptureResult(mode: .area, image: image, createdAt: clock.date(), rect: rect, sourceApp: sourceApp, trace: trace)
+        return deliver(result, configuration: configuration())
+    }
+
     /// "Capture Previous Area": captures the stored area at once, with no overlay, on the display
     /// it was taken on. Nil when that display is gone or changed, or a capture is running.
     @discardableResult

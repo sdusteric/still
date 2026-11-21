@@ -816,6 +816,7 @@ private struct ShortcutsTab: View {
         SettingsGroup(title: "Capture") {
             recorderRow(.captureArea, divider: false)
             recorderRow(.capturePreviousArea, subtitle: "Captures the last area again, without selecting.")
+            recorderRow(.captureScrolling, subtitle: "Scroll the area and the frames join into one tall image.")
             recorderRow(.captureFullscreen)
             recorderRow(.allInOne)
             recorderRow(.captureWindow)

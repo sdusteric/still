@@ -161,6 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
         switch id {
         case .captureArea: wiring.capture(.area)
         case .capturePreviousArea: wiring.capturePreviousArea()
+        case .captureScrolling: wiring.captureScrolling()
         case .copyLastCaptureText: wiring.copyLastCaptureText()
         case .relaunch: AppDelegate.relaunch()
         case .openImage: wiring.openImageFile()
@@ -233,6 +234,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
                 wiring?.log.warning("overlay: grabbed \(registered) of \(keys.count) keys; another app holds the rest")
             }
         }
+        wiring.grabKeys = { [weak hotkeys] keys, onKey in hotkeys?.grab(keys, onKey: onKey) }
+        wiring.releaseKeys = { [weak hotkeys] in hotkeys?.releaseGrab() }
         readSymbolicHotkeys()
         applyHotkeys()
         // CleanShot X launching or quitting changes which combos Snap may register (design 12.3).
@@ -248,6 +251,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
         switch press.action {
         case .captureArea: wiring.capture(.area, eventTime: eventTime)
         case .capturePreviousArea: wiring.capturePreviousArea(eventTime: eventTime)
+        case .captureScrolling: wiring.captureScrolling(eventTime: eventTime)
         case .captureWindow: wiring.capture(.window, eventTime: eventTime)
         case .captureFullscreen: wiring.capture(.fullscreen, eventTime: eventTime)
         case .applyBackground: wiring.applyBackgroundToLastCapture()

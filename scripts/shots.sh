@@ -10,7 +10,7 @@
 #            (design 20.16)
 #        each scenario in light and dark -> build/shots/<scenario>-<light|dark>.png (2x points)
 #        other scenarios: overlay-before overlay-window settings-shortcuts settings-general settings-general-full onboarding
-#                         onboarding-granted permission-hint
+#                         onboarding-granted permission-hint scroll-capture
 # Env:   SNAP_APP  bundle to run (default build/bundle/Still.app, from scripts/bundle.sh)
 #        OUT       where the PNGs go (default build/shots)
 #

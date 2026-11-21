@@ -443,6 +443,19 @@ nonisolated public enum Theme {
         public static let footerHorizontalPadding: Double = 20
     }
 
+    /// Scrolling capture's control bar under the area (design 6.7): the chip material of the
+    /// overlay's key hints, with Cancel and a filled Done.
+    public enum ScrollCapture {
+        public static let barHeight: Double = 40
+        /// Between the area's edge and the bar.
+        public static let barGap: Double = 12
+        public static let barPadding: Double = 6
+        public static let barSpacing: Double = 10
+        public static let buttonHeight: Double = 28
+        /// Room around the bar inside its panel for the shadow.
+        public static let panelMargin: Double = 16
+    }
+
     public enum HintPanel {
         public static let size = CGSize(width: 500, height: 64)
         public static let radius: Double = 16

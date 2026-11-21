@@ -37,6 +37,22 @@ public protocol CaptureSource: Sendable {
     func captureDisplay(_ displayID: DisplayID, options: CaptureOptions) async throws -> CapturedImage
     /// One window, live, with a transparent background and, if requested, its shadow.
     func captureWindow(_ windowID: WindowID, options: CaptureOptions) async throws -> CapturedImage
+    /// Part of one display, `rect` in the display's own top-left points (scrolling capture).
+    func captureRegion(_ displayID: DisplayID, rect: CGRect, options: CaptureOptions) async throws -> CapturedImage
+}
+
+extension CaptureSource {
+    /// The whole display, cropped. The live source asks ScreenCaptureKit for the region only.
+    public func captureRegion(_ displayID: DisplayID, rect: CGRect, options: CaptureOptions) async throws -> CapturedImage {
+        let full = try await captureDisplay(displayID, options: options)
+        let pixels = CGRect(
+            x: rect.minX * full.scale, y: rect.minY * full.scale, width: rect.width * full.scale, height: rect.height * full.scale
+        ).integral
+        guard let cropped = full.cgImage.cropping(to: pixels) else {
+            throw CaptureError.failed("region \(rect) is outside display \(displayID)")
+        }
+        return CapturedImage(cgImage: cropped, scale: full.scale, displayID: displayID)
+    }
 }
 
 extension CaptureSource {

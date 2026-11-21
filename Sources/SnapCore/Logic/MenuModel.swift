@@ -39,6 +39,8 @@ public struct MenuKeyEquivalent: Sendable, Hashable {
 public enum MenuItemID: Sendable, Hashable {
     case captureArea, captureWindow, captureFullscreen
     case capturePreviousArea
+    /// Scrolling capture: pick an area, scroll it, and the frames join into one tall image.
+    case captureScrolling
     /// Copies the text in the last screenshot (read on this Mac with Vision).
     case copyLastCaptureText
     /// An image file, or the clipboard's image, becomes a capture with its card.
@@ -79,6 +81,7 @@ public enum MenuItemID: Sendable, Hashable {
         switch self {
         case .captureArea: .captureArea
         case .capturePreviousArea: .capturePreviousArea
+        case .captureScrolling: .captureScrolling
         case .captureWindow: .captureWindow
         case .captureFullscreen: .captureFullscreen
         case .allInOne: .allInOne
@@ -267,6 +270,7 @@ public struct MenuModel: Sendable, Hashable {
             MenuModel.actionItem(
                 .capturePreviousArea, title: "Capture Previous Area", input, enabled: input.hasPreviousArea
             ),
+            MenuModel.actionItem(.captureScrolling, title: "Capture Scrolling Area", input),
             MenuModel.actionItem(.captureWindow, title: "Capture Window", input),
             MenuModel.actionItem(.captureFullscreen, title: "Capture Fullscreen", input),
             MenuModel.actionItem(.allInOne, title: "All-in-One\u{2026}", input),

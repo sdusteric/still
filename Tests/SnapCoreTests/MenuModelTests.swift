@@ -50,6 +50,17 @@ import Testing
         #expect(model(permissionNeeded: true).item(.relaunch) == nil)
     }
 
+    @Test func scrollingCaptureIsInTheCaptureGroupWithItsShortcut() {
+        var shortcuts = ShortcutSettings()
+        shortcuts.captureScrolling = KeyShortcut(keyCode: 1, modifiers: KeyShortcut.Modifier.command | KeyShortcut.Modifier.shift)
+        let item = model(shortcuts: shortcuts).item(.captureScrolling)
+        #expect(item?.title == "Capture Scrolling Area")
+        #expect(item?.isEnabled == true)
+        #expect(item?.shortcutText != nil)
+        #expect(MenuItemID.captureScrolling.shortcutAction == .captureScrolling)
+        #expect(ShortcutAction.allCases.last == .captureScrolling, "new actions go last so hotkey ids keep their numbers")
+    }
+
     @Test func capturePreviousAreaNeedsAStoredArea() {
         let without = model()
         #expect(without.item(.capturePreviousArea)?.isEnabled == false)
@@ -73,7 +84,7 @@ import Testing
         // with Pin, then Recent Captures and Capture History.
         let ids = model().items.map(\.id)
         #expect(ids == [
-            .captureArea, .capturePreviousArea, .captureWindow, .captureFullscreen, .allInOne, .recordScreen,
+            .captureArea, .capturePreviousArea, .captureScrolling, .captureWindow, .captureFullscreen, .allInOne, .recordScreen,
             .separator(1), .applyBackground, .openInAnnotate, .pinLastCapture, .copyLastCaptureText, .separator(2),
             .recentCapturesHeader, .noRecentCaptures, .captureHistory, .openImage, .separator(3),
             .settings, .quit,

@@ -38,7 +38,7 @@ So M1 is: area, window and fullscreen screenshots, the Quick Access Overlay, cli
 ## 3. Non-goals
 
 - Cloud upload, share links, any account or sync.
-- Scrolling capture, OCR (text recognition), GIF export in M1. Scrolling capture and OCR are not planned at all; GIF is an M2 maybe.
+- Scrolling capture, OCR (text recognition), GIF export in M1. GIF is an M2 maybe. OCR came later for Recall and Copy Text, and scrolling capture on 2026-11-21 (6.7), both at the owner's request.
 - Screen recording in M1 (it is M2).
 - Mac App Store distribution, sandboxing, other users' Macs. Snap targets this one Mac (macOS 27, Apple Silicon).
 - Matching CleanShot feature for feature, or reusing any CleanShot artwork, text or assets.
@@ -132,6 +132,13 @@ Captures the display under the mouse pointer with the same filter, with no selec
 Rules that keep these numbers: overlay panels and their layers are built at launch; the frozen `CGImage` is handed to a layer as `contents` without a redraw; PNG encoding, history write and pasteboard work run on a background queue after the card is shown; nothing on the hotkey path touches the disk. The coordinator records an ordered event log (`present`, `frozen`, `confirm`, `card`, `encode`, `history`, `clipboard`) that tests assert on, so a change that moves encoding ahead of the card fails a test.
 
 The app writes one line per capture to `SNAP_HOME/logs/snap.log`: `latency mode=area overlay_ms=.. frozen_ms=.. card_ms=..`. The user can read real numbers there; agents never produce them, since agents never capture the screen.
+
+### 6.7 Scrolling capture (2026-11-21)
+
+- "Capture Scrolling Area" in the menu, with a shortcut the user sets (none by default). The area overlay picks the region; Space switches to window mode, and a window's frame is used as the region.
+- The user scrolls; Snap never posts scroll events, so no Accessibility permission is needed. A click-through outline marks the region (the recording outline), and a bar under it (above it, or inside its bottom edge when there is no room) shows the status, the size so far in points, Cancel (Esc) and Done (Return). The keys come in through `HotkeyCenter.grab`, as in the overlay.
+- `ScrollCaptureSession` takes a frame of the region every 0.1 s with `SCScreenshotConfiguration.sourceRect`, excluding Snap's panels. `ScrollStitcher` matches each frame to the last kept one by exact row hashes: the vertical shift most rows agree on is the scroll distance, and only new rows are added. Blank rows do not vote, a 20 pt strip on the right is left out of the hashes (the overlay scrollbar), and rows that stay put at the top and bottom between the first two frames that moved are a sticky header and footer, kept once. When whole rows disagree because part of the width stays put (a fixed sidebar), the match is tried on four vertical bands and the best moving band wins. A frame with no overlap reports "Too fast. Scroll back up a little."; scrolling back into the overlap joins again and clears it. The image stops at 64 M pixels ("Size limit reached"). Ten failed frames in a row (a display unplugged, the grant revoked) stop the frames, and the bar says Done keeps what is there.
+- Done takes one last frame, then the image goes through `CaptureCoordinator.deliverCapture` like any capture: card, history, clipboard, save folder. Only downward scrolling adds rows.
 
 ## 7. Area selection overlay
 
