@@ -105,7 +105,7 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
 
         public init(
             instantCapture: Bool = true,
-            showMagnifier: Bool = true,
+            showMagnifier: Bool = false,
             showCrosshair: Bool = true,
             showKeyHints: Bool = true,
             includeWindowShadow: Bool = true,

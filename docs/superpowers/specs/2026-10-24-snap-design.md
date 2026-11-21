@@ -267,7 +267,7 @@ Used 34 times in three years, almost only for Background, so M1 keeps it small *
 A SwiftUI `TabView` in a custom `NSWindow`, 480 pt wide, grouped `Form` with group headings, four tabs (General, Capture, Quick Access, Shortcuts):
 
 - **General:** Launch at login (`SMAppService.mainApp`, off by default, never touched by tests), save folder (default ~/Downloads), file name pattern with live preview, sound on capture (off).
-- **Capture:** after-capture actions in order: Show Quick Access Overlay (on), Copy to clipboard (on), Save to folder (off), Open in Annotate (off). Instant capture on mouse-up (on). Hide desktop icons (on). Window shadow (on). Magnifier (on). Crosshair (on).
+- **Capture:** after-capture actions in order: Show Quick Access Overlay (on), Copy to clipboard (on), Save to folder (off), Open in Annotate (off). Instant capture on mouse-up (on). Hide desktop icons (on). Window shadow (on). Magnifier (off since 2026-11-21, at the owner's request; it was on). Crosshair (on).
 - **Quick Access:** corner, size (Small, Medium, Large; Medium), auto close toggle and seconds (15, range 3 to 60), close after drag-out (on), close after Copy or Save (on), default Background preset with "Edit...".
 - **Shortcuts:** recorder fields for the five actions with conflict warnings and the CleanShot notice.
 - The Capture tab also holds "Show key hints" (on for the first 10 captures).

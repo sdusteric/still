@@ -85,7 +85,7 @@ private final class StoreScratch {
         for action in [ShortcutAction.recordScreen, .stopRecording, .pinLastCapture, .openHistory] {
             #expect(settings.shortcuts[action] == nil)
         }
-        #expect(settings.version == 2)
+        #expect(settings.version == Settings.currentVersion)
     }
 
     @Test func missingKeysDecodeToDefaults() throws {

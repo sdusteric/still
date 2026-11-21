@@ -1,10 +1,11 @@
 import Foundation
 
 /// Every user setting (design sections 12.2 and 20.10), grouped as the settings tabs are. Missing
-/// keys decode to their defaults, so an older file keeps working when a setting is added. A
-/// version 1 file is migrated on decode by `SettingsMigration` (Cmd+Shift+5 moves to All-in-One).
+/// keys decode to their defaults, so an older file keeps working when a setting is added. Older
+/// files are migrated on decode by `SettingsMigration` (version 1: Cmd+Shift+5 moves to
+/// All-in-One; version 2: the magnifier turns off).
 public struct Settings: VersionedDocument {
-    public static let currentVersion = 2
+    public static let currentVersion = 3
 
     public var version: Int
     public var general: GeneralSettings
@@ -47,9 +48,11 @@ public struct Settings: VersionedDocument {
             let v1 = try container.decodeIfPresent(VersionOneShortcuts.self, forKey: .shortcuts)?.shortcuts
                 ?? ShortcutSettings.version1Defaults
             shortcuts = v1
-            self = SettingsMigration.migrate(self, from: fileVersion)
         } else {
             shortcuts = try container.value(.shortcuts, default: defaults.shortcuts)
+        }
+        if fileVersion < Settings.currentVersion {
+            self = SettingsMigration.migrate(self, from: fileVersion)
         }
     }
 }
@@ -60,16 +63,24 @@ public enum SettingsMigration {
     /// combo moves to All-in-One and Capture Window becomes unset. A changed or cleared Capture
     /// Window is left alone, and All-in-One then stays unset. Recording and annotate settings take
     /// their defaults. `settings.shortcuts` holds the shortcuts as version 1 stored them.
+    /// Version 2 to 3 (2026-11-21): the magnifier is off by default. Version 2 files saved the old
+    /// default (on) whether or not the user chose it, so it turns off once; turning it back on
+    /// saves a version 3 file, which keeps the choice.
     public static func migrate(_ settings: Settings, from version: Int) -> Settings {
-        guard version < 2 else { return settings }
+        guard version < Settings.currentVersion else { return settings }
         var migrated = settings
-        var shortcuts = settings.shortcuts
-        if shortcuts.captureWindow == .commandShift5 {
-            shortcuts.allInOne = .commandShift5
-            shortcuts.captureWindow = nil
+        if version < 2 {
+            var shortcuts = settings.shortcuts
+            if shortcuts.captureWindow == .commandShift5 {
+                shortcuts.allInOne = .commandShift5
+                shortcuts.captureWindow = nil
+            }
+            migrated.shortcuts = shortcuts
         }
-        migrated.shortcuts = shortcuts
-        migrated.version = 2
+        if version < 3 {
+            migrated.capture.showMagnifier = false
+        }
+        migrated.version = Settings.currentVersion
         return migrated
     }
 }
@@ -190,7 +201,7 @@ public struct CaptureSettings: Codable, Sendable, Hashable {
         saveToFolder: Bool = false,
         openInAnnotate: Bool = false,
         instantCapture: Bool = true,
-        showMagnifier: Bool = true,
+        showMagnifier: Bool = false,
         showCrosshair: Bool = true,
         showKeyHints: Bool = true,
         hideDesktopIcons: Bool = true,

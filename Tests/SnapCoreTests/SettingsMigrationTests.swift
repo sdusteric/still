@@ -41,9 +41,21 @@ private final class MigrationScratch {
         try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
     }
 
+    @Test func theMagnifierIsOffByDefaultAndAVersion2FileTurnsItOff() throws {
+        #expect(!Settings().capture.showMagnifier)
+        // Version 2 files stored the old default (on) without the user choosing it.
+        let settings = try decode(#"{"version": 2, "capture": {"showMagnifier": true, "copyToClipboard": false}}"#)
+        #expect(!settings.capture.showMagnifier)
+        #expect(!settings.capture.copyToClipboard, "other settings are kept")
+        #expect(settings.version == Settings.currentVersion)
+        // Once saved as the current version, the user's choice stands.
+        let chosen = try decode(#"{"version": \#(Settings.currentVersion), "capture": {"showMagnifier": true}}"#)
+        #expect(chosen.capture.showMagnifier)
+    }
+
     @Test func anUnchangedCommandShift5MovesFromCaptureWindowToAllInOne() throws {
         let settings = try decode(Self.version1JSON(captureWindow: #"{"keyCode": 23, "modifiers": 768}"#))
-        #expect(settings.version == 2)
+        #expect(settings.version == Settings.currentVersion)
         #expect(settings.shortcuts.allInOne == .commandShift5)
         #expect(settings.shortcuts.captureWindow == nil)
         #expect(settings.shortcuts.captureArea == .commandShift4)
@@ -78,7 +90,7 @@ private final class MigrationScratch {
         #expect(migrated.shortcuts.allInOne == .commandShift5)
         #expect(migrated.shortcuts.captureWindow == nil)
         #expect(migrated.shortcuts.openInAnnotate == Self.custom)
-        #expect(migrated.version == 2)
+        #expect(migrated.version == Settings.currentVersion)
         #expect(SettingsMigration.migrate(migrated, from: 2) == migrated)
 
         var custom = Settings()
@@ -87,7 +99,7 @@ private final class MigrationScratch {
         #expect(SettingsMigration.migrate(custom, from: 2) == custom, "a version 2 choice is never migrated")
     }
 
-    @Test func aMigratedFileIsWrittenAsVersion2OnTheNextChange() throws {
+    @Test func aMigratedFileIsWrittenAsTheCurrentVersionOnTheNextChange() throws {
         let scratch = try MigrationScratch()
         let url = scratch.file("settings.json")
         try Data(Self.version1JSON(captureWindow: #"{"keyCode": 23, "modifiers": 768}"#).utf8).write(to: url)
@@ -101,7 +113,7 @@ private final class MigrationScratch {
         #expect(reloaded.settings == store.settings)
         #expect(reloaded.settings.shortcuts.captureWindow == nil, "the moved shortcut is not moved back")
         let text = try String(contentsOf: url, encoding: .utf8)
-        #expect(text.contains(#""version" : 2"#))
+        #expect(text.contains(#""version" : \#(Settings.currentVersion)"#))
         #expect(text.contains(#""allInOne""#))
     }
 

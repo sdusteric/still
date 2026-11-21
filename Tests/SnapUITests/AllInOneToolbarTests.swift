@@ -81,7 +81,7 @@ import Testing
         var settings = SnapCore.Settings()
         let shot = AllInOneOptions.items(mode: .screenshot, settings: settings, microphones: [])
         #expect(shot.map(\.title) == ["Hide Desktop Icons", "Include Window Shadow", "Show Magnifier"])
-        #expect(shot.allSatisfy { $0.checked })
+        #expect(shot.map(\.checked) == [true, true, false], "the magnifier is off by default")
 
         let mics = [MicrophoneDevice(id: "a", name: "Built-in"), MicrophoneDevice(id: "b", name: "Studio Mic")]
         let record = AllInOneOptions.items(mode: .record, settings: settings, microphones: mics)
