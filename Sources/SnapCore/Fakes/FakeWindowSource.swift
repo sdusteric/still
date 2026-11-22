@@ -35,7 +35,8 @@ public final class FakeWindowSource: WindowSource {
             (101, 300, "Window Server", nil, CGRect(x: 0, y: 0, width: 2560, height: 24), WindowLayer.mainMenu, 1),
             (102, 310, "Control Center", "com.apple.controlcenter",
              CGRect(x: 2380, y: 0, width: 40, height: 24), WindowLayer.statusItems, 1),
-            (103, 320, "Dock", "com.apple.dock", CGRect(x: 760, y: 1360, width: 1040, height: 80), WindowLayer.dock, 1),
+            // On macOS 27 the Dock window covers the whole display, in front of every app window.
+            (103, 320, "Dock", "com.apple.dock", CGRect(x: 0, y: 0, width: 2560, height: 1440), WindowLayer.dock, 1),
             (201, 400, "Finder", "com.apple.finder", CGRect(x: 0, y: 0, width: 2560, height: 1440), 0, 0),
             (202, 410, "Notes", "com.apple.Notes", CGRect(x: 400, y: 200, width: 842, height: 516), 0, 1),
             (203, 420, "Safari", "com.apple.Safari", CGRect(x: 200, y: 120, width: 1400, height: 900), 0, 1),

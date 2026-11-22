@@ -55,7 +55,17 @@ import Testing
     @Test func menuBarAndDockCanBeSelected() {
         // The menu bar is 24 points tall, so the 40 point rule does not apply to it.
         #expect(tester.window(at: CGPoint(x: 100, y: 10), in: sample)?.id == 101)
-        #expect(tester.window(at: CGPoint(x: 1000, y: 1400), in: sample)?.id == 103)
+        // A Dock window that is only the strip, as before macOS 27.
+        let dock = window(1, frame: CGRect(x: 760, y: 1360, width: 1040, height: 80), layer: WindowLayer.dock, order: 0)
+        let behind = window(2, frame: CGRect(x: 0, y: 0, width: 2560, height: 1440), order: 1)
+        #expect(tester.window(at: CGPoint(x: 1000, y: 1400), in: [dock, behind])?.id == 1)
+    }
+
+    @Test func aDockWindowCoveringTheDisplayDoesNotHideTheWindowsBehindIt() {
+        // macOS 27: the Dock's window is the whole display and comes before every app window.
+        #expect(tester.window(at: CGPoint(x: 300, y: 150), in: sample)?.ownerName == "Safari")
+        #expect(tester.window(at: CGPoint(x: 500, y: 300), in: sample)?.ownerName == "Notes")
+        #expect(tester.window(at: CGPoint(x: 2500, y: 700), in: sample) == nil)
     }
 
     @Test func otherLayersAreNotSelectable() {
@@ -85,6 +95,7 @@ import Testing
 
     @Test func candidatesAreListedFrontToBack() {
         let ids = tester.candidates(in: sample).map(\.id)
-        #expect(ids == [101, 103, 202, 203])
+        // The sample's Dock (103) covers the display, as on macOS 27, so it is not a candidate.
+        #expect(ids == [101, 202, 203])
     }
 }

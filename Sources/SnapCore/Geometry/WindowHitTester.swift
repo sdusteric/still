@@ -6,6 +6,9 @@ import Foundation
 public struct WindowHitTester: Sendable, Hashable {
     /// Smallest normal window that can be selected, in points.
     public static let minimumSide = 40.0
+    /// Thickest the menu bar or Dock can be and still be selected, in points. On macOS 27 the
+    /// Dock's window covers the whole display in front of every app window, so it never is.
+    public static let maximumBarThickness = 200.0
 
     public let ownPID: Int32
 
@@ -20,7 +23,7 @@ public struct WindowHitTester: Sendable, Hashable {
 
     /// Whether `window` can be selected at all: a selectable layer, visible, not Snap's own and
     /// big enough. The menu bar is under 40 points tall, so the size rule only applies to normal
-    /// windows; the bars need any non-empty frame.
+    /// windows; the bars need a non-empty frame no thicker than `maximumBarThickness`.
     public func isSelectable(_ window: WindowInfo) -> Bool {
         guard window.ownerPID != ownPID, window.alpha > 0, WindowHitTester.isSelectableLayer(window.layer) else {
             return false
@@ -30,6 +33,7 @@ public struct WindowHitTester: Sendable, Hashable {
             return frame.width >= WindowHitTester.minimumSide && frame.height >= WindowHitTester.minimumSide
         }
         return frame.width > 0 && frame.height > 0
+            && min(frame.width, frame.height) <= WindowHitTester.maximumBarThickness
     }
 
     /// The selectable windows, front to back.
