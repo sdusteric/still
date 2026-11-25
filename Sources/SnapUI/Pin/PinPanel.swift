@@ -58,7 +58,6 @@ public final class PinPanel: NSPanel, PinSurface, NSWindowDelegate {
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
         isMovableByWindowBackground = true
-        isFloatingPanel = true
         isOpaque = false
         backgroundColor = .clear
         hasShadow = model.isOpaque

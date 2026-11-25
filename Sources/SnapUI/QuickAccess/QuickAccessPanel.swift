@@ -24,7 +24,6 @@ public final class QuickAccessPanel: NSPanel, QuickAccessSurface {
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
-        isFloatingPanel = true
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false

@@ -282,7 +282,6 @@ public final class PermissionHintPanel: NSPanel, PermissionHintSurface {
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         hidesOnDeactivate = false
-        isFloatingPanel = true
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false

@@ -190,6 +190,12 @@ Check them once by hand after installing with `scripts/bundle.sh --install`, wit
 6. With a card visible in the bottom-left corner, press Cmd+Shift+4 and select over it, then
    Cmd+Shift+3: neither PNG contains the card, and with Hide desktop icons on, neither shows the
    desktop icons. `snap.log` should have no "excluding Snap by app" line.
+7. Open a menu or popover in another app (a browser's bookmark folder menu), then press
+   Cmd+Shift+4: the overlay covers the menu, the menu bar and the Dock, and the menu no longer
+   takes hovers or clicks. Covered offscreen: the overlay and the scrolling capture panels sit at
+   the screen saver level, above pop-up menus, the menu bar, status items and the Dock
+   (`PanelGlueTests.capturePanelsSitAboveMenusTheMenuBarAndTheDock`), and `isFloatingPanel`,
+   which once reset the overlay to the floating level, fails lint (`no_floating_panel_flag`).
 
 ## Milestone 2
 

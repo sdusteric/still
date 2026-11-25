@@ -43,6 +43,30 @@ final class RecordingOverlaySink: OverlayEventSink {
         ])
     }
 
+    // MARK: Capture panels above every app's menus
+
+    /// The overlay and the scrolling capture panels must sit above other apps' menus and
+    /// popovers, the menu bar and the Dock, or those stay on top of the capture and take its
+    /// clicks. `isFloatingPanel = true` once reset the overlay to the floating level (3)
+    /// after its init set `.screenSaver`. Built without being shown.
+    @Test func capturePanelsSitAboveMenusTheMenuBarAndTheDock() throws {
+        let display = try #require(DisplayInfo.fakeSideBySide.first)
+        let sink = RecordingOverlaySink()
+        let overlay = try #require(OverlayPanel.makeSurface(display: display, allDisplays: [display], eventSink: sink) as? NSPanel)
+        let frame = CGRect(x: 0, y: 0, width: 200, height: 100)
+        let outline = RecordingOutlinePanel().makePanel(frame: frame)
+        let bar = ScrollCaptureBarPanel().makePanel(model: ScrollCaptureBarModel(scale: 2), frame: frame)
+        let above = [
+            NSWindow.Level.popUpMenu.rawValue, NSWindow.Level.mainMenu.rawValue, NSWindow.Level.statusBar.rawValue,
+            Int(CGWindowLevelForKey(.dockWindow)),
+        ]
+        for (name, panel) in [("overlay", overlay), ("scroll outline", outline), ("scroll bar", bar)] {
+            #expect(panel.level == .screenSaver, "\(name) is at level \(panel.level.rawValue)")
+            #expect(above.allSatisfy { panel.level.rawValue > $0 }, "\(name) is at level \(panel.level.rawValue)")
+            #expect(!panel.isVisible)
+        }
+    }
+
     // MARK: Check 3: Quick Access keys
 
     @Test func handingTheKeysBackOrdersThePanelOutAndFrontInsteadOfResigningKey() {

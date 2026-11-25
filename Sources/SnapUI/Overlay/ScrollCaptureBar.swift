@@ -163,7 +163,8 @@ public final class ScrollCaptureBarPanel {
         panel?.orderOut(nil)
     }
 
-    private func makePanel(model: ScrollCaptureBarModel, frame: CGRect) -> NSPanel {
+    /// Internal so `PanelGlueTests` can check its level without showing it.
+    func makePanel(model: ScrollCaptureBarModel, frame: CGRect) -> NSPanel {
         let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = .screenSaver
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]

@@ -19,7 +19,6 @@ public final class BackgroundEditorPanel: NSPanel {
             defer: true
         )
         title = "Background"
-        isFloatingPanel = true
         level = .floating
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = false

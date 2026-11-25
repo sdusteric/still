@@ -37,7 +37,6 @@ public final class OverlayPanel: NSPanel, OverlaySurface {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         becomesKeyOnlyIfNeeded = false
         hidesOnDeactivate = false
-        isFloatingPanel = true
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false

@@ -102,7 +102,8 @@ public final class RecordingOutlinePanel {
         panel?.orderOut(nil)
     }
 
-    private func makePanel(frame: CGRect) -> NSPanel {
+    /// Internal so `PanelGlueTests` can check its level without showing it.
+    func makePanel(frame: CGRect) -> NSPanel {
         let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = .screenSaver
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]

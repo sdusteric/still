@@ -34,6 +34,14 @@ custom_rules:
     message: "AppKit documents these as override points not to invoke directly; use makeKey(), orderOut or close instead."
     severity: error
 
+  no_floating_panel_flag:
+    name: "No isFloatingPanel"
+    included: 'Sources/.*\.swift$'
+    regex: '\bisFloatingPanel\b'
+    excluded_match_kinds: [comment, comment.mark, comment.url, doccomment, doccomment.field, string]
+    message: "Setting isFloatingPanel also sets the level (true: .floating, false: .normal) and silently undoes a level set before it; it put the capture overlay under other apps' menus. Set level only."
+    severity: error
+
   no_network:
     name: "No network code"
     included: 'Sources/.*\.swift$'
