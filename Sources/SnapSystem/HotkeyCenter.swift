@@ -10,6 +10,12 @@ public struct HotkeyPress: Sendable, Hashable {
     /// `systemUptime` when the handler ran.
     public var receivedUptime: TimeInterval
 
+    public init(action: ShortcutAction, eventTime: TimeInterval, receivedUptime: TimeInterval) {
+        self.action = action
+        self.eventTime = eventTime
+        self.receivedUptime = receivedUptime
+    }
+
     /// The event time on `clock`, for `CaptureCoordinator.begin(eventTime:)`: now, minus the time
     /// the event spent in the queue before the handler ran.
     public func time(on clock: any SnapCore.Clock) -> TimeInterval {

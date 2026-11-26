@@ -61,6 +61,13 @@ public struct HotkeyPlan: Sendable, Hashable {
 
     public var isWaitingForCleanShot: Bool { !deferred.isEmpty }
 
+    /// The registered action for a key press (Carbon modifier bits), for the time Still's own menu
+    /// is open: macOS holds hotkey events until the menu closes, so the keys are matched here.
+    public func action(keyCode: UInt32, modifiers: UInt32) -> ShortcutAction? {
+        let pressed = HotkeyCombo(keyCode: keyCode, modifiers: modifiers)
+        return register.first { $0.value == pressed }?.key
+    }
+
     /// The menu status line, nil when nothing needs attention.
     public var statusLine: String? {
         isWaitingForCleanShot ? HotkeyConflicts.waitingStatusLine : nil

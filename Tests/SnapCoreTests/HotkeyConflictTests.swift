@@ -34,6 +34,15 @@ import Testing
         #expect(plan.statusLine == nil)
     }
 
+    @Test func aPressedComboFindsItsActionWhileTheMenuHoldsTheKeys() {
+        // While Still's menu is open the hotkeys are released and key presses matched here.
+        let plan = evaluate()
+        #expect(plan.action(keyCode: 21, modifiers: Self.shiftCommand) == .captureArea)
+        #expect(plan.action(keyCode: 20, modifiers: Self.shiftCommand | 0x8000) == .captureFullscreen, "caps lock and other bits are ignored")
+        #expect(plan.action(keyCode: 21, modifiers: KeyShortcut.Modifier.command) == nil)
+        #expect(plan.action(keyCode: 0, modifiers: Self.shiftCommand) == nil)
+    }
+
     @Test func unsetShortcutsAreNotRegistered() {
         var shortcuts = ShortcutSettings()
         shortcuts.allInOne = nil

@@ -18,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
     private var hotkeys: HotkeyCenter?
     private let conflictingApps = ConflictingApps()
     private var plan: HotkeyPlan?
+    /// Key presses while Still's menu is open, when the hotkeys are released (see `menuTracking`).
+    private var menuKeyMonitor: Any?
     private var registrationErrors: [ShortcutAction: String] = [:]
     private var symbolicEntries: [SymbolicHotkeyEntry] = []
     private var settingsModel: SettingsModel?
@@ -131,6 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
             onWillOpen: { [weak wiring] in wiring?.recheckPermission() },
             now: { [weak recorder] in recorder?.now() ?? SystemClock().now() }
         )
+        controller.onTrackingChanged = { [weak self] open in self?.menuTracking(open) }
         recorder.onIndicatorChange = { [weak controller] indicator in controller?.setRecording(indicator) }
         recorder.onStallChange = { [weak controller] stall in controller?.setStall(stall) }
         controller.install()
@@ -243,6 +246,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
             self?.wiring?.log.info("hotkeys: CleanShot X running: \(!running.isEmpty)")
             self?.applyHotkeys()
         }
+    }
+
+    /// macOS holds hotkey events while the app's own menu is open, so ⇧⌘4 waited for the menu to
+    /// close. Meanwhile the hotkeys are released and key presses matched against the plan here:
+    /// a match closes the menu and runs at once. The menu's own key equivalents are the fallback.
+    private func menuTracking(_ open: Bool) {
+        if open {
+            guard menuKeyMonitor == nil, let plan else { return }
+            hotkeys?.unregisterAll()
+            menuKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                let action = MainActor.assumeIsolated {
+                    plan.action(keyCode: UInt32(event.keyCode), modifiers: AppDelegate.carbonModifiers(event.modifierFlags))
+                }
+                guard let action else { return event }
+                MainActor.assumeIsolated {
+                    self?.menu?.closeMenu()
+                    DispatchQueue.main.async {
+                        self?.hotkeyPressed(HotkeyPress(
+                            action: action, eventTime: event.timestamp, receivedUptime: ProcessInfo.processInfo.systemUptime
+                        ))
+                    }
+                }
+                return nil
+            }
+        } else {
+            if let menuKeyMonitor { NSEvent.removeMonitor(menuKeyMonitor) }
+            menuKeyMonitor = nil
+            applyHotkeys()
+        }
+    }
+
+    static func carbonModifiers(_ flags: NSEvent.ModifierFlags) -> UInt32 {
+        var modifiers: UInt32 = 0
+        if flags.contains(.command) { modifiers |= KeyShortcut.Modifier.command }
+        if flags.contains(.shift) { modifiers |= KeyShortcut.Modifier.shift }
+        if flags.contains(.option) { modifiers |= KeyShortcut.Modifier.option }
+        if flags.contains(.control) { modifiers |= KeyShortcut.Modifier.control }
+        return modifiers
     }
 
     private func hotkeyPressed(_ press: HotkeyPress) {

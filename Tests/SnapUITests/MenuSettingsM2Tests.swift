@@ -9,6 +9,18 @@ import Testing
 /// without a window.
 @MainActor
 @Suite struct MenuSettingsM2Tests {
+    @Test func theMenuReportsWhenItOpensAndCloses() {
+        var tracking: [Bool] = []
+        let controller = StatusMenuController(modelProvider: { MenuM2Demo.makeModel() })
+        controller.onTrackingChanged = { tracking.append($0) }
+        controller.menuWillOpen(controller.menu)
+        controller.menuDidClose(controller.menu)
+        #expect(tracking == [true, false])
+        // A submenu opening is not the menu opening.
+        controller.menuWillOpen(NSMenu(title: "Sub"))
+        #expect(tracking == [true, false])
+    }
+
     @Test func timerClickStopsAndOptionClickOpensTheRecordingMenu() throws {
         var chosen: [MenuItemID] = []
         let controller = StatusMenuController(

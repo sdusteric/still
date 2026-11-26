@@ -20,6 +20,9 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
     public var onWillOpen: () -> Void
     /// The clock the timer reads, the same one `RecordingController` reports its start on.
     public var now: () -> TimeInterval
+    /// True when the menu opens, false when it closes. macOS holds the app's hotkey events while
+    /// its menu is open, so the app takes the keys another way meanwhile.
+    public var onTrackingChanged: (Bool) -> Void = { _ in }
 
     /// What the status item shows: nil is the viewfinder, else the red timer.
     public private(set) var recording: RecordingIndicator?
@@ -88,6 +91,21 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
         guard menu === self.menu else { return }
         onWillOpen()
         rebuild()
+    }
+
+    public func menuWillOpen(_ menu: NSMenu) {
+        guard menu === self.menu else { return }
+        onTrackingChanged(true)
+    }
+
+    public func menuDidClose(_ menu: NSMenu) {
+        guard menu === self.menu else { return }
+        onTrackingChanged(false)
+    }
+
+    /// Closes the menu while it is open, for a shortcut pressed meanwhile.
+    public func closeMenu() {
+        menu.cancelTracking()
     }
 
     // MARK: Recording timer (design 20.6, M24)
