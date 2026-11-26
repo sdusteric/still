@@ -171,7 +171,6 @@ final class AppWiring: CaptureResultPresenter {
         let settings = settingsStore.settings
         overlay = OverlayController(
             options: OverlayController.Options(settings: settings.capture),
-            cursor: SystemOverlayCursor(),
             pointerLocation: { AppWiring.globalPointer() },
             visibleDisplays: { _ in ScreenSpace.visibleDisplays() },
             makeSurface: { display, all, sink in

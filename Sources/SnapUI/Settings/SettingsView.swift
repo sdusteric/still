@@ -620,7 +620,6 @@ private struct CaptureTab: View {
                 divider: false, isOn: $model.settings.capture.instantCapture
             )
             SwitchRow(title: "Show magnifier", isOn: $model.settings.capture.showMagnifier)
-            SwitchRow(title: "Show crosshair", isOn: $model.settings.capture.showCrosshair)
             SwitchRow(
                 title: "Show key hints", subtitle: "Hides itself after 10 captures.",
                 isOn: $model.settings.capture.showKeyHints

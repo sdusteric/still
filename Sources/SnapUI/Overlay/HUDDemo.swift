@@ -18,7 +18,7 @@ public enum HUDDemo {
 
     /// A HUD controller on the demo display with the last area restored. Shows nothing.
     public static func makeController(mode: HUDMode) -> OverlayController {
-        let controller = OverlayController(cursor: InertDemoCursor(), pointerLocation: { pointer })
+        let controller = OverlayController(pointerLocation: { pointer })
         let last = LastArea(displayID: display.id, displayFrame: display.frameTopLeft, rect: area)
         let state = AllInOneState(mode: mode, target: .area, lastArea: last, displays: [display])
         controller.presentHUD(state, displays: [display]) { _ in }
@@ -134,8 +134,3 @@ public enum HUDDemo {
     }
 }
 
-/// Shot mode never touches the real cursor.
-private final class InertDemoCursor: OverlayCursor {
-    func hide() {}
-    func unhide() {}
-}

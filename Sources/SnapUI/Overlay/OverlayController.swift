@@ -73,20 +73,6 @@ public protocol OverlayEventSink: AnyObject {
     func overlayEvent(_ event: OverlayInputEvent)
 }
 
-/// Hides and shows the system cursor. Injected so tests never touch the real cursor.
-@MainActor
-public protocol OverlayCursor: AnyObject {
-    func hide()
-    func unhide()
-}
-
-/// `NSCursor.hide()` and `unhide()`, which must stay balanced; the controller guarantees that.
-public final class SystemOverlayCursor: OverlayCursor {
-    public init() {}
-    public func hide() { NSCursor.hide() }
-    public func unhide() { NSCursor.unhide() }
-}
-
 /// The selection overlay (design 6.2, 7): pre-built panels, one per display, ordered front on the
 /// hotkey, mouse and keys mapped onto `SelectionGeometry` and `WindowHitTester`. Panels come from
 /// an injected factory and are made only in `prepare` or `present`, so tests drive the controller
@@ -96,7 +82,6 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
     public struct Options: Sendable, Hashable {
         public var instantCapture: Bool
         public var showMagnifier: Bool
-        public var showCrosshair: Bool
         public var showKeyHints: Bool
         public var includeWindowShadow: Bool
         /// Recordings at the display's scale (Retina) or at 1x, for the HUD's "Too small to
@@ -106,14 +91,12 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
         public init(
             instantCapture: Bool = true,
             showMagnifier: Bool = false,
-            showCrosshair: Bool = true,
             showKeyHints: Bool = true,
             includeWindowShadow: Bool = true,
             recordsAtRetina: Bool = true
         ) {
             self.instantCapture = instantCapture
             self.showMagnifier = showMagnifier
-            self.showCrosshair = showCrosshair
             self.showKeyHints = showKeyHints
             self.includeWindowShadow = includeWindowShadow
             self.recordsAtRetina = recordsAtRetina
@@ -128,7 +111,6 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
             self.init(
                 instantCapture: settings.instantCapture,
                 showMagnifier: settings.showMagnifier,
-                showCrosshair: settings.showCrosshair,
                 showKeyHints: settings.showKeyHints,
                 includeWindowShadow: settings.includeWindowShadow
             )
@@ -158,7 +140,6 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
     public var displayName: (DisplayID) -> String? = { _ in nil }
 
     private let makeSurface: SurfaceFactory?
-    private let cursor: any OverlayCursor
     private let pointerLocation: @MainActor () -> CGPoint?
     private let visibleDisplays: @MainActor ([DisplayInfo]) -> [VisibleDisplay]
     private let hitTester: WindowHitTester
@@ -175,7 +156,6 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
     /// hotkeys meanwhile. macOS sends no keys to a non-activating panel of an app that is not
     /// active, so without the grab Esc, Return and Tab never reach the overlay.
     public var onKeyGrabChanged: ((Bool) -> Void)?
-    public private(set) var isCursorHidden = false
     public private(set) var hoveredWindow: WindowInfo?
     /// The current selection in global top-left points and the display it is on.
     public private(set) var selection: CGRect?
@@ -217,13 +197,11 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
     public init(
         options: Options = Options(),
         ownPID: Int32 = ProcessInfo.processInfo.processIdentifier,
-        cursor: any OverlayCursor,
         pointerLocation: @escaping @MainActor () -> CGPoint? = { nil },
         visibleDisplays: @escaping @MainActor ([DisplayInfo]) -> [VisibleDisplay] = { $0.map { VisibleDisplay($0) } },
         makeSurface: SurfaceFactory? = nil
     ) {
         self.options = options
-        self.cursor = cursor
         self.pointerLocation = pointerLocation
         self.visibleDisplays = visibleDisplays
         self.makeSurface = makeSurface
@@ -280,7 +258,6 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
 
         self.mode = mode
         isPresented = true
-        hideCursor()
         rebuildStates()
         let keyDisplay = pointer.flatMap { CoordinateSpace.nearestDisplay(to: $0, in: displays) } ?? displays.first
         for display in displays {
@@ -657,19 +634,6 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
         countdownSeconds = nil
         toolbarPress = false
         for surface in surfaces.values { surface.hide() }
-        showCursor()
-    }
-
-    private func hideCursor() {
-        guard !isCursorHidden else { return }
-        isCursorHidden = true
-        cursor.hide()
-    }
-
-    private func showCursor() {
-        guard isCursorHidden else { return }
-        isCursorHidden = false
-        cursor.unhide()
     }
 
     // MARK: State
@@ -702,7 +666,6 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
             selection: selectionDisplay?.id == display.id ? selection : nil,
             hoveredWindow: windowHere,
             showsMagnifier: options.showMagnifier,
-            showsCrosshair: options.showCrosshair,
             showsKeyHints: options.showKeyHints,
             hud: hudDrawing(for: display)
         )

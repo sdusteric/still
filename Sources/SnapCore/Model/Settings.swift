@@ -189,7 +189,6 @@ public struct CaptureSettings: Codable, Sendable, Hashable {
     /// Capture on mouse release (design D10). Off keeps the selection with handles until Return.
     public var instantCapture: Bool
     public var showMagnifier: Bool
-    public var showCrosshair: Bool
     /// Key hints in the overlay; the app turns this off after the first 10 captures.
     public var showKeyHints: Bool
     public var hideDesktopIcons: Bool
@@ -202,7 +201,6 @@ public struct CaptureSettings: Codable, Sendable, Hashable {
         openInAnnotate: Bool = false,
         instantCapture: Bool = true,
         showMagnifier: Bool = false,
-        showCrosshair: Bool = true,
         showKeyHints: Bool = true,
         hideDesktopIcons: Bool = true,
         includeWindowShadow: Bool = true
@@ -213,7 +211,6 @@ public struct CaptureSettings: Codable, Sendable, Hashable {
         self.openInAnnotate = openInAnnotate
         self.instantCapture = instantCapture
         self.showMagnifier = showMagnifier
-        self.showCrosshair = showCrosshair
         self.showKeyHints = showKeyHints
         self.hideDesktopIcons = hideDesktopIcons
         self.includeWindowShadow = includeWindowShadow
@@ -228,7 +225,6 @@ public struct CaptureSettings: Codable, Sendable, Hashable {
         openInAnnotate = try container.value(.openInAnnotate, default: defaults.openInAnnotate)
         instantCapture = try container.value(.instantCapture, default: defaults.instantCapture)
         showMagnifier = try container.value(.showMagnifier, default: defaults.showMagnifier)
-        showCrosshair = try container.value(.showCrosshair, default: defaults.showCrosshair)
         showKeyHints = try container.value(.showKeyHints, default: defaults.showKeyHints)
         hideDesktopIcons = try container.value(.hideDesktopIcons, default: defaults.hideDesktopIcons)
         includeWindowShadow = try container.value(.includeWindowShadow, default: defaults.includeWindowShadow)

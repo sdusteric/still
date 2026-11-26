@@ -50,7 +50,7 @@ nonisolated public struct ThemeColor: Sendable, Hashable {
         self.system = system
     }
 
-    /// The same value in both appearances (overlay dim, chips, crosshair).
+    /// The same value in both appearances (overlay dim, chips).
     public init(both value: ThemeRGBA) {
         self.init(light: value, dark: value)
     }
@@ -152,7 +152,6 @@ nonisolated public enum Theme {
         public static let chipText = ThemeColor(both: .white(1))
         public static let chipRing = ThemeColor(both: .white(0.18))
         public static let dimensionPill = ThemeColor(both: .black(0.58))
-        public static let crosshair = ThemeColor(both: .white(0.62))
         public static let crosshairHairline = ThemeColor(both: .black(0.30))
         /// Pixel grid lines inside the magnifier.
         public static let magnifierGrid = ThemeColor(both: .black(0.14))
@@ -354,8 +353,6 @@ nonisolated public enum Theme {
         public static let magnifierEdgeMargin: Double = 8
         public static let magnifierOffset: Double = 24
         public static let magnifierCaptionGap: Double = 12
-        public static let crosshairGap: Double = 8
-        public static let crosshairWidth: Double = 1
         public static let selectionBorderWidth: Double = 1
         public static let sizeChipGap: Double = 8
         public static let handleSize: Double = 8

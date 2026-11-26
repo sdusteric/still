@@ -144,7 +144,7 @@ The app writes one line per capture to `SNAP_HOME/logs/snap.log`: `latency mode=
 
 - Window: one borderless `NSPanel` per screen, `[.borderless, .nonactivatingPanel]`, level `.screenSaver`, `collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]`, `canBecomeKey = true`, `becomesKeyOnlyIfNeeded = false`, `hidesOnDeactivate = false`, clear background, `.accessory` activation policy. Built at launch and kept ordered out.
 - Drawing: a custom layer-backed `NSView` drawing with Core Graphics. Before a drag the whole screen is dimmed (black, 0.38, see 17.6). During and after a drag the selection is cut out of the dim (even-odd fill) and shows the bright image. Selection border: 1 pt white with a 1 pt black hairline at 0.3 outside.
-- Crosshair: full-screen 1 pt lines in white at 0.62 with a 0.3 black hairline, drawn on half-pixel offsets, with an 8 pt gap at the pointer, shown only before the drag (hidden from mouse down). The system cursor is hidden while the overlay is up and restored on every exit path (confirm, cancel, error, screen change).
+- Pointer (2026-11-26): the system pointer, untouched. The first design drew full-screen crosshair lines and hid the system cursor, but `NSCursor.hide` does not work for an app that is not active, so the owner saw the arrow with the drawn lines trailing behind it. The lines, their setting and the cursor hiding are gone.
 - Size label: during the drag it is the caption under the magnifier (chip, 22 pt tall, radius 11, `W × H` in points, tabular digits). With instant capture off, a chip of the same style sits 8 pt under the selection after mouse up. Visual details are in 17.6.
 - Magnifier: a 120 pt circle showing 15 x 15 physical pixels at 8 pt each with nearest-neighbour scaling, drawn from the frozen image (nothing until it arrives), with a 1.5 pt accent square on the centre pixel and a caption chip: `x, y` before the drag, `W × H` during it. Sits 24 pt down and right of the pointer before the drag; during the drag it sits on the side of the pointer away from the selection and flips at edges. Hidden on mouse-up.
 - Key hints: a bottom-center chip bar (17.6), shown before the drag and in window mode, for the first 10 captures only (setting "Show key hints").
@@ -267,7 +267,7 @@ Used 34 times in three years, almost only for Background, so M1 keeps it small *
 A SwiftUI `TabView` in a custom `NSWindow`, 480 pt wide, grouped `Form` with group headings, four tabs (General, Capture, Quick Access, Shortcuts):
 
 - **General:** Launch at login (`SMAppService.mainApp`, off by default, never touched by tests), save folder (default ~/Downloads), file name pattern with live preview, sound on capture (off).
-- **Capture:** after-capture actions in order: Show Quick Access Overlay (on), Copy to clipboard (on), Save to folder (off), Open in Annotate (off). Instant capture on mouse-up (on). Hide desktop icons (on). Window shadow (on). Magnifier (off since 2026-11-21, at the owner's request; it was on). Crosshair (on).
+- **Capture:** after-capture actions in order: Show Quick Access Overlay (on), Copy to clipboard (on), Save to folder (off), Open in Annotate (off). Instant capture on mouse-up (on). Hide desktop icons (on). Window shadow (on). Magnifier (off since 2026-11-21, at the owner's request; it was on). Crosshair (removed 2026-11-26, see 7).
 - **Quick Access:** corner, size (Small, Medium, Large; Medium), auto close toggle and seconds (15, range 3 to 60), close after drag-out (on), close after Copy or Save (on), default Background preset with "Edit...".
 - **Shortcuts:** recorder fields for the five actions with conflict warnings and the CleanShot notice.
 - The Capture tab also holds "Show key hints" (on for the first 10 captures).
@@ -1035,7 +1035,7 @@ All mine, made while the user was away.
 Made on 2026-10-24 while the user was away, after the impeccable, apple-design and find-animation-opportunities pass. Each changes or adds to the planner's calls above.
 
 - D32. Overlay dim is black 0.38, not 0.45, so the screen being captured stays readable. (Changes section 7.)
-- D33. The crosshair is shown only before the drag, at white 62%, and is hidden from mouse down. Hint bar at the bottom center ("Drag to capture, Tab Window, Esc Cancel"), shown for the first 10 captures, then off by a setting.
+- D33. (The crosshair was removed on 2026-11-26, see 7.) The crosshair is shown only before the drag, at white 62%, and is hidden from mouse down. Hint bar at the bottom center ("Drag to capture, Tab Window, Esc Cancel"), shown for the first 10 captures, then off by a setting.
 - D34. One magnifier unit: a 120 pt circle of 15 x 15 physical pixels (8 pt per pixel) with a caption that shows `x, y` before the drag and `W × H` during it. It replaces the separate size label and sits away from the selection. With instant capture off a size chip sits under the selection.
 - D35. The overlay path uses flat fills only: no blur, no material, no animation. All of it is on screen in the first frame and leaves instantly.
 - D36. Window highlight is the accent at 14% with a 2 pt accent border and a label chip above the window (owner name and size). It jumps between windows with no easing.

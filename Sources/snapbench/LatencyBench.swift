@@ -89,7 +89,6 @@ enum LatencyBench {
         // No surface factory: the controllers keep their full state but never make a window.
         let overlay = OverlayController(
             options: OverlayController.Options(instantCapture: true),
-            cursor: InertCursor(),
             pointerLocation: { CGPoint(x: area.minX, y: area.minY) }
         )
         let user = SimulatedUser(overlay: overlay, selection: area, displayID: display.id)
@@ -165,7 +164,7 @@ enum LatencyBench {
         // The pointer rests near the bottom center, where the toolbar opens.
         let pointer = CGPoint(x: display.frameTopLeft.midX, y: display.frameTopLeft.maxY - 40)
         let overlay = OverlayController(
-            options: OverlayController.Options(instantCapture: true), cursor: InertCursor(), pointerLocation: { pointer }
+            options: OverlayController.Options(instantCapture: true), pointerLocation: { pointer }
         )
         let user = HUDUser(overlay: overlay, displayID: display.id, stored: stored)
         let quickAccess = QuickAccessController(
@@ -350,12 +349,6 @@ private final class HUDUser: OverlayPresenter {
     }
 }
 
-/// The cursor stays as it is: snapbench is not the frontmost app and must not change it.
-@MainActor
-private final class InertCursor: OverlayCursor {
-    func hide() {}
-    func unhide() {}
-}
 
 /// Shows each capture as a Quick Access card, as the app does, before the output stage runs.
 @MainActor

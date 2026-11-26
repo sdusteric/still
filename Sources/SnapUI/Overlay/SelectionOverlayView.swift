@@ -4,7 +4,7 @@ import SnapCore
 
 /// Where the overlay is in one capture.
 public enum OverlayPhase: Sendable, Hashable {
-    /// Before the drag: crosshair, magnifier with coordinates, hint bar.
+    /// Before the drag: the dim, the optional magnifier with coordinates, hint bar.
     case idle
     /// Mouse down: the selection is cut out of the dim and the magnifier shows the size.
     case dragging
@@ -66,7 +66,6 @@ public struct SelectionOverlayState: Sendable, Equatable {
     public var selection: CGRect?
     public var hoveredWindow: WindowInfo?
     public var showsMagnifier: Bool
-    public var showsCrosshair: Bool
     public var showsKeyHints: Bool
     /// The HUD's toolbar, target and countdown; nil for the plain Cmd+Shift+4 overlay.
     public var hud: HUDOverlayDrawing?
@@ -80,7 +79,6 @@ public struct SelectionOverlayState: Sendable, Equatable {
         selection: CGRect? = nil,
         hoveredWindow: WindowInfo? = nil,
         showsMagnifier: Bool = true,
-        showsCrosshair: Bool = true,
         showsKeyHints: Bool = true,
         hud: HUDOverlayDrawing? = nil
     ) {
@@ -92,7 +90,6 @@ public struct SelectionOverlayState: Sendable, Equatable {
         self.selection = selection
         self.hoveredWindow = hoveredWindow
         self.showsMagnifier = showsMagnifier
-        self.showsCrosshair = showsCrosshair
         self.showsKeyHints = showsKeyHints
         self.hud = hud
     }
@@ -101,7 +98,7 @@ public struct SelectionOverlayState: Sendable, Equatable {
         lhs.display == rhs.display && lhs.frozenImage === rhs.frozenImage && lhs.mode == rhs.mode
             && lhs.phase == rhs.phase && lhs.pointer == rhs.pointer && lhs.selection == rhs.selection
             && lhs.hoveredWindow == rhs.hoveredWindow && lhs.showsMagnifier == rhs.showsMagnifier
-            && lhs.showsCrosshair == rhs.showsCrosshair && lhs.showsKeyHints == rhs.showsKeyHints
+            && lhs.showsKeyHints == rhs.showsKeyHints
             && lhs.hud == rhs.hud
     }
 
@@ -134,9 +131,6 @@ public struct SelectionOverlayState: Sendable, Equatable {
         return bounds.insetBy(dx: -0.5, dy: -0.5).contains(point) ? point : nil
     }
 
-    var drawsCrosshair: Bool {
-        mode == .area && phase == .idle && showsCrosshair && localPointer != nil && hud?.recordTarget == nil
-    }
     /// Record mode shows the live screen, so there is nothing to magnify.
     var drawsMagnifier: Bool {
         mode == .area && phase != .adjusting && showsMagnifier && localPointer != nil && showsFrozenImage
@@ -426,10 +420,6 @@ public final class SelectionOverlayView: NSView {
             OverlayDrawing.drawTextChip(text, in: windowLabelFrame(for: window, text: text, bounds: bounds), context: context)
         }
 
-        if state.drawsCrosshair, let pointer = state.localPointer {
-            drawCrosshair(at: pointer, bounds: bounds, context: context)
-        }
-
         if state.drawsMagnifier, let pointer = state.localPointer {
             let selection = state.phase == .dragging ? state.localSelection : nil
             let glass = MagnifierLayer.glassFrame(pointer: pointer, selection: selection, bounds: bounds)
@@ -547,34 +537,6 @@ public final class SelectionOverlayView: NSView {
         context.strokePath()
     }
 
-    /// Full-screen 1 pt lines with an 8 pt gap centred on the pointer, each with a 0.5 pt black 30%
-    /// hairline on both sides. Lines sit on whole points, which is the half-pixel stroke centre.
-    private func drawCrosshair(at pointer: CGPoint, bounds: CGRect, context: CGContext) {
-        let width = Theme.Overlay.crosshairWidth
-        let gap = Theme.Overlay.crosshairGap / 2
-        let lineX = pointer.x.rounded(.down)
-        let lineY = pointer.y.rounded(.down)
-        let vertical = [
-            CGRect(x: lineX, y: bounds.minY, width: width, height: max(lineY - gap - bounds.minY, 0)),
-            CGRect(x: lineX, y: lineY + width + gap, width: width, height: max(bounds.maxY - lineY - width - gap, 0)),
-        ]
-        let horizontal = [
-            CGRect(x: bounds.minX, y: lineY, width: max(lineX - gap - bounds.minX, 0), height: width),
-            CGRect(x: lineX + width + gap, y: lineY, width: max(bounds.maxX - lineX - width - gap, 0), height: width),
-        ]
-        context.setFillColor(Theme.Colors.crosshairHairline.cgColor(dark: false))
-        for line in vertical {
-            context.fill(CGRect(x: line.minX - 0.5, y: line.minY, width: 0.5, height: line.height))
-            context.fill(CGRect(x: line.maxX, y: line.minY, width: 0.5, height: line.height))
-        }
-        for line in horizontal {
-            context.fill(CGRect(x: line.minX, y: line.minY - 0.5, width: line.width, height: 0.5))
-            context.fill(CGRect(x: line.minX, y: line.maxY, width: line.width, height: 0.5))
-        }
-        context.setFillColor(Theme.Colors.crosshair.cgColor(dark: false))
-        for line in vertical + horizontal { context.fill(line) }
-    }
-
     // MARK: Layout
 
     /// `x, y` in global points before the drag, `W × H` during it.
@@ -614,7 +576,7 @@ public final class SelectionOverlayView: NSView {
     /// The regions that differ between two states, or nil when everything must be redrawn.
     func changedRegions(from old: SelectionOverlayState, to new: SelectionOverlayState) -> [CGRect]? {
         if old.display != new.display || old.frozenImage !== new.frozenImage || old.mode != new.mode
-            || old.phase != new.phase || old.showsCrosshair != new.showsCrosshair
+            || old.phase != new.phase
             || old.showsMagnifier != new.showsMagnifier || old.showsKeyHints != new.showsKeyHints || old.hud != new.hud {
             return nil
         }
@@ -624,10 +586,6 @@ public final class SelectionOverlayView: NSView {
     private func chromeRegions(_ state: SelectionOverlayState) -> [CGRect] {
         let bounds = state.bounds
         var regions: [CGRect] = []
-        if state.drawsCrosshair, let pointer = state.localPointer {
-            regions.append(CGRect(x: bounds.minX, y: pointer.y.rounded(.down) - 2, width: bounds.width, height: 5))
-            regions.append(CGRect(x: pointer.x.rounded(.down) - 2, y: bounds.minY, width: 5, height: bounds.height))
-        }
         if state.drawsMagnifier, let pointer = state.localPointer {
             let selection = state.phase == .dragging ? state.localSelection : nil
             let glass = MagnifierLayer.glassFrame(pointer: pointer, selection: selection, bounds: bounds)
@@ -712,7 +670,7 @@ public final class SelectionOverlayView: NSView {
     }
 
     override public func cursorUpdate(with event: NSEvent) {
-        // The cursor stays hidden while the overlay is up; do not let AppKit reset it.
+        // The system pointer stays as it is: AppKit would reset it to the arrow here.
     }
 }
 
@@ -787,7 +745,7 @@ public enum OverlayDemo {
         )
     }
 
-    /// Mockup 1a: before the drag, crosshair, magnifier with coordinates, hint bar.
+    /// Mockup 1a: before the drag, magnifier with coordinates, hint bar.
     public static func beforeState(dark: Bool = false) -> SelectionOverlayState {
         SelectionOverlayState(
             display: display, frozenImage: desktopImage(dark: dark), mode: .area, phase: .idle,

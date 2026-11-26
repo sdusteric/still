@@ -35,15 +35,6 @@ final class FakeOverlaySurface: OverlaySurface {
     func popUpMenu(_ menu: NSMenu, at point: CGPoint) { poppedMenus.append((menu, point)) }
 }
 
-@MainActor
-final class FakeCursor: OverlayCursor {
-    var hidden = 0
-    var unhidden = 0
-    func hide() { hidden += 1 }
-    func unhide() { unhidden += 1 }
-    var isBalanced: Bool { hidden == unhidden }
-}
-
 /// Luminance statistics of a rendered image (design 16: pixel statistics, not golden files).
 enum ImageStats {
     struct Result {
@@ -74,7 +65,6 @@ enum ImageStats {
 @MainActor
 @Suite struct OverlayControllerTests {
     let displays = DisplayInfo.fakeSideBySide
-    let cursor = FakeCursor()
 
     final class SurfaceBox {
         var surfaces: [DisplayID: FakeOverlaySurface] = [:]
@@ -89,7 +79,6 @@ enum ImageStats {
         OverlayController(
             options: options,
             ownPID: FakeWindowSource.snapPID,
-            cursor: cursor,
             pointerLocation: { pointer },
             makeSurface: { display, _, _ in
                 box.made += 1
@@ -106,12 +95,11 @@ enum ImageStats {
         controller.handle(.mouseUp(end, modifiers: modifiers))
     }
 
-    @Test func presentShowsEverySurfaceAndHidesTheCursor() {
+    @Test func presentShowsEverySurface() {
         let box = SurfaceBox()
         let controller = makeController(pointer: CGPoint(x: 3000, y: 500), box: box)
         controller.present(mode: .area, displays: displays)
         #expect(box.made == 2)
-        #expect(cursor.hidden == 1)
         #expect(controller.isPresented)
         #expect(box.surfaces[1]?.shown.count == 1)
         #expect(box.surfaces[2]?.shown.count == 1)
@@ -135,7 +123,6 @@ enum ImageStats {
         controller.grabbedKey(at: escape, pressed: true)
         #expect(!controller.isPresented)
         #expect(grabs == [true, false])
-        #expect(cursor.isBalanced)
         #expect(await controller.selection() == .cancelled)
     }
 
@@ -177,7 +164,7 @@ enum ImageStats {
     }
 
     @Test func noFactoryMeansNoPanels() async {
-        let controller = OverlayController(cursor: cursor, pointerLocation: { CGPoint(x: 10, y: 10) })
+        let controller = OverlayController(pointerLocation: { CGPoint(x: 10, y: 10) })
         controller.present(mode: .area, displays: displays)
         #expect(controller.surfaceWindowIDs.isEmpty)
         drag(controller, from: CGPoint(x: 10, y: 10), to: CGPoint(x: 110, y: 60))
@@ -185,13 +172,12 @@ enum ImageStats {
         #expect(result == .area(displayID: 1, rect: CGRect(x: 10, y: 10, width: 100, height: 50)))
     }
 
-    @Test func dragConfirmsTheAreaOnMouseUpAndRestoresTheCursor() async {
+    @Test func dragConfirmsTheAreaOnMouseUpAndHidesThePanels() async {
         let box = SurfaceBox()
         let controller = makeController(box: box)
         controller.present(mode: .area, displays: displays)
         drag(controller, from: CGPoint(x: 100, y: 100), to: CGPoint(x: 500, y: 400))
         #expect(!controller.isPresented)
-        #expect(cursor.isBalanced)
         #expect(box.surfaces.values.allSatisfy { !$0.isVisible })
         let result = await controller.selection()
         #expect(result == .area(displayID: 1, rect: CGRect(x: 100, y: 100, width: 400, height: 300)))
@@ -300,7 +286,6 @@ enum ImageStats {
         controller.handle(.mouseUp(CGPoint(x: 501, y: 301), modifiers: []))
         let notes = FakeWindowSource.sample.first { $0.ownerName == "Notes" }
         #expect(await controller.selection() == .window(notes!, includeShadow: true))
-        #expect(cursor.isBalanced)
     }
 
     @Test func aClickOverNoWindowCancels() async {
@@ -312,18 +297,15 @@ enum ImageStats {
         #expect(await controller.selection() == .cancelled)
     }
 
-    @Test func escapeAndRightClickCancelAndRestoreTheCursor() async {
+    @Test func escapeAndRightClickCancel() async {
         let controller = makeController()
         controller.present(mode: .area, displays: displays)
         controller.handle(.keyDown(.escape, modifiers: [], isRepeat: false))
         #expect(await controller.selection() == .cancelled)
-        #expect(cursor.isBalanced)
 
         controller.present(mode: .window, displays: displays)
         controller.handle(.rightMouseDown)
         #expect(await controller.selection() == .cancelled)
-        #expect(cursor.hidden == 2)
-        #expect(cursor.isBalanced)
     }
 
     @Test func dismissResumesAWaitingSelectionAsCancelled() async {
@@ -333,9 +315,7 @@ enum ImageStats {
         await Task.yield()
         controller.dismiss()
         #expect(await waiting.value == .cancelled)
-        #expect(cursor.isBalanced)
         controller.dismiss()
-        #expect(cursor.isBalanced)
     }
 
     @Test func aScreenChangeCancelsAndRebuildsThePanels() async {
@@ -344,7 +324,6 @@ enum ImageStats {
         controller.present(mode: .area, displays: displays)
         controller.screenParametersChanged(displays: [.fake5K])
         #expect(await controller.selection() == .cancelled)
-        #expect(cursor.isBalanced)
         #expect(box.made == 3)
         #expect(controller.displays == [.fake5K])
     }
@@ -420,7 +399,6 @@ enum ImageStats {
         #expect(controller.selection == CGRect(x: 101, y: 110, width: 201, height: 100))
         controller.handle(.keyDown(.returnKey, modifiers: [], isRepeat: false))
         #expect(await controller.selection() == .area(displayID: 1, rect: CGRect(x: 101, y: 110, width: 201, height: 100)))
-        #expect(cursor.isBalanced)
     }
 
     @Test func handlesResizeAndAnInsideDragMovesTheSelection() async {
@@ -443,7 +421,6 @@ enum ImageStats {
         let controller = makeController(pointer: CGPoint(x: 3000, y: 200), box: box)
         controller.present(mode: .fullscreen, displays: displays)
         #expect(!controller.isPresented)
-        #expect(cursor.hidden == 0)
         #expect(box.surfaces.values.allSatisfy { $0.shown.isEmpty })
         #expect(await controller.selection() == .area(displayID: 2, rect: displays[1].frameTopLeft))
     }
@@ -454,8 +431,6 @@ enum ImageStats {
         controller.handle(.keyDown(.escape, modifiers: [], isRepeat: false))
         controller.handle(.mouseDown(CGPoint(x: 10, y: 10), clickCount: 1, modifiers: []))
         #expect(controller.selection == nil)
-        #expect(cursor.hidden == 1)
-        #expect(cursor.isBalanced)
     }
 
     @Test func pointerMovesUpdateOnlyTheDisplayUnderIt() {
@@ -553,10 +528,11 @@ enum ImageStats {
     @Test func beforeAndWindowStatesRender() throws {
         let before = try #require(OverlayDemo.render(OverlayDemo.beforeState(), dark: false))
         #expect(try #require(ImageStats.luminance(before)).standardDeviation >= 4)
-        // The crosshair is a bright line through the pointer's column, away from the magnifier.
-        let line = try #require(SyntheticImages.pixel(of: before, x: 642 * 2, y: 120))
+        // No line follows the pointer: its column looks like the one beside it (the system
+        // pointer is the only pointer; a drawn crosshair trailed behind it).
+        let column = try #require(SyntheticImages.pixel(of: before, x: 642 * 2, y: 120))
         let beside = try #require(SyntheticImages.pixel(of: before, x: 642 * 2 + 12, y: 120))
-        #expect(line.luminance > beside.luminance + 20)
+        #expect(abs(column.luminance - beside.luminance) < 6)
 
         let window = try #require(OverlayDemo.render(OverlayDemo.windowState(), dark: false))
         // The 2 pt accent border on the Notes window's left edge, halfway down.
@@ -615,7 +591,7 @@ extension OverlayControllerTests {
         return CGPoint(x: frame.minX + slot.midX, y: frame.minY + slot.midY)
     }
 
-    @Test func hudRestoresTheLastAreaEditableWithTheToolbarAndKeepsTheCursor() throws {
+    @Test func hudRestoresTheLastAreaEditableWithTheToolbar() throws {
         let box = SurfaceBox()
         let controller = makeController(pointer: CGPoint(x: 1280, y: 1300), box: box)
         presentHUD(controller)
@@ -623,8 +599,6 @@ extension OverlayControllerTests {
         #expect(controller.selection == Self.hudArea)
         #expect(controller.phase == .adjusting)
         #expect(controller.hud?.restoredArea == true)
-        // The toolbar and handles are clicked, so the cursor stays.
-        #expect(cursor.hidden == 0)
         let state = try #require(box.surfaces[1]?.lastState)
         #expect(state.hud?.mode == .screenshot)
         #expect(state.hud?.toolbarOrigin != nil)
@@ -638,7 +612,7 @@ extension OverlayControllerTests {
         #expect(controller.toolbarEdge == .bottom)
     }
 
-    @Test func hudWithoutAUsableLastAreaShowsTheCrosshair() throws {
+    @Test func hudWithoutAUsableLastAreaStartsWithNoSelection() throws {
         let box = SurfaceBox()
         let controller = makeController(pointer: CGPoint(x: 600, y: 600), box: box)
         // Stored on a display layout that is gone: no restore (D58).
@@ -647,7 +621,6 @@ extension OverlayControllerTests {
         #expect(controller.selection == nil)
         #expect(controller.phase == .idle)
         let state = try #require(box.surfaces[1]?.lastState)
-        #expect(state.drawsCrosshair)
         #expect(!state.drawsHints)
     }
 
@@ -745,7 +718,6 @@ extension OverlayControllerTests {
         controller.dismiss()
         #expect(!controller.isPresented)
         #expect(box.surfaces[1]?.hideCount == 1)
-        #expect(cursor.isBalanced)
     }
 
     @Test func hudRefusesAnAreaTooSmallToRecord() async {

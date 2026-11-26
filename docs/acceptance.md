@@ -146,12 +146,10 @@ of these is allowed, so the checks below stay manual.
 Check them once by hand after installing with `scripts/bundle.sh --install`, with another app
 (for example a text editor) frontmost:
 
-1. Cmd+Shift+4: the crosshair replaces the arrow while Snap is not the active app
-   (`NSCursor.hide` from a background app). Covered offscreen: every exit path calls hide and
-   unhide in balance (`OverlayControllerTests`, `FakeCursor.isBalanced`). Not covered: whether
-   the window server honours `NSCursor.hide` for an app that is not active. It is commonly
-   reported that it does not. If the arrow stays, report it; the known remedy is the private
-   CoreGraphics connection property `SetsCursorInBackground`, which Snap does not use today.
+1. Cmd+Shift+4: the system pointer stays as it is, with no line following it. Checked by hand
+   on 2026-11-26: `NSCursor.hide` did not hide the arrow from a background app, and the drawn
+   crosshair trailed behind it, so both are gone (`beforeAndWindowStatesRender` checks no line
+   is drawn).
 2. During the overlay, Esc cancels and Tab switches to window mode, so the non-activating
    overlay panel received keys through `makeKey()`. The frontmost app's title bar should not go
    inactive. Covered offscreen: the overlay view accepts first responder and forwards Esc, Space
