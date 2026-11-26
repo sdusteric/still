@@ -43,11 +43,16 @@ public actor LiveCaptureSource: CaptureSource {
     }
 
     public func captureDisplay(_ displayID: DisplayID, options: CaptureOptions) async throws -> CapturedImage {
-        let (content, own) = try await filterInputs(excluding: options.excludedWindowIDs)
+        // Each step is timed and logged, so the latency line's frozen_ms can be split up.
+        let clock = ContinuousClock()
+        let start = clock.now
+        let (content, own, source) = try await filterInputs(excluding: options.excludedWindowIDs)
+        let contentDone = clock.now
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
             throw CaptureError.displayNotFound(displayID)
         }
         let filter = makeDisplayFilter(display: display, content: content, options: options, own: own)
+        let filterDone = clock.now
         let configuration = SCScreenshotConfiguration()
         configuration.dynamicRange = .sdr
         configuration.showsCursor = false
@@ -63,6 +68,12 @@ public actor LiveCaptureSource: CaptureSource {
         } catch {
             throw LiveCaptureSource.map(error, display: displayID)
         }
+        let shotDone = clock.now
+        log?.info(LiveCaptureSource.timingLine(
+            display: displayID, content: source, contentSeconds: Self.seconds(contentDone - start),
+            filterSeconds: Self.seconds(filterDone - contentDone), screenshotSeconds: Self.seconds(shotDone - filterDone),
+            width: image.width, height: image.height
+        ))
         scheduleRefresh()
         return CapturedImage(cgImage: image, scale: scale, displayID: displayID)
     }
@@ -70,7 +81,7 @@ public actor LiveCaptureSource: CaptureSource {
     /// Part of one display (scrolling capture): only `rect`, in the display's top-left points,
     /// through `SCScreenshotConfiguration.sourceRect`, so each frame is small.
     public func captureRegion(_ displayID: DisplayID, rect: CGRect, options: CaptureOptions) async throws -> CapturedImage {
-        let (content, own) = try await filterInputs(excluding: options.excludedWindowIDs)
+        let (content, own, _) = try await filterInputs(excluding: options.excludedWindowIDs)
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
             throw CaptureError.displayNotFound(displayID)
         }
@@ -173,18 +184,46 @@ public actor LiveCaptureSource: CaptureSource {
     /// The cached content, and Still's windows to exclude that it lacks. A panel made since the last
     /// refresh comes from this process's own content, which is fast; only when that fails too is the
     /// whole list fetched again.
-    private func filterInputs(excluding ids: [WindowID]) async throws -> (SCShareableContent, [SCWindow]) {
+    private func filterInputs(
+        excluding ids: [WindowID]
+    ) async throws -> (SCShareableContent, [SCWindow], ContentSource) {
+        let wasCached = content != nil
         let content = try await cachedContent()
         let missing = LiveCaptureSource.missing(ids, in: content.windows.map(\.windowID))
-        guard !missing.isEmpty else { return (content, []) }
+        guard !missing.isEmpty else { return (content, [], wasCached ? .cached : .fetched) }
         do {
             let own = try await SCShareableContent.currentProcess.windows.filter { missing.contains($0.windowID) }
-            if LiveCaptureSource.missing(missing, in: own.map(\.windowID)).isEmpty { return (content, own) }
+            if LiveCaptureSource.missing(missing, in: own.map(\.windowID)).isEmpty { return (content, own, .ownWindows) }
         } catch {
             log?.warning("capture: own windows: \(error)")
         }
         log?.info("capture: refetching the window list for Still's panels")
-        return (try await fetchContent(), [])
+        return (try await fetchContent(), [], .refetched)
+    }
+
+    /// Where a capture's window list came from, for the timing line.
+    enum ContentSource: String {
+        /// The cache, as it was.
+        case cached
+        /// No cache yet: fetched now.
+        case fetched
+        /// The cache plus this process's own windows (a panel made since the last refresh).
+        case ownWindows = "own-windows"
+        /// The whole list again: a panel was in neither.
+        case refetched
+    }
+
+    static func timingLine(
+        display: DisplayID, content: ContentSource, contentSeconds: Double, filterSeconds: Double,
+        screenshotSeconds: Double, width: Int, height: Int
+    ) -> String {
+        func ms(_ seconds: Double) -> String { String(format: "%.1f", seconds * 1000) }
+        return "capture timing display=\(display) content=\(content.rawValue) content_ms=\(ms(contentSeconds)) "
+            + "filter_ms=\(ms(filterSeconds)) screenshot_ms=\(ms(screenshotSeconds)) size=\(width)x\(height)"
+    }
+
+    private static func seconds(_ duration: Duration) -> Double {
+        Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
     }
 
     /// The ids in `ids` that `known` lacks, each once.
