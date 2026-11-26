@@ -10,6 +10,10 @@ import SnapCore
 /// The shareable content is cached between captures (fetched with `excludingDesktopWindows: false`
 /// so Finder's desktop-icon window is in the list to exclude) and refreshed in the background after
 /// each capture. `displays()` always refetches it, which is what the coordinator's one stale retry uses.
+///
+/// The cache lists off-screen windows too. Still's panels are built once and only ordered in and
+/// out, so they are in the list when a capture starts and the capture needs no refetch first: that
+/// refetch made the frozen image 90 to 390 ms late, long enough for a popup or video to change.
 public actor LiveCaptureSource: CaptureSource {
     static let finderBundleID = "com.apple.finder"
 
@@ -39,19 +43,11 @@ public actor LiveCaptureSource: CaptureSource {
     }
 
     public func captureDisplay(_ displayID: DisplayID, options: CaptureOptions) async throws -> CapturedImage {
-        var content = try await cachedContent()
-        guard content.displays.contains(where: { $0.displayID == displayID }) else {
-            throw CaptureError.displayNotFound(displayID)
-        }
-        // Snap's panels that are on screen now (the overlay when shown, a Quick Access card) may be
-        // missing from a list cached before they were ordered in: refetch once before capturing.
-        if !LiveCaptureSource.containsAll(options.excludedWindowIDs, in: content) {
-            content = try await fetchContent()
-        }
+        let (content, own) = try await filterInputs(excluding: options.excludedWindowIDs)
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
             throw CaptureError.displayNotFound(displayID)
         }
-        let filter = makeDisplayFilter(display: display, content: content, options: options)
+        let filter = makeDisplayFilter(display: display, content: content, options: options, own: own)
         let configuration = SCScreenshotConfiguration()
         configuration.dynamicRange = .sdr
         configuration.showsCursor = false
@@ -74,14 +70,11 @@ public actor LiveCaptureSource: CaptureSource {
     /// Part of one display (scrolling capture): only `rect`, in the display's top-left points,
     /// through `SCScreenshotConfiguration.sourceRect`, so each frame is small.
     public func captureRegion(_ displayID: DisplayID, rect: CGRect, options: CaptureOptions) async throws -> CapturedImage {
-        var content = try await cachedContent()
-        if !LiveCaptureSource.containsAll(options.excludedWindowIDs, in: content) {
-            content = try await fetchContent()
-        }
+        let (content, own) = try await filterInputs(excluding: options.excludedWindowIDs)
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
             throw CaptureError.displayNotFound(displayID)
         }
-        let filter = makeDisplayFilter(display: display, content: content, options: options)
+        let filter = makeDisplayFilter(display: display, content: content, options: options, own: own)
         let configuration = SCScreenshotConfiguration()
         configuration.dynamicRange = .sdr
         configuration.showsCursor = false
@@ -155,7 +148,7 @@ public actor LiveCaptureSource: CaptureSource {
 
     func fetchContent() async throws -> SCShareableContent {
         do {
-            let fresh = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            let fresh = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
             content = fresh
             return fresh
         } catch {
@@ -177,9 +170,34 @@ public actor LiveCaptureSource: CaptureSource {
 
     // MARK: Filters
 
-    private func makeDisplayFilter(display: SCDisplay, content: SCShareableContent, options: CaptureOptions)
-        -> SCContentFilter {
-        let excluded = content.windows.filter { options.excludedWindowIDs.contains($0.windowID) }
+    /// The cached content, and Still's windows to exclude that it lacks. A panel made since the last
+    /// refresh comes from this process's own content, which is fast; only when that fails too is the
+    /// whole list fetched again.
+    private func filterInputs(excluding ids: [WindowID]) async throws -> (SCShareableContent, [SCWindow]) {
+        let content = try await cachedContent()
+        let missing = LiveCaptureSource.missing(ids, in: content.windows.map(\.windowID))
+        guard !missing.isEmpty else { return (content, []) }
+        do {
+            let own = try await SCShareableContent.currentProcess.windows.filter { missing.contains($0.windowID) }
+            if LiveCaptureSource.missing(missing, in: own.map(\.windowID)).isEmpty { return (content, own) }
+        } catch {
+            log?.warning("capture: own windows: \(error)")
+        }
+        log?.info("capture: refetching the window list for Still's panels")
+        return (try await fetchContent(), [])
+    }
+
+    /// The ids in `ids` that `known` lacks, each once.
+    static func missing(_ ids: [WindowID], in known: [WindowID]) -> [WindowID] {
+        let known = Set(known)
+        var seen: Set<WindowID> = []
+        return ids.filter { !known.contains($0) && seen.insert($0).inserted }
+    }
+
+    private func makeDisplayFilter(
+        display: SCDisplay, content: SCShareableContent, options: CaptureOptions, own: [SCWindow] = []
+    ) -> SCContentFilter {
+        let excluded = (content.windows + own).filter { options.excludedWindowIDs.contains($0.windowID) }
         guard excluded.count == Set(options.excludedWindowIDs).count else {
             // The panels are still missing after a refetch: leave out all of Snap instead. The
             // coordinator lists only panels that are on screen, so this is a rare race. That
