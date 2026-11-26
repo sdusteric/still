@@ -790,6 +790,8 @@ public final class AnnotateCanvasView: NSView {
             guard let self else { return }
             textOverlay = nil
             commitText(text, for: item, isNew: isNew)
+            // As on cancel: Delete, the arrows and the tool letters reach the canvas again.
+            window?.makeFirstResponder(self)
         }
         overlay.onCancel = { [weak self] in
             self?.textOverlay = nil

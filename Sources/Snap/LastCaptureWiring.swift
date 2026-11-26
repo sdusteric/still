@@ -85,7 +85,7 @@ extension AppWiring {
 
     /// "Capture Previous Area": the last confirmed area again, at once, with no overlay.
     func capturePreviousArea(eventTime: TimeInterval? = nil) {
-        guard !coordinator.isCapturing, scrollSession == nil, let area = stateStore.state.lastArea,
+        guard !coordinator.isCapturing, !overlay.isPresented, scrollSession == nil, let area = stateStore.state.lastArea,
               permissionAllowsCapture("previous area") else { return }
         overlay.options = OverlayController.Options(settings: settings)
         Task {

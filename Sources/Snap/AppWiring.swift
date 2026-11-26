@@ -283,6 +283,7 @@ final class AppWiring: CaptureResultPresenter {
         coordinator.cancel()
         // The area's coordinates no longer hold after a display change.
         cancelScrollSession()
+        if case .countdown = recorder.controller.state { recorder.cancel() }
         guard permission.status == .granted else { return }
         Task {
             await captureSource.invalidate()
@@ -449,6 +450,13 @@ final class AppWiring: CaptureResultPresenter {
         }
     }
 
+    /// A capture or a recording got frames: any permission lapse is over (menu line and badge).
+    func permissionWorked() {
+        let wasLapsed = permission.status != .granted
+        permission.captureSucceeded()
+        if wasLapsed { onPermissionChanged?() }
+    }
+
     /// False, after showing the hint, when Screen Recording permission is missing. Never requests it.
     func permissionAllowsCapture(_ what: String) -> Bool {
         guard permission.hotkeyPressed() == .showHint else { return true }
@@ -485,9 +493,7 @@ final class AppWiring: CaptureResultPresenter {
 
         if settings.capture.copyToClipboard, !stored.copied { quickAccess.markNotCopied(record.cardID) }
 
-        let wasLapsed = permission.status != .granted
-        permission.captureSucceeded()
-        if wasLapsed { onPermissionChanged?() }
+        permissionWorked()
         countCapture(stored.item.id)
         playShutterIfEnabled()
         if settings.capture.openInAnnotate { annotate(record.cardID) }
@@ -803,7 +809,7 @@ final class AppWiring: CaptureResultPresenter {
         let preset = presetStore.preset(id: id) ?? defaultPreset
         if let record = lastRecord {
             // The last capture is only a preview here: Copy or Save must not rewrite its history file.
-            openBackgroundEditor(source: record.current, record: nil, preset: preset)
+            openBackgroundEditor(source: record.original, record: nil, preset: preset)
         } else if let sample = DemoCapture.notesWindow(dark: false) {
             openBackgroundEditor(source: CapturedImage(cgImage: sample, scale: 2), record: nil, preset: preset)
         }
@@ -901,11 +907,15 @@ final class AppWiring: CaptureResultPresenter {
                 self?.annotateSaved(CapturedImage(cgImage: flattened, scale: scale), record: record)
             },
             saveAs: { [weak self] flattened, scale in
-                AppWiring.saveAs(self?.withBackground(CapturedImage(cgImage: flattened, scale: scale), record: record)
-                    ?? CapturedImage(cgImage: flattened, scale: scale))
+                let annotated = CapturedImage(cgImage: flattened, scale: scale)
+                AppWiring.saveAs(self?.withBackground(annotated, record: record) ?? annotated)
+                // As Save does: the card and history get the annotated version too.
+                self?.annotateExported(annotated, record: record, copy: false)
             },
             background: { [weak self] flattened, scale in
                 guard let self else { return }
+                // The annotations are kept first, so a canceled Background editor loses nothing.
+                annotateExported(CapturedImage(cgImage: flattened, scale: scale), record: record, copy: false)
                 openBackgroundEditor(
                     source: CapturedImage(cgImage: flattened, scale: scale), record: record,
                     preset: record.annotations?.background ?? defaultPreset
@@ -913,6 +923,13 @@ final class AppWiring: CaptureResultPresenter {
             },
             reveal: { url in AppWiring.reveal(url) },
             saveFolderName: paths.saveFolder(for: settings).lastPathComponent,
+            settings: settings.annotate,
+            settingsChanged: { [weak self] annotate in
+                guard let self else { return }
+                var updated = settings
+                updated.annotate = annotate
+                replaceSettings(updated)
+            },
             keep: { document in
                 guard record.editsAreReproducible else { return }
                 record.annotations = AnnotationFile(document: document, background: record.annotations?.background)

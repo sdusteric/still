@@ -147,9 +147,27 @@ private final class KeyCaptureNSView: NSView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    private var resignObserver: (any NSObjectProtocol)?
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         window?.makeFirstResponder(self)
+        if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
+        resignObserver = nil
+        guard let window else { return }
+        // Clicking another app or closing Settings does not resign the first responder; without
+        // this the recorder kept every Still hotkey paused.
+        resignObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.onKey?(.cancel) }
+        }
+    }
+
+    override func removeFromSuperview() {
+        if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
+        resignObserver = nil
+        super.removeFromSuperview()
     }
 
     override func keyDown(with event: NSEvent) {

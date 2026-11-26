@@ -465,13 +465,38 @@ public final class QuickAccessController {
     /// hotkeys meanwhile. The panel belongs to a background app, so it never gets key events itself.
     @ObservationIgnored public var onKeyGrabChanged: ((Bool) -> Void)?
     @ObservationIgnored private var keysGrabbed = false
+    @ObservationIgnored private var anyHovered = false
+    @ObservationIgnored private var keyGrabExpiry: Task<Void, Never>?
+
+    /// How long the keys stay grabbed after the pointer arrives on a card or a card key is used.
+    /// The grab is system-wide, so a pointer left resting on a card must not keep taking letters
+    /// from the app the user types in.
+    public static let keyGrabSeconds: Double = 4
 
     private func updateKeyGrab() {
         let hovered = cards.contains { $0.isHovered }
         surface?.setAcceptsKeys(hovered)
-        guard hovered != keysGrabbed else { return }
-        keysGrabbed = hovered
-        onKeyGrabChanged?(hovered)
+        guard hovered != anyHovered else { return }
+        anyHovered = hovered
+        setKeysGrabbed(hovered)
+    }
+
+    private func setKeysGrabbed(_ grabbed: Bool) {
+        keyGrabExpiry?.cancel()
+        keyGrabExpiry = nil
+        if grabbed { armKeyGrabExpiry() }
+        guard grabbed != keysGrabbed else { return }
+        keysGrabbed = grabbed
+        onKeyGrabChanged?(grabbed)
+    }
+
+    private func armKeyGrabExpiry() {
+        keyGrabExpiry?.cancel()
+        let clock = clock
+        keyGrabExpiry = Task { [weak self] in
+            do { try await clock.sleep(seconds: Self.keyGrabSeconds) } catch { return }
+            self?.setKeysGrabbed(false)
+        }
     }
 
     /// The keys of a hovered card as Carbon key codes and modifiers (design 8, 20.2, 20.6).
@@ -492,6 +517,8 @@ public final class QuickAccessController {
     /// A grabbed key went down: acts on the hovered card like the panel's own key event.
     public func grabbedKey(at index: Int) {
         guard Self.grabbedKeys.indices.contains(index) else { return }
+        // Using the keys keeps them for another few seconds.
+        if keysGrabbed { armKeyGrabExpiry() }
         _ = handleKey(Self.grabbedKeys[index].key)
     }
 

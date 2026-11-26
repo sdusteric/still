@@ -1030,7 +1030,10 @@ extension OverlayController {
             x: frame.minX + slot.minX - display.frameTopLeft.minX,
             y: frame.minY + (toolbarEdge == .bottom ? slot.minY : slot.maxY) - display.frameTopLeft.minY
         )
+        // The menu needs the arrows, Return and Esc for itself while it is open.
+        onKeyGrabChanged?(false)
         surfaces[display.id]?.popUpMenu(menu, at: local)
+        if isPresented { onKeyGrabChanged?(true) }
         // The menu's tracking loop takes the mouse-up of the press that opened it.
         toolbarPress = false
     }

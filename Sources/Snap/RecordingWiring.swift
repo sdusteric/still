@@ -62,6 +62,8 @@ final class RecordingWiring {
         if let failure = controller.preflight() {
             app.log.warning("recording: cannot start: \(failure)")
             app.overlay.dismiss()
+            // The HUD notice shows only when it opens in Record mode; say it here too.
+            app.showHintMessage(failure.description)
             return
         }
         var excluded = app.overlay.surfaceWindowIDs + app.quickAccess.surfaceWindowIDs + app.hint.surfaceWindowIDs
@@ -112,6 +114,7 @@ final class RecordingWiring {
         case .recording(let item):
             app.log.info("recording: started \(item.id)")
             app.historyChanged()
+            app.permissionWorked()
         case .cancelled:
             app.log.info("recording: cancelled during the countdown")
             finishedUI()

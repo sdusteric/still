@@ -392,6 +392,27 @@ final class ActionLog {
         #expect(keys.contains { $0.shortcut == KeyShortcut(keyCode: 53, modifiers: 0) && $0.key == .close })
     }
 
+    @Test func theCardKeyGrabEndsAfterAFewSecondsSoTypingElsewhereIsNotStolen() async {
+        // Letters grabbed system-wide while the pointer only rests on a card would be lost to the
+        // app the user types in; the grab lasts a few seconds from the hover or the last key.
+        let controller = makeController()
+        var grabs: [Bool] = []
+        controller.onKeyGrabChanged = { grabs.append($0) }
+        controller.show(item("a"))
+        controller.setHovered(true, for: "a")
+        #expect(grabs == [true])
+        for _ in 0..<5 { await Task.yield() }
+        clock.advance(by: QuickAccessController.keyGrabSeconds - 0.5)
+        for _ in 0..<5 { await Task.yield() }
+        #expect(grabs == [true])
+        clock.advance(by: 0.5)
+        for _ in 0..<20 where grabs.count < 2 { await Task.yield() }
+        #expect(grabs == [true, false], "still hovered, but the keys go back to the front app")
+        controller.setHovered(false, for: "a")
+        controller.setHovered(true, for: "a")
+        #expect(grabs == [true, false, true], "a new hover grabs again")
+    }
+
     @Test func keysActOnlyOnTheHoveredCard() async {
         let controller = makeController()
         controller.show(item("a"))

@@ -71,11 +71,11 @@ import Testing
     }
 
     @Test func openClipboardImageIsTheOptionAlternateOfOpenImage() {
-        let ids = model().items.map(\.id)
-        #expect(ids.firstIndex(of: .openClipboardImage) == ids.firstIndex(of: .openImage).map { $0 + 1 })
-        #expect(model().item(.openClipboardImage)?.isAlternate == true)
-        #expect(model().item(.openClipboardImage)?.isEnabled == false, "nothing to open")
+        #expect(model().item(.openClipboardImage) == nil, "no image: Option keeps Open Image")
         let menu = MenuModel(MenuInput(hasClipboardImage: true, now: now, timeZone: Self.zone))
+        let ids = menu.items.map(\.id)
+        #expect(ids.firstIndex(of: .openClipboardImage) == ids.firstIndex(of: .openImage).map { $0 + 1 })
+        #expect(menu.item(.openClipboardImage)?.isAlternate == true)
         #expect(menu.item(.openClipboardImage)?.isEnabled == true)
         #expect(menu.item(.openImage)?.title == "Open Image\u{2026}")
         #expect(menu.item(.openClipboardImage)?.title == "Open Clipboard Image")
@@ -107,7 +107,7 @@ import Testing
         #expect(ids == [
             .captureArea, .captureWindow, .captureFullscreen, .captureScrolling, .capturePreviousArea, .allInOne, .recordScreen,
             .separator(1), .lastCapture, .separator(2),
-            .recentCapturesHeader, .noRecentCaptures, .captureHistory, .openImage, .openClipboardImage, .separator(3),
+            .recentCapturesHeader, .noRecentCaptures, .captureHistory, .openImage, .separator(3),
             .settings, .quit,
         ])
         #expect(model().item(.openHistoryFolder) == nil)

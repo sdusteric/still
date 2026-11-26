@@ -23,6 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
     /// Who holds the one key grab of `HotkeyCenter`.
     private enum GrabOwner { case none, overlay, scroll, card }
     private var grabOwner = GrabOwner.none
+    /// Shortcut fields in Settings listening for a new combo; Still's hotkeys pause meanwhile.
+    private var recordersListening = 0
     private var registrationErrors: [ShortcutAction: String] = [:]
     private var symbolicEntries: [SymbolicHotkeyEntry] = []
     private var settingsModel: SettingsModel?
@@ -41,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menu bar only: no Dock icon, and launching never takes focus.
         NSApp.setActivationPolicy(.accessory)
+        NSApp.mainMenu = MainMenu.make()
         updater = Updater.make()
         let wiring = AppWiring()
         self.wiring = wiring
@@ -285,6 +288,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
         }
         readSymbolicHotkeys()
         applyHotkeys()
+        // After "Relaunch Still" the old process may still hold the hotkeys for a moment.
+        if !registrationErrors.isEmpty {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                MainActor.assumeIsolated { self?.applyHotkeys() }
+            }
+        }
         // CleanShot X launching or quitting changes which combos Snap may register (design 12.3).
         conflictingApps.startObserving { [weak self] running in
             self?.wiring?.log.info("hotkeys: CleanShot X running: \(!running.isEmpty)")
@@ -453,7 +462,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
 
     /// A shortcut recorder is listening: Snap's own hotkeys are paused so the keys reach it.
     private func recordingChanged(_ recording: Bool) {
-        if recording {
+        // Counted: clicking a second field ends the first after the second began, and must not
+        // bring the hotkeys back while the second still listens.
+        recordersListening = max(recordersListening + (recording ? 1 : -1), 0)
+        if recordersListening > 0 {
             hotkeys?.unregisterAll()
         } else {
             applyHotkeys()

@@ -35,7 +35,7 @@ Global hotkeys, changeable in Settings > Shortcuts (recorder fields with conflic
 | Shift-Cmd-5 | All-in-One toolbar (also stops a recording) |
 | unset | Capture Previous Area, Capture Scrolling Area, Capture Window, Record Screen, Stop Recording, Apply Background, Open in Annotate, Pin Last Capture, Open Capture History |
 
-In the area overlay: Esc or right-click cancels, Space while dragging moves the rectangle, Shift constrains to a square, Option resizes from the center, arrow keys nudge 1 point (Shift 10), Space or Tab switches to window mode and highlights the window under the pointer. On a hovered Quick Access card: C copy, Option-C copy file, T copy text, S save, A annotate, B background, Command-Delete move to Trash (or the trash button next to Pin), Delete or Esc close. Settings has five tabs: General, Capture, Quick Access, Recording, Shortcuts.
+In the area overlay: Esc or right-click cancels, Space while dragging moves the rectangle, Shift constrains to a square, Option resizes from the center, arrow keys nudge 1 point (Shift 10), Space or Tab switches to window mode and highlights the window under the pointer. On a hovered Quick Access card (the keys work for 4 seconds after the pointer arrives or after each key, so a pointer resting on a card does not take letters from the app you type in): C copy, Option-C copy file, T copy text, S save, A annotate, B background, Command-Delete move to Trash (or the trash button next to Pin), Delete or Esc close. Settings has five tabs: General, Capture, Quick Access, Recording, Shortcuts.
 
 ## Permissions and what it never does
 

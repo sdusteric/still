@@ -290,10 +290,12 @@ public struct MenuModel: Sendable, Hashable {
         items.append(MenuModel.actionItem(.captureHistory, title: "Capture History\u{2026}", input))
         if !input.pins.isEmpty { items.append(MenuModel.pinnedItem(input)) }
         items.append(MenuItem(id: .openImage, title: "Open Image\u{2026}", symbolName: MenuModel.symbol(for: .openImage)))
-        items.append(MenuItem(
-            id: .openClipboardImage, title: "Open Clipboard Image", isEnabled: input.hasClipboardImage,
-            symbolName: "doc.on.clipboard", isAlternate: true
-        ))
+        // Only with an image to open: a disabled alternate would hide the enabled row while Option is held.
+        if input.hasClipboardImage {
+            items.append(MenuItem(
+                id: .openClipboardImage, title: "Open Clipboard Image", symbolName: "doc.on.clipboard", isAlternate: true
+            ))
+        }
         items.append(MenuItem(id: .separator(3), kind: .separator, title: ""))
         if let status {
             items.append(MenuItem(id: .status, kind: .status, title: status.title, isEnabled: status.isClickable))
