@@ -221,19 +221,18 @@ private struct Harness {
         #expect(reread.pixelSize == PixelSize(width: image.width, height: image.height))
     }
 
-    @Test func overlayIsPresentedBeforeAnyCaptureStarts() async throws {
+    @Test func theOverlayDoesNotWaitForTheCaptureAndTheCaptureDoesNotWaitForTheOverlay() async throws {
+        // The screenshot starts off the main thread before the overlay is drawn, so the frozen
+        // image lands about one screenshot's time after the hotkey (design 6.2, 2026-11-26).
         let clock = FakeClock()
         let source = FakeCaptureSource(displays: [display], delay: 1, clock: clock)
         let harness = try Harness(source: source, clock: clock)
         defer { harness.cleanUp() }
-        harness.overlay.onPresent = { harness.overlay.sourceCallsAtPresent = source.recordedCalls.count }
         try await harness.coordinator.refreshDisplays()
-        let callsBefore = source.recordedCalls.count
 
         let began = await harness.coordinator.begin(mode: .area)
         #expect(began)
         #expect(harness.overlay.calls.first == .present(.area))
-        #expect(harness.overlay.sourceCallsAtPresent == callsBefore)
         #expect(harness.coordinator.lastTrace?.order == [.present])
 
         // The capture is still waiting on the clock: the overlay is up with no frozen image.

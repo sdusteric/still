@@ -271,6 +271,8 @@ final class AppWiring: CaptureResultPresenter {
         do {
             let displays = try await coordinator.refreshDisplays()
             overlay.screenParametersChanged(displays: displays)
+            // The overlay panels exist now; list them so the first capture needs no extra fetch.
+            await captureSource.refreshContent()
         } catch {
             log.warning("displays: \(error)")
         }

@@ -500,11 +500,6 @@ public final class CaptureCoordinator {
 
         let session = Session(mode: mode, trace: trace, displays: known, configuration: configuration, presented: presented)
         self.session = session
-        if presented {
-            overlay.present(mode: mode, displays: known)
-            trace.record(.present, at: clock.now())
-        }
-
         let targets: [DisplayInfo]
         if presented {
             targets = known
@@ -513,7 +508,13 @@ public final class CaptureCoordinator {
             targets = [CoordinateSpace.display(containing: point, in: known)
                 ?? CoordinateSpace.nearestDisplay(to: point, in: known) ?? known[0]]
         }
+        // The screenshots start first, off the main thread, so they run while the overlay is drawn;
+        // they leave the overlay out by window id either way.
         startFrozenCaptures(targets, session: session)
+        if presented {
+            overlay.present(mode: mode, displays: known)
+            trace.record(.present, at: clock.now())
+        }
         if presented { startWindowSnapshot(session) }
         return true
     }
@@ -548,12 +549,13 @@ public final class CaptureCoordinator {
             mode: state.target, trace: trace, displays: known, configuration: configuration, presented: true, hud: true
         )
         self.session = session
+        // As in `begin`: the screenshots start before the overlay is drawn.
+        if state.needsFrozenCapture { startFrozenCaptures(known, session: session) }
         overlay.presentHUD(state, displays: known) { [weak self, weak session] mode in
             guard let self, let session, mode == .screenshot else { return }
             self.startFrozenCaptures(session.displays, session: session)
         }
         trace.record(.present, at: clock.now())
-        if state.needsFrozenCapture { startFrozenCaptures(known, session: session) }
         startWindowSnapshot(session)
         return true
     }
@@ -688,11 +690,19 @@ public final class CaptureCoordinator {
 
     private func startDisplayCapture(_ display: DisplayInfo, session: Session) -> Task<CapturedImage, any Error> {
         let options = session.configuration.options
+        // Detached so the call reaches the capture source now, not after the main actor's current
+        // work (drawing the overlay) is done.
+        let firstTry = Task.detached(priority: .userInitiated) { [captureSource] in
+            try await captureSource.captureDisplay(display.id, options: options)
+        }
         return Task { [captureSource, overlay] in
             let image: CapturedImage
             do {
+                var attempt = 0
                 image = try await withStaleRetry {
-                    try await captureSource.captureDisplay(display.id, options: options)
+                    attempt += 1
+                    if attempt == 1 { return try await firstTry.value }
+                    return try await captureSource.captureDisplay(display.id, options: options)
                 }
             } catch {
                 if session.presented { fail(session, error: error) }

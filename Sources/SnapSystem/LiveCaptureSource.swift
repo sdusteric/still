@@ -140,6 +140,12 @@ public actor LiveCaptureSource: CaptureSource {
         scheduleRefresh()
     }
 
+    /// Refetches the cached content in the background, keeping the old one meanwhile: after Still's
+    /// panels are built, so the first capture finds them in the list.
+    public func refreshContent() {
+        scheduleRefresh()
+    }
+
     /// Starts watching for Finder relaunches, which replace the desktop-icon window.
     public func startObservingFinder() {
         guard finderObserver == nil else { return }

@@ -91,7 +91,7 @@ The order of events on a hotkey **(my call)**:
 
 1. The Carbon handler records the event time and calls `CaptureCoordinator.begin(mode)`.
 2. The coordinator orders the pre-built overlay panels front, one per screen, showing the 0.38 black dim and the crosshair over the live screen. Mouse events now go to Snap, so a drag that starts right away is not lost to the app underneath.
-3. In parallel: ScreenCaptureKit captures every display, excluding Snap's own panels and (when the setting is on) Finder's desktop-icon window; `CGWindowListCopyWindowInfo([.optionOnScreenOnly])` takes the window list for hit-testing.
+3. In parallel: ScreenCaptureKit captures every display, excluding Snap's own panels and (when the setting is on) Finder's desktop-icon window. Since 2026-11-26 these captures start just before step 2, off the main thread, so they run while the overlay is drawn; the owner's log showed the frozen image arriving one overlay-draw (2 to 61 ms) plus one screenshot (84 to 154 ms at 5K) after the hotkey; `CGWindowListCopyWindowInfo([.optionOnScreenOnly])` takes the window list for hit-testing.
 4. When a display's image arrives, its panel draws the frozen image 1:1 under the same dim. Live and frozen pixels look the same, so the swap is invisible unless something was moving.
 5. A selection made before the frozen image arrives is kept; the crop waits for the image.
 
