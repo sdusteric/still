@@ -12,10 +12,10 @@ It is built for one Mac and the way its owner uses it: about one and a half scre
 - A Quick Access card in the corner after each capture. The image is already on the clipboard. From the card you can add a Background, annotate, save, copy, pin, or drag the file out.
 - Background puts the capture on a gradient, mesh, color, image or a blurred copy of itself, with padding, inset, corners and shadow from your preset.
 - Annotate has crop, rectangle, arrow, text, highlight, numbered steps, freehand, and redaction by pixelate, blur or black-out. Black-out is the only redaction that cannot be reversed.
-- Copy Text reads the text in a screenshot on this Mac with Vision and puts it on the clipboard: T on a card, "Copy Text from Last Capture" in the menu, or Copy Text in History. History search also matches that text.
+- Copy Text reads the text in a screenshot on this Mac with Vision and puts it on the clipboard: T on a card, Last Capture > Copy Text in the menu, or Copy Text in History. History search also matches that text.
 - Capture Previous Area takes the last area again with no selection, from the menu or a shortcut you set.
 - Capture Scrolling Area: pick an area (or press Space for a window), scroll it, and press Return. The frames join into one tall image, which becomes a normal capture. You do the scrolling, so it needs no extra permission.
-- Open Image and Open Clipboard Image turn any picture into a capture with its card, so Background, Annotate and Pin work on it.
+- Open Image (hold Option for Open Clipboard Image) turns any picture into a capture with its card, so Background, Annotate and Pin work on it.
 - History keeps screenshots for 30 days by default (3 days, 30 days or a year in Settings) and recordings for 3 days. Edited captures keep their annotations in `annotations.json`, so reopening one gives you every arrow, step and redaction to edit again, with the Background still applied on export.
 - Pins float a capture above other windows, with opacity and click-through.
 - Screen recording to mp4 (H.264 or HEVC, 30 or 60 fps), with system audio and microphone when you turn them on.

@@ -4,6 +4,8 @@ import Foundation
 /// keys decode to their defaults, so an older file keeps working when a setting is added. Older
 /// files are migrated on decode by `SettingsMigration` (version 1: Cmd+Shift+5 moves to
 /// All-in-One; version 2: the magnifier turns off).
+/// Each group decodes on its own (`lenientValue`): one bad value resets that group to its
+/// defaults instead of moving the whole file aside and losing every setting and shortcut.
 public struct Settings: VersionedDocument {
     public static let currentVersion = 3
 
@@ -38,18 +40,18 @@ public struct Settings: VersionedDocument {
         let defaults = Settings()
         let fileVersion = try container.value(.version, default: defaults.version)
         version = fileVersion
-        general = try container.value(.general, default: defaults.general)
-        capture = try container.value(.capture, default: defaults.capture)
-        quickAccess = try container.value(.quickAccess, default: defaults.quickAccess)
-        recording = try container.value(.recording, default: defaults.recording)
-        annotate = try container.value(.annotate, default: defaults.annotate)
+        general = container.lenientValue(.general, default: defaults.general)
+        capture = container.lenientValue(.capture, default: defaults.capture)
+        quickAccess = container.lenientValue(.quickAccess, default: defaults.quickAccess)
+        recording = container.lenientValue(.recording, default: defaults.recording)
+        annotate = container.lenientValue(.annotate, default: defaults.annotate)
         if fileVersion < 2 {
             // Version 1 shortcuts decode with the version 1 defaults, then migrate.
             let v1 = try container.decodeIfPresent(VersionOneShortcuts.self, forKey: .shortcuts)?.shortcuts
                 ?? ShortcutSettings.version1Defaults
             shortcuts = v1
         } else {
-            shortcuts = try container.value(.shortcuts, default: defaults.shortcuts)
+            shortcuts = container.lenientValue(.shortcuts, default: defaults.shortcuts)
         }
         if fileVersion < Settings.currentVersion {
             self = SettingsMigration.migrate(self, from: fileVersion)

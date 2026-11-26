@@ -71,6 +71,24 @@ private final class HistoryScratch {
         #expect(names == ["a (edited).png", "a.png", "item.json"])
     }
 
+    @Test func discardingAnEditMakesTheOriginalCurrentAgain() throws {
+        // Background off on a capture with no annotations: History must show the plain capture.
+        let scratch = try HistoryScratch()
+        let store = makeStore(scratch)
+        let item = try store.add(pngData: png, fileName: "Shot.png", mode: .area, scale: 2)
+        var file = AnnotationFile()
+        file.background = nil
+        _ = try store.saveEdited(id: item.id, pngData: Data([9, 9]), annotations: file)
+        let plain = try store.discardEdit(id: item.id)
+        #expect(plain.editedURL == nil)
+        #expect(plain.currentURL == item.originalURL)
+        #expect(try store.item(id: item.id)?.editedURL == nil)
+        #expect(try store.annotations(id: item.id) == nil)
+        let folder = scratch.history.appending(path: item.id, directoryHint: .isDirectory)
+        let names = try FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false)).sorted()
+        #expect(names == ["Shot.png", "item.json"])
+    }
+
     @Test func editedVersionSitsNextToTheOriginalAndBecomesCurrent() throws {
         let scratch = try HistoryScratch()
         let store = makeStore(scratch)

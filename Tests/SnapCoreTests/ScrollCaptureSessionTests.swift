@@ -71,7 +71,7 @@ final class ScriptedRegionSource: CaptureSource {
         var progress: [ScrollCaptureProgress] = []
         let area = CGRect(x: 2660, y: 100, width: 60, height: 57)
         let session = ScrollCaptureSession(
-            source: source, display: display, area: area, options: CaptureOptions(excludedWindowIDs: [42]),
+            source: source, display: display, area: area, options: { CaptureOptions(excludedWindowIDs: [42]) },
             clock: clock, onProgress: { progress.append($0) }
         )
         session.start()
@@ -96,7 +96,7 @@ final class ScriptedRegionSource: CaptureSource {
     @Test func doneTakesOneLastFrameSoTheFinalViewIsIn() async throws {
         let source = ScriptedRegionSource(frames: try frames([0, 40]), display: display)
         let session = ScrollCaptureSession(
-            source: source, display: display, area: CGRect(x: 2560, y: 0, width: 60, height: 57), options: CaptureOptions(),
+            source: source, display: display, area: CGRect(x: 2560, y: 0, width: 60, height: 57), options: { CaptureOptions() },
             clock: clock, onProgress: { _ in }
         )
         session.start()
@@ -111,7 +111,7 @@ final class ScriptedRegionSource: CaptureSource {
         var statuses: [ScrollCaptureProgress.Status] = []
         var errors = 0
         let session = ScrollCaptureSession(
-            source: source, display: display, area: CGRect(x: 2560, y: 0, width: 60, height: 57), options: CaptureOptions(),
+            source: source, display: display, area: CGRect(x: 2560, y: 0, width: 60, height: 57), options: { CaptureOptions() },
             clock: clock, onProgress: { statuses.append($0.status) }
         )
         session.onError = { _ in errors += 1 }
@@ -130,7 +130,7 @@ final class ScriptedRegionSource: CaptureSource {
         let source = ScriptedRegionSource(frames: try frames([0, 300, 0]), display: display)
         var statuses: [ScrollCaptureProgress.Status] = []
         let session = ScrollCaptureSession(
-            source: source, display: display, area: CGRect(x: 2560, y: 0, width: 60, height: 57), options: CaptureOptions(),
+            source: source, display: display, area: CGRect(x: 2560, y: 0, width: 60, height: 57), options: { CaptureOptions() },
             clock: clock, onProgress: { statuses.append($0.status) }
         )
         session.start()
@@ -145,7 +145,7 @@ final class ScriptedRegionSource: CaptureSource {
         let source = ScriptedRegionSource(frames: try frames([0, 300, 50]), display: display)
         var statuses: [ScrollCaptureProgress.Status] = []
         let session = ScrollCaptureSession(
-            source: source, display: display, area: CGRect(x: 2560, y: 0, width: 60, height: 57), options: CaptureOptions(),
+            source: source, display: display, area: CGRect(x: 2560, y: 0, width: 60, height: 57), options: { CaptureOptions() },
             clock: clock, onProgress: { statuses.append($0.status) }
         )
         session.start()

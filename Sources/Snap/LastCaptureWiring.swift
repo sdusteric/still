@@ -313,6 +313,12 @@ extension AppWiring {
                 // An edit from before version 3 has no annotation file to rebuild it from.
                 record.editsAreReproducible = record.annotations != nil
             }
+            // One record per capture: an older one with a closed card would act on stale edits.
+            for (cardID, old) in records where old.item?.id == id && quickAccess.card(cardID) == nil {
+                records[cardID] = nil
+                recordOrder.removeAll { $0 == cardID }
+                if let trace = old.trace { cardForTrace[ObjectIdentifier(trace)] = nil }
+            }
             insert(record)
             if showCard {
                 let image = record.current

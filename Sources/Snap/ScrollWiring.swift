@@ -44,10 +44,13 @@ extension AppWiring {
         let frame = ScrollCaptureLayout.barFrame(area: area, visibleFrame: visible, barSize: barSize)
         scrollBar.show(model, frame: frame, primaryHeight: primaryHeight)
 
-        var excluded = quickAccess.surfaceWindowIDs + hint.surfaceWindowIDs
-        if let id = scrollOutline.windowID { excluded.append(id) }
-        if let id = scrollBar.windowID { excluded.append(id) }
-        let options = CaptureOptions(hideDesktopIcons: settings.capture.hideDesktopIcons, excludedWindowIDs: excluded)
+        let options: @MainActor () -> CaptureOptions = { [weak self] in
+            guard let self else { return CaptureOptions() }
+            var excluded = self.quickAccess.surfaceWindowIDs + self.hint.surfaceWindowIDs
+            if let id = self.scrollOutline.windowID { excluded.append(id) }
+            if let id = self.scrollBar.windowID { excluded.append(id) }
+            return CaptureOptions(hideDesktopIcons: self.settings.capture.hideDesktopIcons, excludedWindowIDs: excluded)
+        }
         let session = ScrollCaptureSession(
             source: captureSource, display: display, area: area, options: options, clock: clock,
             onProgress: { progress in model.progress = progress }
@@ -82,7 +85,7 @@ extension AppWiring {
         }
     }
 
-    private func cancelScrollSession() {
+    func cancelScrollSession() {
         guard let session = scrollSession else { return }
         session.cancel()
         scrollSession = nil

@@ -20,6 +20,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
     private var plan: HotkeyPlan?
     /// Key presses while Still's menu is open, when the hotkeys are released (see `menuTracking`).
     private var menuKeyMonitor: Any?
+    /// Who holds the one key grab of `HotkeyCenter`.
+    private enum GrabOwner { case none, overlay, scroll, card }
+    private var grabOwner = GrabOwner.none
     private var registrationErrors: [ShortcutAction: String] = [:]
     private var symbolicEntries: [SymbolicHotkeyEntry] = []
     private var settingsModel: SettingsModel?
@@ -159,7 +162,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
         ))
     }
 
+    /// The menu fades out over about 0.2 s; a capture started at once froze it into the image.
+    private static let menuFadeDelay: TimeInterval = 0.25
+
     private func menuSelected(_ id: MenuItemID) {
+        guard let wiring else { return }
+        let captures: Set<MenuItemID> = [
+            .captureArea, .captureWindow, .captureFullscreen, .capturePreviousArea, .captureScrolling, .allInOne, .recordScreen,
+        ]
+        if captures.contains(id), !wiring.recorder.isBusy {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.menuFadeDelay) { [weak self] in
+                MainActor.assumeIsolated { self?.runMenuItem(id) }
+            }
+            return
+        }
+        runMenuItem(id)
+    }
+
+    private func runMenuItem(_ id: MenuItemID) {
         guard let wiring else { return }
         switch id {
         case .captureArea: wiring.capture(.area)
@@ -194,7 +214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
         case .closeAllPins: wiring.pins.closeAll()
         case .stopRecording: wiring.recorder.stop(reason: .user)
         case .cancelRecording: wiring.recorder.cancel()
-        case .recentCapturesHeader, .noRecentCaptures, .separator, .pinnedCaptures, .recordingInfo: break
+        case .recentCapturesHeader, .noRecentCaptures, .separator, .pinnedCaptures, .recordingInfo, .lastCapture: break
         }
     }
 
@@ -223,22 +243,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
     private func installHotkeys(_ wiring: AppWiring) {
         let hotkeys = HotkeyCenter { [weak self] press in self?.hotkeyPressed(press) }
         self.hotkeys = hotkeys
-        // The overlay's keys arrive as grabbed hotkeys while it is up (see OverlayController.grabbedKeys).
+        // Panels of a background app get no key events, so their keys arrive as grabbed hotkeys:
+        // the overlay's while it is up, scrolling capture's while its bar shows, and a Quick Access
+        // card's while it is hovered. There is one grab at a time; the card yields to the others.
         let overlay = wiring.overlay
-        overlay.onKeyGrabChanged = { [weak hotkeys, weak overlay, weak wiring] active in
-            guard let hotkeys else { return }
+        overlay.onKeyGrabChanged = { [weak self, weak hotkeys, weak overlay, weak wiring] active in
+            guard let self, let hotkeys else { return }
             guard active else {
-                hotkeys.releaseGrab()
+                if self.grabOwner == .overlay { hotkeys.releaseGrab(); self.grabOwner = .none }
                 return
             }
             let keys = OverlayController.grabbedKeys
             let registered = hotkeys.grab(keys) { index, pressed in overlay?.grabbedKey(at: index, pressed: pressed) }
+            self.grabOwner = .overlay
             if registered < keys.count {
                 wiring?.log.warning("overlay: grabbed \(registered) of \(keys.count) keys; another app holds the rest")
             }
         }
-        wiring.grabKeys = { [weak hotkeys] keys, onKey in hotkeys?.grab(keys, onKey: onKey) }
-        wiring.releaseKeys = { [weak hotkeys] in hotkeys?.releaseGrab() }
+        wiring.grabKeys = { [weak self, weak hotkeys] keys, onKey in
+            hotkeys?.grab(keys, onKey: onKey)
+            self?.grabOwner = .scroll
+        }
+        wiring.releaseKeys = { [weak self, weak hotkeys] in
+            guard self?.grabOwner == .scroll else { return }
+            hotkeys?.releaseGrab()
+            self?.grabOwner = .none
+        }
+        let quickAccess = wiring.quickAccess
+        quickAccess.onKeyGrabChanged = { [weak self, weak hotkeys, weak quickAccess] hovered in
+            guard let self, let hotkeys else { return }
+            if hovered {
+                guard self.grabOwner == .none else { return }
+                hotkeys.grab(QuickAccessController.grabbedKeys.map(\.shortcut)) { index, pressed in
+                    if pressed { quickAccess?.grabbedKey(at: index) }
+                }
+                self.grabOwner = .card
+            } else if self.grabOwner == .card {
+                hotkeys.releaseGrab()
+                self.grabOwner = .none
+            }
+        }
         readSymbolicHotkeys()
         applyHotkeys()
         // CleanShot X launching or quitting changes which combos Snap may register (design 12.3).
@@ -262,7 +306,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ShelfActionHandling {
                 guard let action else { return event }
                 MainActor.assumeIsolated {
                     self?.menu?.closeMenu()
-                    DispatchQueue.main.async {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + AppDelegate.menuFadeDelay) {
                         self?.hotkeyPressed(HotkeyPress(
                             action: action, eventTime: event.timestamp, receivedUptime: ProcessInfo.processInfo.systemUptime
                         ))

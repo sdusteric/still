@@ -57,7 +57,9 @@ public final class ScrollCaptureSession {
     private let source: any CaptureSource
     private let display: DisplayInfo
     private let localRect: CGRect
-    private let options: CaptureOptions
+    /// Read for each frame: Still's panels come and go during a scroll (a card closes), and a
+    /// stale window id made every frame refetch the window list.
+    private let options: @MainActor () -> CaptureOptions
     private let clock: any Clock
     private let onProgress: @MainActor (ScrollCaptureProgress) -> Void
     private let worker: ScrollStitchWorker
@@ -72,7 +74,8 @@ public final class ScrollCaptureSession {
 
     /// - Parameter area: global top-left points on `display`.
     public init(
-        source: any CaptureSource, display: DisplayInfo, area: CGRect, options: CaptureOptions, clock: any Clock,
+        source: any CaptureSource, display: DisplayInfo, area: CGRect, options: @escaping @MainActor () -> CaptureOptions,
+        clock: any Clock,
         onProgress: @escaping @MainActor (ScrollCaptureProgress) -> Void
     ) {
         self.source = source
@@ -127,7 +130,7 @@ public final class ScrollCaptureSession {
     private func takeFrame() async -> ScrollCaptureProgress.Status {
         let frame: CapturedImage
         do {
-            frame = try await source.captureRegion(display.id, rect: localRect, options: options)
+            frame = try await source.captureRegion(display.id, rect: localRect, options: options())
             consecutiveErrors = 0
         } catch {
             onError?(error)

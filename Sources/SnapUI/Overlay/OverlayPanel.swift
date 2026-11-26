@@ -8,8 +8,10 @@ import SnapCore
 public protocol OverlaySurface: AnyObject {
     /// The window number, so the capture can exclude the overlay. Nil before the window exists.
     var windowID: WindowID? { get }
-    /// Draws `state` and orders the panel front at once. `makeKey` routes keys to it.
-    func show(_ state: SelectionOverlayState, makeKey: Bool)
+    /// Draws `state` and orders the panel front at once. The panel never takes key: making it key
+    /// closed another app's open menu or popup before it could be captured, and the overlay's
+    /// keys arrive as grabbed hotkeys (`OverlayController.grabbedKeys`) anyway.
+    func show(_ state: SelectionOverlayState)
     func update(_ state: SelectionOverlayState)
     /// Orders out with no fade.
     func hide()
@@ -64,15 +66,11 @@ public final class OverlayPanel: NSPanel, OverlaySurface {
 
     public var windowID: WindowID? { windowNumber > 0 ? WindowID(windowNumber) : nil }
 
-    public func show(_ state: SelectionOverlayState, makeKey: Bool) {
+    public func show(_ state: SelectionOverlayState) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         apply(state)
         orderFrontRegardless()
-        if makeKey {
-            self.makeKey()
-            makeFirstResponder(overlayView)
-        }
         CATransaction.commit()
     }
 

@@ -38,8 +38,9 @@ extension HotkeyCombo {
     }
 }
 
-/// A shortcut field for the Shortcuts tab (design 12.2, 17.6): a chip with the combo, or
-/// "Record shortcut". Click to listen, press the new combo; Esc cancels, Delete clears.
+/// A shortcut field for the Shortcuts tab (design 12.2, 17.6): a chip with the combo, or a quiet
+/// "Not set" that turns into "Record Shortcut" on hover. Click to listen, press the new combo;
+/// Esc cancels, Delete clears.
 struct ShortcutRecorder: View {
     let action: ShortcutAction
     @Binding var shortcut: KeyShortcut?
@@ -59,7 +60,7 @@ struct ShortcutRecorder: View {
                     .frame(minWidth: 52, minHeight: Theme.Controls.buttonHeight)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(Theme.Colors.fill.color)
+                            .fill(showsChip ? Theme.Colors.fill.color : Color.clear)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -93,10 +94,17 @@ struct ShortcutRecorder: View {
     }
 
     private var label: String {
-        if isRecording { return "Type shortcut" }
-        guard let shortcut else { return "Record shortcut" }
+        Self.label(shortcut: shortcut, isRecording: isRecording, isHovering: isHovering)
+    }
+
+    static func label(shortcut: KeyShortcut?, isRecording: Bool, isHovering: Bool) -> String {
+        if isRecording { return "Type Shortcut" }
+        guard let shortcut else { return isHovering ? "Record Shortcut" : "Not set" }
         return HotkeyCombo(shortcut).chipText
     }
+
+    /// An unset field shows no chip until hovered, so a list of unset shortcuts stays quiet.
+    private var showsChip: Bool { shortcut != nil || isRecording || isHovering }
 
     private func setRecording(_ value: Bool) {
         isRecording = value

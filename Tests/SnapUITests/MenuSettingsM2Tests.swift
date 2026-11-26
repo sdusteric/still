@@ -9,6 +9,13 @@ import Testing
 /// without a window.
 @MainActor
 @Suite struct MenuSettingsM2Tests {
+    @Test func anUnsetShortcutReadsNotSetAndHoverInvitesRecording() {
+        #expect(ShortcutRecorder.label(shortcut: nil, isRecording: false, isHovering: false) == "Not set")
+        #expect(ShortcutRecorder.label(shortcut: nil, isRecording: false, isHovering: true) == "Record Shortcut")
+        #expect(ShortcutRecorder.label(shortcut: nil, isRecording: true, isHovering: true) == "Type Shortcut")
+        #expect(ShortcutRecorder.label(shortcut: .commandShift4, isRecording: false, isHovering: true) == HotkeyCombo(.commandShift4).chipText)
+    }
+
     @Test func theMenuReportsWhenItOpensAndCloses() {
         var tracking: [Bool] = []
         let controller = StatusMenuController(modelProvider: { MenuM2Demo.makeModel() })

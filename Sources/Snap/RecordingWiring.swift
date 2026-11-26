@@ -95,7 +95,7 @@ final class RecordingWiring {
         menuInput = RecordingMenuInput(
             target: target.mode, size: plan.sourceRect.size, fps: plan.fps, format: plan.codec,
             microphoneName: microphoneName(plan: plan), systemAudio: plan.capturesAudio,
-            stopShortcut: settings.shortcuts.stopRecording
+            stopShortcut: settings.shortcuts.stopRecording ?? settings.shortcuts.allInOne
         )
         app.overlay.onCountdownKey = { [weak self] key in
             switch key {

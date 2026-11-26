@@ -21,6 +21,18 @@ import Testing
         #expect(await Self.drawOffMain(image) != nil)
     }
 
+    @Test func menuImagesAreReadyBitmapsNotDrawnOnDemand() throws {
+        // The live menu on macOS 27 showed no recent-capture thumbnail from a drawing-handler
+        // image; menu images are now plain bitmaps at twice their point size.
+        for image in [StatusMenuController.thumbnailImage(Self.solidImage()), StatusMenuController.thumbnailImage(nil),
+                      StatusMenuController.dotImage(color: .red)] {
+            #expect(!image.representations.contains { $0 is NSCustomImageRep })
+            let rep = try #require(image.representations.first)
+            #expect(rep.pixelsWide == Int(image.size.width * 2))
+        }
+        #expect(StatusMenuController.thumbnailImage(nil).size == CGSize(width: Theme.Menu.thumbnailSize, height: Theme.Menu.thumbnailSize))
+    }
+
     @Test func statusDotDrawsOffTheMainThread() async throws {
         let image = StatusMenuController.dotImage(color: NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
         let center = try #require(await Self.drawOffMain(image))

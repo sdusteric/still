@@ -369,6 +369,29 @@ final class ActionLog {
         #expect(controller.card("a")?.note == "Not saved to History")
     }
 
+    @Test func aHoveredCardGrabsItsKeysBecauseTheBackgroundPanelGetsNone() async throws {
+        let controller = makeController()
+        var grabs: [Bool] = []
+        controller.onKeyGrabChanged = { grabs.append($0) }
+        controller.show(item("a"))
+        controller.show(item("b"))
+        controller.setHovered(true, for: "a")
+        controller.setHovered(true, for: "b")
+        #expect(grabs == [true], "one grab while any card is hovered")
+        let annotate = try #require(QuickAccessController.grabbedKeys.firstIndex { $0.key == .annotate })
+        controller.grabbedKey(at: annotate)
+        for _ in 0..<5 { await Task.yield() }
+        #expect(log.calls.contains("annotate a") || log.calls.contains("annotate b"))
+        controller.setHovered(false, for: "a")
+        controller.setHovered(false, for: "b")
+        #expect(grabs == [true, false])
+
+        let keys = QuickAccessController.grabbedKeys
+        #expect(keys.contains { $0.shortcut == KeyShortcut(keyCode: 51, modifiers: KeyShortcut.Modifier.command) && $0.key == .trash })
+        #expect(keys.contains { $0.shortcut == KeyShortcut(keyCode: 8, modifiers: KeyShortcut.Modifier.option) && $0.key == .copyFile })
+        #expect(keys.contains { $0.shortcut == KeyShortcut(keyCode: 53, modifiers: 0) && $0.key == .close })
+    }
+
     @Test func keysActOnlyOnTheHoveredCard() async {
         let controller = makeController()
         controller.show(item("a"))

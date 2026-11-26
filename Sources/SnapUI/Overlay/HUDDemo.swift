@@ -62,7 +62,8 @@ public enum HUDDemo {
 
     /// What the recording menu shows in the scene.
     public static let recordingMenuInput = RecordingMenuInput(
-        target: .area, size: area.size, fps: 30, format: .h264, microphoneName: "MacBook Pro Microphone", systemAudio: false
+        target: .area, size: area.size, fps: 30, format: .h264, microphoneName: "MacBook Pro Microphone", systemAudio: false,
+        stopShortcut: .commandShift5
     )
 
     /// The heartbeat warning of the `recording-stalled` shot: no frame for 5 s, 38 s in.

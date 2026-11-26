@@ -115,7 +115,7 @@ final class AppWiring: CaptureResultPresenter {
     lazy var recorder = RecordingWiring(app: self)
 
     var records: [String: CaptureRecord] = [:]
-    private(set) var recordOrder: [String] = []
+    var recordOrder: [String] = []
     var cardForTrace: [ObjectIdentifier: String] = [:]
     private var backgroundPanels: [ObjectIdentifier: BackgroundEditorPanel] = [:]
     private var annotateWindows: [ObjectIdentifier: AnnotateWindowController] = [:]
@@ -279,6 +279,8 @@ final class AppWiring: CaptureResultPresenter {
     func screenParametersChanged() {
         pins.displaysChanged()
         coordinator.cancel()
+        // The area's coordinates no longer hold after a display change.
+        cancelScrollSession()
         guard permission.status == .granted else { return }
         Task {
             await captureSource.invalidate()
@@ -338,6 +340,8 @@ final class AppWiring: CaptureResultPresenter {
     /// The in-process notification the history window reloads on (design 20.3).
     func historyChanged() {
         refreshMenuThumbnails()
+        // A trash, sweep, finished recording or edit changes what Shelf shows, not only a capture.
+        publishShelfStatus()
         NotificationCenter.default.post(name: HistoryWindowController.historyDidChange, object: nil)
     }
 
@@ -530,6 +534,17 @@ final class AppWiring: CaptureResultPresenter {
         trimRecords()
     }
 
+    /// Drops the records of captures that left history, closing their cards, so "Last Capture"
+    /// and an open card never act on a file that is gone.
+    func forgetRecords(ofItems ids: Set<String>) {
+        for (cardID, record) in records where record.item.map({ ids.contains($0.id) }) == true {
+            quickAccess.close(cardID, reason: .trashed)
+            if let trace = record.trace { cardForTrace[ObjectIdentifier(trace)] = nil }
+            records[cardID] = nil
+            recordOrder.removeAll { $0 == cardID }
+        }
+    }
+
     /// Move to Trash on a card: waits for the capture to be stored, then moves its history folder
     /// to the Trash, the same way History does, and forgets the record.
     private func trashCard(_ cardID: String) async -> Bool {
@@ -654,6 +669,13 @@ final class AppWiring: CaptureResultPresenter {
             record.annotations?.background = nil
             guard annotated, let base = await annotatedBase(record) else {
                 record.showingEdited = false
+                // An edit from before version 3 may have annotations burned into its PNG with no
+                // file to rebuild them from; that one stays in history.
+                if record.editsAreReproducible {
+                    record.edited = nil
+                    record.annotations = nil
+                    await storeUnedited(record)
+                }
                 return QuickAccessThumbnail(
                     image: record.original.cgImage, pointSize: record.original.pointSize, backgroundApplied: false
                 )
@@ -712,6 +734,28 @@ final class AppWiring: CaptureResultPresenter {
     }
 
     /// Writes `<file name> (edited).png` into the record's history folder once the original is there.
+    /// History goes back to the original: the edited PNG and its annotation file are removed.
+    private func storeUnedited(_ record: CaptureRecord) async {
+        var item = record.item
+        if item == nil { item = await record.stored?.value?.item }
+        guard let id = item?.id else { return }
+        let history = history
+        let log = log
+        let updated = await Task.detached(priority: .userInitiated) { () -> CaptureItem? in
+            do {
+                return try history.discardEdit(id: id)
+            } catch {
+                log.error("history: removing the edit of \(id) failed: \(error)")
+                return nil
+            }
+        }.value
+        if let updated {
+            record.item = updated
+            historyChanged()
+            Task { [recall] in await recall.enqueue(id, force: true) }
+        }
+    }
+
     private func storeEdited(_ image: CapturedImage, for record: CaptureRecord) async {
         var item = record.item
         if item == nil, let stored = record.stored {
@@ -756,7 +800,8 @@ final class AppWiring: CaptureResultPresenter {
     func editPreset(id: String) {
         let preset = presetStore.preset(id: id) ?? defaultPreset
         if let record = lastRecord {
-            openBackgroundEditor(source: record.original, record: record, preset: preset)
+            // The last capture is only a preview here: Copy or Save must not rewrite its history file.
+            openBackgroundEditor(source: record.current, record: nil, preset: preset)
         } else if let sample = DemoCapture.notesWindow(dark: false) {
             openBackgroundEditor(source: CapturedImage(cgImage: sample, scale: 2), record: nil, preset: preset)
         }

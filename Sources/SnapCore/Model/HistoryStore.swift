@@ -297,6 +297,24 @@ public final class HistoryStore: Sendable {
         }
     }
 
+    /// Drops the edited PNG and `annotations.json`, so the original is current again (Background
+    /// turned off on a capture with no annotations).
+    @discardableResult
+    public func discardEdit(id: String) throws -> CaptureItem {
+        let folder = folder(for: id)
+        return try lock.withLock { _ -> CaptureItem in
+            guard var record = try readRecord(in: folder) else { throw HistoryError.itemNotFound(id) }
+            for name in [record.editedName, record.annotationsName].compactMap({ $0 }) {
+                let path = folder.appending(path: name, directoryHint: .notDirectory).path(percentEncoded: false)
+                if FileManager.default.fileExists(atPath: path) { try FileManager.default.removeItem(atPath: path) }
+            }
+            record.editedName = nil
+            record.annotationsName = nil
+            try write(record, in: folder)
+            return item(from: record)
+        }
+    }
+
     /// The annotations of an edited capture, nil when it has none (unedited, or edited before
     /// version 3). Throws when the file exists but does not decode.
     public func annotations(id: String) throws -> AnnotationFile? {

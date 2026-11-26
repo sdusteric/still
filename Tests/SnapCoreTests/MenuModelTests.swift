@@ -70,13 +70,34 @@ import Testing
         #expect(MenuItemID.capturePreviousArea.shortcutAction == .capturePreviousArea)
     }
 
-    @Test func aClipboardImageCanBeOpenedOnlyWhenThereIsOne() {
-        #expect(model().item(.openClipboardImage) == nil)
-        let menu = MenuModel(MenuInput(hasClipboardImage: true, now: now, timeZone: Self.zone))
-        let ids = menu.items.map(\.id)
+    @Test func openClipboardImageIsTheOptionAlternateOfOpenImage() {
+        let ids = model().items.map(\.id)
         #expect(ids.firstIndex(of: .openClipboardImage) == ids.firstIndex(of: .openImage).map { $0 + 1 })
+        #expect(model().item(.openClipboardImage)?.isAlternate == true)
+        #expect(model().item(.openClipboardImage)?.isEnabled == false, "nothing to open")
+        let menu = MenuModel(MenuInput(hasClipboardImage: true, now: now, timeZone: Self.zone))
+        #expect(menu.item(.openClipboardImage)?.isEnabled == true)
         #expect(menu.item(.openImage)?.title == "Open Image\u{2026}")
         #expect(menu.item(.openClipboardImage)?.title == "Open Clipboard Image")
+    }
+
+    @Test func lastCaptureActionsLiveInOneSubmenu() throws {
+        let menu = model(recent: [Self.capture("a", at: now)])
+        let parent = try #require(menu.items.first { $0.id == .lastCapture })
+        #expect(parent.title == "Last Capture")
+        #expect(parent.isEnabled)
+        #expect(parent.children.map(\.id) == [.applyBackground, .openInAnnotate, .pinLastCapture, .copyLastCaptureText])
+        #expect(parent.children.map(\.title) == ["Apply Background", "Open in Annotate", "Pin to Screen", "Copy Text"])
+        #expect(menu.item(.pinLastCapture)?.isEnabled == true, "item(_:) finds submenu rows")
+        #expect(model().items.first { $0.id == .lastCapture }?.isEnabled == false, "no capture yet")
+    }
+
+    @Test func actionRowsCarryASymbol() {
+        let menu = model()
+        for id in [MenuItemID.captureArea, .captureWindow, .captureFullscreen, .captureScrolling, .capturePreviousArea,
+                   .allInOne, .recordScreen, .lastCapture, .captureHistory, .openImage, .settings, .quit] {
+            #expect(menu.item(id)?.symbolName != nil, "\(id)")
+        }
     }
 
     @Test func itemsFollowTheDesignOrder() {
@@ -84,9 +105,9 @@ import Testing
         // with Pin, then Recent Captures and Capture History.
         let ids = model().items.map(\.id)
         #expect(ids == [
-            .captureArea, .capturePreviousArea, .captureScrolling, .captureWindow, .captureFullscreen, .allInOne, .recordScreen,
-            .separator(1), .applyBackground, .openInAnnotate, .pinLastCapture, .copyLastCaptureText, .separator(2),
-            .recentCapturesHeader, .noRecentCaptures, .captureHistory, .openImage, .separator(3),
+            .captureArea, .captureWindow, .captureFullscreen, .captureScrolling, .capturePreviousArea, .allInOne, .recordScreen,
+            .separator(1), .lastCapture, .separator(2),
+            .recentCapturesHeader, .noRecentCaptures, .captureHistory, .openImage, .openClipboardImage, .separator(3),
             .settings, .quit,
         ])
         #expect(model().item(.openHistoryFolder) == nil)
@@ -99,7 +120,7 @@ import Testing
         #expect(menu.item(.allInOne)?.keyEquivalent == MenuKeyEquivalent(key: "5", command: true, shift: true))
         #expect(menu.item(.recordScreen)?.title == "Record Screen\u{2026}")
         #expect(menu.item(.recordScreen)?.keyEquivalent == nil)
-        #expect(menu.item(.pinLastCapture)?.title == "Pin Last Capture")
+        #expect(menu.item(.pinLastCapture)?.title == "Pin to Screen")
         #expect(menu.item(.captureHistory)?.title == "Capture History\u{2026}")
         #expect(menu.item(.captureHistory)?.isEnabled == true)
     }
@@ -163,7 +184,7 @@ import Testing
     @Test func recordingMenuHasStopCancelAndThreeInformationRows() {
         let menu = RecordingMenuModel(RecordingMenuInput(
             target: .area, size: CGSize(width: 640, height: 400), fps: 30, format: .h264,
-            microphoneName: "MacBook Pro Microphone", systemAudio: false
+            microphoneName: "MacBook Pro Microphone", systemAudio: false, stopShortcut: .commandShift5
         ))
         #expect(menu.items.map(\.id) == [
             .stopRecording, .cancelRecording, .separator(1), .recordingInfo(0), .recordingInfo(1), .recordingInfo(2),
@@ -180,6 +201,7 @@ import Testing
         #expect(quiet.item(.recordingInfo(0))?.title == "Window 842 \u{00D7} 516, 60 fps, HEVC")
         #expect(quiet.item(.recordingInfo(1))?.title == "Microphone off")
         #expect(quiet.item(.recordingInfo(2))?.title == "System audio on")
+        #expect(quiet.item(.stopRecording)?.shortcutText == nil, "no stop key is shown when none is set")
     }
 
     @Test func checkForUpdatesSitsAboveSettingsOnlyWithAnUpdater() {
@@ -198,9 +220,9 @@ import Testing
         // M2: Cmd+Shift+5 belongs to All-in-One and Capture Window is unset by default (design D56).
         #expect(menu.item(.captureWindow)?.shortcutText == nil)
         #expect(menu.item(.captureFullscreen)?.shortcutText == "\u{21E7}\u{2318}3")
-        #expect(menu.item(.applyBackground)?.title == "Apply Background to Last Capture")
+        #expect(menu.item(.applyBackground)?.title == "Apply Background")
         #expect(menu.item(.applyBackground)?.keyEquivalent == nil)
-        #expect(menu.item(.openInAnnotate)?.title == "Open Last Capture in Annotate")
+        #expect(menu.item(.openInAnnotate)?.title == "Open in Annotate")
         #expect(menu.item(.settings)?.keyEquivalent == MenuKeyEquivalent(key: ",", command: true))
         #expect(menu.item(.quit)?.title == "Quit Still")
         #expect(menu.item(.quit)?.keyEquivalent == MenuKeyEquivalent(key: "q", command: true))

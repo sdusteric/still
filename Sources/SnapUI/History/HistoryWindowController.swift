@@ -161,6 +161,9 @@ public final class HistoryWindowModel {
     }
     /// False until the first read of the folder lands.
     public private(set) var hasLoaded = false
+    /// Counts the reads that landed, so tiles fetch their thumbnails again after an edit that
+    /// kept the same file name.
+    public private(set) var loadGeneration = 0
     /// A read of the folder is running off the main thread.
     public private(set) var isLoading = false
     public private(set) var totalBytes: Int64 = 0
@@ -314,6 +317,7 @@ public final class HistoryWindowModel {
             loadError = "\(error)"
         }
         hasLoaded = true
+        loadGeneration += 1
         pruneSelection()
     }
 

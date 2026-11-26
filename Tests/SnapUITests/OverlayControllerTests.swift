@@ -7,7 +7,7 @@ import Testing
 @MainActor
 final class FakeOverlaySurface: OverlaySurface {
     let display: DisplayInfo
-    var shown: [(state: SelectionOverlayState, makeKey: Bool)] = []
+    var shown: [SelectionOverlayState] = []
     var updates: [SelectionOverlayState] = []
     var hideCount = 0
     var isVisible = false
@@ -17,10 +17,10 @@ final class FakeOverlaySurface: OverlaySurface {
     }
 
     var windowID: WindowID? { WindowID(7000 + display.id) }
-    var lastState: SelectionOverlayState? { updates.last ?? shown.last?.state }
+    var lastState: SelectionOverlayState? { updates.last ?? shown.last }
 
-    func show(_ state: SelectionOverlayState, makeKey: Bool) {
-        shown.append((state, makeKey))
+    func show(_ state: SelectionOverlayState) {
+        shown.append(state)
         isVisible = true
     }
 
@@ -103,9 +103,6 @@ enum ImageStats {
         #expect(controller.isPresented)
         #expect(box.surfaces[1]?.shown.count == 1)
         #expect(box.surfaces[2]?.shown.count == 1)
-        // Keys go to the panel under the pointer, on the ultrawide.
-        #expect(box.surfaces[2]?.shown.first?.makeKey == true)
-        #expect(box.surfaces[1]?.shown.first?.makeKey == false)
         #expect(box.surfaces[2]?.lastState?.pointer == CGPoint(x: 3000, y: 500))
         #expect(box.surfaces[1]?.lastState?.pointer == nil)
         #expect(controller.surfaceWindowIDs == [7001, 7002])
@@ -603,7 +600,6 @@ extension OverlayControllerTests {
         #expect(state.hud?.mode == .screenshot)
         #expect(state.hud?.toolbarOrigin != nil)
         #expect(box.surfaces[2]?.lastState?.hud?.toolbarOrigin == nil)
-        #expect(box.surfaces[1]?.shown.first?.makeKey == true)
         // Centered, 28 pt above the bottom of the visible frame.
         let frame = try #require(controller.toolbarFrame)
         #expect(Double(frame.height) == Theme.HUD.barHeight)

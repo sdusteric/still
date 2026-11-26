@@ -288,6 +288,14 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
                 menuItem.keyEquivalent = key.key
                 menuItem.keyEquivalentModifierMask = Self.modifierMask(key)
             }
+            if let symbol = item.symbolName {
+                menuItem.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+            }
+            if item.isAlternate {
+                // Shown in place of the row above while Option is held.
+                menuItem.keyEquivalentModifierMask = .option
+                menuItem.isAlternate = true
+            }
             if item.indented { menuItem.indentationLevel = 1 }
             if !item.children.isEmpty {
                 let submenu = NSMenu(title: item.title)
@@ -335,32 +343,49 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
     nonisolated static func thumbnailImage(_ image: CGImage?) -> NSImage {
         let side = Theme.Menu.thumbnailSize
         let radius = Theme.Menu.thumbnailRadius
-        return NSImage(size: CGSize(width: side, height: side), flipped: false) { @Sendable rect in
-            let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
-            path.addClip()
-            NSColor.quaternaryLabelColor.setFill()
-            rect.fill()
+        return bitmapImage(points: CGSize(width: side, height: side)) { context, rect in
+            let path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+            context.addPath(path)
+            context.clip()
+            context.setFillColor(NSColor.quaternaryLabelColor.cgColor)
+            context.fill(rect)
             if let image {
                 let factor = max(rect.width / Double(image.width), rect.height / Double(image.height))
                 let size = CGSize(width: Double(image.width) * factor, height: Double(image.height) * factor)
-                NSGraphicsContext.current?.cgContext.draw(image, in: CGRect(
+                context.interpolationQuality = .high
+                context.draw(image, in: CGRect(
                     x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height
                 ))
             }
-            NSColor(white: 0, alpha: 0.18).setStroke()
-            path.lineWidth = 1
-            path.stroke()
-            return true
+            context.addPath(path)
+            context.setStrokeColor(NSColor(white: 0, alpha: 0.18).cgColor)
+            context.setLineWidth(1)
+            context.strokePath()
         }
     }
 
     nonisolated static func dotImage(color: NSColor) -> NSImage {
         let side = Theme.Menu.statusDotSize
-        return NSImage(size: CGSize(width: side, height: side), flipped: false) { @Sendable rect in
-            color.setFill()
-            NSBezierPath(ovalIn: rect).fill()
-            return true
+        return bitmapImage(points: CGSize(width: side, height: side)) { context, rect in
+            context.setFillColor(color.cgColor)
+            context.fillEllipse(in: rect)
         }
+    }
+
+    /// A ready bitmap at 2x, drawn once now. An image drawn on demand by a handler did not show
+    /// in the live menu on macOS 27 (the recent captures had no thumbnail).
+    nonisolated static func bitmapImage(points: CGSize, draw: (CGContext, CGRect) -> Void) -> NSImage {
+        let scale = 2.0
+        let width = Int(points.width * scale)
+        let height = Int(points.height * scale)
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB), let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return NSImage(size: points) }
+        context.scaleBy(x: scale, y: scale)
+        draw(context, CGRect(origin: .zero, size: points))
+        guard let image = context.makeImage() else { return NSImage(size: points) }
+        return NSImage(cgImage: image, size: points)
     }
 }
 

@@ -108,7 +108,10 @@ extension AppWiring {
                 log.error("history: cannot move \(id) to the Trash: \(error)")
             }
         }
-        if !trashed.isEmpty { historyChanged() }
+        if !trashed.isEmpty {
+            forgetRecords(ofItems: trashed)
+            historyChanged()
+        }
         let removed = Array(trashed)
         Task { [recall] in await recall.remove(removed) }
         return trashed

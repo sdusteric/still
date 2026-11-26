@@ -179,7 +179,7 @@ public struct HistoryView: View {
         ) : nil
         return HistoryTile(
             item: item, time: context.timeText(for: item.createdAt), isSelected: model.isSelected(id),
-            thumbnails: thumbnails, handler: handler
+            thumbnails: thumbnails, generation: model.loadGeneration, handler: handler
         )
     }
 

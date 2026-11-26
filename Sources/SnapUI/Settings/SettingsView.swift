@@ -330,7 +330,7 @@ private struct SettingsGroup<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
                 .font(Theme.Settings.headingStyle.font)
-                .foregroundStyle(Theme.Colors.deskText.color)
+                .foregroundStyle(Theme.Colors.deskText2.color)
                 .accessibilityAddTraits(.isHeader)
             .padding(.top, Theme.Settings.headingTopSpacing)
             .padding(.bottom, Theme.Settings.headingBottomSpacing)
@@ -452,16 +452,15 @@ private struct GeneralTab: View {
                     .labelsHidden()
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel("File name pattern")
+                Text("Use {yyyy} {MM} {dd} {HH} {mm} {ss} for the date and time, {app} for the app, {counter} for a number.")
+                    .font(Theme.Typography.captionSmall.font)
+                    .foregroundStyle(Theme.Colors.deskText2.color)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.leading, Theme.Settings.rowPadding.left)
             .padding(.trailing, Theme.Settings.rowPadding.right)
             .padding(.bottom, Theme.Settings.rowPadding.bottom + 2)
         }
-        Text("Tokens: {yyyy} {MM} {dd} {HH} {mm} {ss} {counter} {app}")
-            .font(Theme.Typography.captionSmall.font)
-            .foregroundStyle(Theme.Colors.deskText2.color)
-            .padding(.leading, 4)
-            .padding(.top, -8)
         SettingsGroup(title: "Sound") {
             SwitchRow(title: "Sound on capture", subtitle: "A quiet shutter.", divider: false,
                       isOn: $model.settings.general.playSound)
@@ -820,7 +819,7 @@ private struct ShortcutsTab: View {
             recorderRow(.allInOne)
             recorderRow(.captureWindow)
             recorderRow(.recordScreen)
-            recorderRow(.stopRecording, subtitle: "\u{21E7}\u{2318}5 always stops a recording.")
+            recorderRow(.stopRecording, subtitle: "All-in-One's shortcut also stops a recording.")
         }
         SettingsGroup(title: "Last capture") {
             recorderRow(.applyBackground, divider: false)

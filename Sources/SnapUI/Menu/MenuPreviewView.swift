@@ -27,7 +27,8 @@ public struct MenuPreviewView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(items) { item in
+            // An Option alternate shows only while Option is held, so the preview leaves it out.
+            ForEach(items.filter { !$0.isAlternate }) { item in
                 row(item)
             }
         }
@@ -93,6 +94,12 @@ public struct MenuPreviewView: View {
     private func actionRow(_ item: MenuItem) -> some View {
         let isHighlighted = item.id == highlighted
         return HStack(spacing: 8) {
+            if let symbol = item.symbolName {
+                Image(systemName: symbol)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(titleColor(item, highlighted: isHighlighted))
+                    .frame(width: Theme.Menu.symbolWidth)
+            }
             Text(item.title)
                 .font(Theme.Typography.body.font)
                 .foregroundStyle(titleColor(item, highlighted: isHighlighted))
@@ -200,7 +207,7 @@ public enum MenuDemo {
     public static func makeView(dark: Bool = false) -> NSView {
         let content = ZStack(alignment: .top) {
             MenuStage(dark: dark)
-            MenuPreviewView(model: makeModel(), thumbnails: makeThumbnails(), highlighted: .applyBackground)
+            MenuPreviewView(model: makeModel(), thumbnails: makeThumbnails(), highlighted: .lastCapture)
                 .padding(.top, 8)
         }
         .frame(width: size.width, height: size.height)

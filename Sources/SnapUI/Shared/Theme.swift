@@ -423,7 +423,8 @@ nonisolated public enum Theme {
         public static let groupSpacing: Double = 16
         public static let headingTopSpacing: Double = 6
         public static let headingBottomSpacing: Double = 8
-        public static let headingStyle = TextStyle(size: 14, lineHeight: 18, weight: .semibold, display: true)
+        /// Section titles sit back from the rows they label, as in System Settings.
+        public static let headingStyle = TextStyle(size: 13, lineHeight: 16, weight: .semibold)
     }
 
     public enum Onboarding {
@@ -465,6 +466,8 @@ nonisolated public enum Theme {
 
     public enum Menu {
         public static let width: Double = 280
+        /// The column an action row's SF Symbol sits in, so titles line up.
+        public static let symbolWidth: Double = 16
         public static let padding: Double = 6
         public static let rowHeight: Double = 24
         public static let recentRowHeight: Double = 42

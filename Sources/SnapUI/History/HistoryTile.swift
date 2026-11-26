@@ -19,6 +19,8 @@ struct HistoryTile: View {
     let time: String
     let isSelected: Bool
     let thumbnails: any HistoryThumbnailProviding
+    /// `HistoryWindowModel.loadGeneration`: a new read refreshes the thumbnail.
+    var generation = 0
     /// Nil in shots: the AppKit event layer cannot be drawn offscreen.
     let handler: HistoryTileHandler?
 
@@ -36,9 +38,10 @@ struct HistoryTile: View {
             caption
         }
         .frame(width: Theme.History.tileSize.width, alignment: .leading)
-        .task(id: thumbnailURL) {
-            guard let url = thumbnailURL, loaded == nil else { return }
-            loaded = await thumbnails.thumbnail(for: url)
+        .task(id: ThumbnailRequest(url: thumbnailURL, generation: generation)) {
+            // The old image stays until the new one is ready; an unchanged file comes from the cache.
+            guard let url = thumbnailURL else { return }
+            if let image = await thumbnails.thumbnail(for: url) { loaded = image }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText)
@@ -261,4 +264,10 @@ final class HistoryMenuAction: NSObject {
         item.isEnabled = row.isEnabled
         return item
     }
+}
+
+/// What a tile's thumbnail task depends on.
+private struct ThumbnailRequest: Hashable {
+    let url: URL?
+    let generation: Int
 }

@@ -441,7 +441,7 @@ public final class QuickAccessController {
         // A closed card never reports the pointer leaving it, so closing the hovered card (Esc,
         // close button, Copy or Save, drag-out, swipe) must hand the keys back here while other
         // cards stay, or the panel keeps the keys with nothing hovered (design 8).
-        surface?.setAcceptsKeys(cards.contains { $0.isHovered })
+        updateKeyGrab()
         processTimers()
     }
 
@@ -455,11 +455,45 @@ public final class QuickAccessController {
         withAnimation(animation) {
             card.isHovered = hovered
         }
-        surface?.setAcceptsKeys(cards.contains { $0.isHovered })
+        updateKeyGrab()
         processTimers()
     }
 
     public var hoveredCard: QuickAccessCardModel? { cards.first { $0.isHovered } }
+
+    /// True while a card is hovered, false when none is: the app grabs `grabbedKeys` as global
+    /// hotkeys meanwhile. The panel belongs to a background app, so it never gets key events itself.
+    @ObservationIgnored public var onKeyGrabChanged: ((Bool) -> Void)?
+    @ObservationIgnored private var keysGrabbed = false
+
+    private func updateKeyGrab() {
+        let hovered = cards.contains { $0.isHovered }
+        surface?.setAcceptsKeys(hovered)
+        guard hovered != keysGrabbed else { return }
+        keysGrabbed = hovered
+        onKeyGrabChanged?(hovered)
+    }
+
+    /// The keys of a hovered card as Carbon key codes and modifiers (design 8, 20.2, 20.6).
+    public static let grabbedKeys: [(shortcut: KeyShortcut, key: QuickAccessKey)] = {
+        let command = KeyShortcut.Modifier.command
+        let option = KeyShortcut.Modifier.option
+        let plain: [(UInt32, QuickAccessKey)] = [
+            (8, .copy), (1, .save), (0, .annotate), (11, .background), (35, .pin), (31, .open), (15, .reveal),
+            (17, .copyText), (51, .close), (117, .close), (53, .close),
+        ]
+        return plain.map { (KeyShortcut(keyCode: $0.0, modifiers: 0), $0.1) } + [
+            (KeyShortcut(keyCode: 8, modifiers: option), .copyFile),
+            (KeyShortcut(keyCode: 51, modifiers: command), .trash),
+            (KeyShortcut(keyCode: 117, modifiers: command), .trash),
+        ]
+    }()
+
+    /// A grabbed key went down: acts on the hovered card like the panel's own key event.
+    public func grabbedKey(at index: Int) {
+        guard Self.grabbedKeys.indices.contains(index) else { return }
+        _ = handleKey(Self.grabbedKeys[index].key)
+    }
 
     /// Option went down or up while the panel had the keys: the Copy button reads Copy File.
     public func setOptionHeld(_ held: Bool) {
@@ -525,6 +559,8 @@ public final class QuickAccessController {
     public func handleKey(_ key: QuickAccessKey) -> Bool {
         guard let card = hoveredCard, card.allows(key.action) else { return false }
         let id = card.id
+        // Reveal needs a saved file (or a recording's mp4); otherwise the key is not ours.
+        if key.action == .reveal, revealURL(for: id) == nil { return false }
         Task { await self.perform(key.action, on: id) }
         return true
     }

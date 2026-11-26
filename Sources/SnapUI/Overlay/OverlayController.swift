@@ -259,10 +259,9 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
         self.mode = mode
         isPresented = true
         rebuildStates()
-        let keyDisplay = pointer.flatMap { CoordinateSpace.nearestDisplay(to: $0, in: displays) } ?? displays.first
         for display in displays {
             guard let state = states[display.id] else { continue }
-            surfaces[display.id]?.show(state, makeKey: display.id == keyDisplay?.id)
+            surfaces[display.id]?.show(state)
         }
     }
 
@@ -315,10 +314,9 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
         if mode == .window { updateHover() }
         layoutToolbar()
         rebuildStates()
-        let keyDisplay = toolbarDisplay ?? displays.first
         for display in displays {
             guard let state = states[display.id] else { continue }
-            surfaces[display.id]?.show(state, makeKey: display.id == keyDisplay?.id)
+            surfaces[display.id]?.show(state)
         }
     }
 
@@ -393,6 +391,11 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
                 keys.append(KeyShortcut(keyCode: arrow, modifiers: modifiers))
             }
         }
+        // Space moves the rectangle while Shift (square) or Option (from the center) is held too.
+        let option = KeyShortcut.Modifier.option
+        for modifiers in [shift, option, shift | option] {
+            keys.append(KeyShortcut(keyCode: 49, modifiers: modifiers))
+        }
         return keys
     }()
 
@@ -408,6 +411,7 @@ public final class OverlayController: OverlayPresenter, OverlayEventSink {
         var modifiers: OverlayModifiers = []
         if shortcut.modifiers & KeyShortcut.Modifier.shift != 0 { modifiers.insert(.shift) }
         if shortcut.modifiers & KeyShortcut.Modifier.command != 0 { modifiers.insert(.command) }
+        if shortcut.modifiers & KeyShortcut.Modifier.option != 0 { modifiers.insert(.option) }
         handle(.keyDown(key, modifiers: modifiers, isRepeat: false))
     }
 
@@ -1027,5 +1031,7 @@ extension OverlayController {
             y: frame.minY + (toolbarEdge == .bottom ? slot.minY : slot.maxY) - display.frameTopLeft.minY
         )
         surfaces[display.id]?.popUpMenu(menu, at: local)
+        // The menu's tracking loop takes the mouse-up of the press that opened it.
+        toolbarPress = false
     }
 }

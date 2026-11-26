@@ -41,6 +41,8 @@ public enum MenuItemID: Sendable, Hashable {
     case capturePreviousArea
     /// Scrolling capture: pick an area, scroll it, and the frames join into one tall image.
     case captureScrolling
+    /// The submenu of last-capture actions: Background, Annotate, Pin and Copy Text.
+    case lastCapture
     /// Copies the text in the last screenshot (read on this Mac with Vision).
     case copyLastCaptureText
     /// An image file, or the clipboard's image, becomes a capture with its card.
@@ -122,8 +124,10 @@ public struct MenuItem: Sendable, Hashable, Identifiable {
     public var captureID: String?
     /// A submenu: the Pinned Captures rows.
     public var children: [MenuItem]
-    /// An SF Symbol for an info row.
+    /// An SF Symbol shown before the title (action rows, info rows).
     public var symbolName: String?
+    /// Shown in place of the row above while Option is held (`NSMenuItem.isAlternate`).
+    public var isAlternate: Bool
     /// Indented one level (a pin's Unlock and Close rows).
     public var indented: Bool
 
@@ -138,6 +142,7 @@ public struct MenuItem: Sendable, Hashable, Identifiable {
         captureID: String? = nil,
         children: [MenuItem] = [],
         symbolName: String? = nil,
+        isAlternate: Bool = false,
         indented: Bool = false
     ) {
         self.id = id
@@ -150,6 +155,7 @@ public struct MenuItem: Sendable, Hashable, Identifiable {
         self.captureID = captureID
         self.children = children
         self.symbolName = symbolName
+        self.isAlternate = isAlternate
         self.indented = indented
     }
 }
@@ -265,58 +271,106 @@ public struct MenuModel: Sendable, Hashable {
         let status = MenuModel.status(for: input)
         self.status = status
 
+        // Capture rows by how often they are used; the last-capture actions share one submenu.
         var items: [MenuItem] = [
             MenuModel.actionItem(.captureArea, title: "Capture Area", input),
+            MenuModel.actionItem(.captureWindow, title: "Capture Window", input),
+            MenuModel.actionItem(.captureFullscreen, title: "Capture Fullscreen", input),
+            MenuModel.actionItem(.captureScrolling, title: "Capture Scrolling Area", input),
             MenuModel.actionItem(
                 .capturePreviousArea, title: "Capture Previous Area", input, enabled: input.hasPreviousArea
             ),
-            MenuModel.actionItem(.captureScrolling, title: "Capture Scrolling Area", input),
-            MenuModel.actionItem(.captureWindow, title: "Capture Window", input),
-            MenuModel.actionItem(.captureFullscreen, title: "Capture Fullscreen", input),
             MenuModel.actionItem(.allInOne, title: "All-in-One\u{2026}", input),
             MenuModel.recordItem(input),
             MenuItem(id: .separator(1), kind: .separator, title: ""),
-            MenuModel.actionItem(
-                .applyBackground, title: "Apply Background to Last Capture", input, enabled: input.hasLastCapture
-            ),
-            MenuModel.actionItem(
-                .openInAnnotate, title: "Open Last Capture in Annotate", input, enabled: input.hasLastCapture
-            ),
-            MenuModel.actionItem(.pinLastCapture, title: "Pin Last Capture", input, enabled: input.canPinLastCapture),
-            MenuModel.actionItem(
-                .copyLastCaptureText, title: "Copy Text from Last Capture", input, enabled: input.canPinLastCapture
-            ),
+            MenuModel.lastCaptureItem(input),
             MenuItem(id: .separator(2), kind: .separator, title: ""),
         ]
         items.append(contentsOf: MenuModel.recentItems(input))
         items.append(MenuModel.actionItem(.captureHistory, title: "Capture History\u{2026}", input))
         if !input.pins.isEmpty { items.append(MenuModel.pinnedItem(input)) }
-        items.append(MenuItem(id: .openImage, title: "Open Image\u{2026}"))
-        if input.hasClipboardImage { items.append(MenuItem(id: .openClipboardImage, title: "Open Clipboard Image")) }
+        items.append(MenuItem(id: .openImage, title: "Open Image\u{2026}", symbolName: MenuModel.symbol(for: .openImage)))
+        items.append(MenuItem(
+            id: .openClipboardImage, title: "Open Clipboard Image", isEnabled: input.hasClipboardImage,
+            symbolName: "doc.on.clipboard", isAlternate: true
+        ))
         items.append(MenuItem(id: .separator(3), kind: .separator, title: ""))
         if let status {
             items.append(MenuItem(id: .status, kind: .status, title: status.title, isEnabled: status.isClickable))
             if status == .permissionNeeded, input.offersRelaunch {
-                items.append(MenuItem(id: .relaunch, title: "Relaunch Still"))
+                items.append(MenuItem(id: .relaunch, title: "Relaunch Still", symbolName: MenuModel.symbol(for: .relaunch)))
             }
             items.append(MenuItem(id: .separator(4), kind: .separator, title: ""))
         }
         if input.offersUpdates {
-            items.append(MenuItem(id: .checkForUpdates, title: "Check for Updates\u{2026}"))
+            items.append(MenuItem(
+                id: .checkForUpdates, title: "Check for Updates\u{2026}", symbolName: MenuModel.symbol(for: .checkForUpdates)
+            ))
         }
         items.append(MenuItem(
             id: .settings, title: "Settings\u{2026}",
-            keyEquivalent: MenuKeyEquivalent(key: ",", command: true), shortcutText: "\u{2318},"
+            keyEquivalent: MenuKeyEquivalent(key: ",", command: true), shortcutText: "\u{2318},",
+            symbolName: MenuModel.symbol(for: .settings)
         ))
         items.append(MenuItem(
             id: .quit, title: "Quit Still",
-            keyEquivalent: MenuKeyEquivalent(key: "q", command: true), shortcutText: "\u{2318}Q"
+            keyEquivalent: MenuKeyEquivalent(key: "q", command: true), shortcutText: "\u{2318}Q",
+            symbolName: MenuModel.symbol(for: .quit)
         ))
         self.items = items
     }
 
+    /// The row with `id`, in a submenu too.
     public func item(_ id: MenuItemID) -> MenuItem? {
-        items.first { $0.id == id }
+        func find(_ rows: [MenuItem]) -> MenuItem? {
+            for row in rows {
+                if row.id == id { return row }
+                if let found = find(row.children) { return found }
+            }
+            return nil
+        }
+        return find(items)
+    }
+
+    /// "Last Capture", with Background, Annotate, Pin and Copy Text for the newest capture.
+    private static func lastCaptureItem(_ input: MenuInput) -> MenuItem {
+        let children = [
+            actionItem(.applyBackground, title: "Apply Background", input, enabled: input.canPinLastCapture),
+            actionItem(.openInAnnotate, title: "Open in Annotate", input, enabled: input.canPinLastCapture),
+            actionItem(.pinLastCapture, title: "Pin to Screen", input, enabled: input.canPinLastCapture),
+            actionItem(.copyLastCaptureText, title: "Copy Text", input, enabled: input.canPinLastCapture),
+        ]
+        return MenuItem(
+            id: .lastCapture, title: "Last Capture", isEnabled: input.canPinLastCapture, children: children,
+            symbolName: symbol(for: .lastCapture)
+        )
+    }
+
+    /// The SF Symbol before an action row's title, nil for rows without one.
+    static func symbol(for id: MenuItemID) -> String? {
+        switch id {
+        case .captureArea: "rectangle.dashed"
+        case .captureWindow: "macwindow"
+        case .captureFullscreen: "display"
+        case .captureScrolling: "arrow.up.and.down.text.horizontal"
+        case .capturePreviousArea: "arrow.counterclockwise"
+        case .allInOne: "camera.viewfinder"
+        case .recordScreen: "record.circle"
+        case .stopRecording: "stop.circle"
+        case .lastCapture: "photo"
+        case .applyBackground: "rectangle.center.inset.filled"
+        case .openInAnnotate: "pencil.tip.crop.circle"
+        case .pinLastCapture: "pin"
+        case .copyLastCaptureText: "text.viewfinder"
+        case .captureHistory: "clock"
+        case .openImage: "photo.on.rectangle"
+        case .settings: "gearshape"
+        case .pinnedCaptures: "pin.square"
+        case .checkForUpdates: "arrow.triangle.2.circlepath"
+        case .relaunch: "arrow.clockwise"
+        case .quit: "power"
+        default: nil
+        }
     }
 
     static func status(for input: MenuInput) -> MenuStatus? {
@@ -334,10 +388,11 @@ public struct MenuModel: Sendable, Hashable {
     /// stops (design 20.6).
     private static func recordItem(_ input: MenuInput) -> MenuItem {
         guard input.isRecording else { return actionItem(.recordScreen, title: "Record Screen\u{2026}", input) }
-        let combo = HotkeyCombo(input.shortcuts.stopRecording ?? .commandShift5)
+        // All-in-One's shortcut also stops a recording; with neither set there is no stop key.
+        let combo = (input.shortcuts.stopRecording ?? input.shortcuts.allInOne).map(HotkeyCombo.init)
         return MenuItem(
-            id: .recordScreen, title: "Stop Recording", keyEquivalent: MenuKeyEquivalent(combo),
-            shortcutText: combo.displayString
+            id: .recordScreen, title: "Stop Recording", keyEquivalent: combo.flatMap { MenuKeyEquivalent($0) },
+            shortcutText: combo?.displayString, symbolName: symbol(for: .stopRecording)
         )
     }
 
@@ -357,11 +412,14 @@ public struct MenuModel: Sendable, Hashable {
         }
         children.append(MenuItem(id: .separator(99), kind: .separator, title: ""))
         children.append(MenuItem(id: .closeAllPins, title: "Close All Pins"))
-        return MenuItem(id: .pinnedCaptures, title: "Pinned Captures (\(input.pins.count))", children: children)
+        return MenuItem(
+            id: .pinnedCaptures, title: "Pinned Captures (\(input.pins.count))", children: children,
+            symbolName: symbol(for: .pinnedCaptures)
+        )
     }
 
     private static func actionItem(_ id: MenuItemID, title: String, _ input: MenuInput, enabled: Bool = true) -> MenuItem {
-        var item = MenuItem(id: id, title: title, isEnabled: enabled)
+        var item = MenuItem(id: id, title: title, isEnabled: enabled, symbolName: symbol(for: id))
         if let action = id.shortcutAction, let shortcut = input.shortcuts[action] {
             let combo = HotkeyCombo(shortcut)
             item.keyEquivalent = MenuKeyEquivalent(combo)
@@ -461,9 +519,8 @@ public struct RecordingMenuModel: Sendable, Hashable {
     public let items: [MenuItem]
 
     public init(_ input: RecordingMenuInput) {
-        // Cmd+Shift+5 always stops a recording; an extra Stop Recording shortcut is shown instead
-        // only when the user set one.
-        let combo = HotkeyCombo(input.stopShortcut ?? .commandShift5)
+        // The Stop Recording shortcut, else All-in-One's, which also stops; none when neither is set.
+        let combo = input.stopShortcut.map(HotkeyCombo.init)
         let size = "\(Int(input.size.width.rounded())) \u{00D7} \(Int(input.size.height.rounded()))"
         let target: String = switch input.target {
         case .area: "Area"
@@ -478,8 +535,8 @@ public struct RecordingMenuModel: Sendable, Hashable {
         }
         items += [
             MenuItem(
-                id: .stopRecording, title: "Stop Recording", keyEquivalent: MenuKeyEquivalent(combo),
-                shortcutText: combo.displayString
+                id: .stopRecording, title: "Stop Recording", keyEquivalent: combo.flatMap { MenuKeyEquivalent($0) },
+                shortcutText: combo?.displayString
             ),
             MenuItem(id: .cancelRecording, title: "Cancel Recording"),
             MenuItem(id: .separator(1), kind: .separator, title: ""),
